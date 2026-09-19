@@ -1,25 +1,27 @@
-# Agent talimatı
+# Agent instructions
 
-Bu repo otomatik daily session'larla ilerler. Tek iş kaynağı `docs/BACKLOG.md` dosyasıdır.
+`docs/BACKLOG.md` is the only source of work. Each session covers one day of it, in order.
 
-## Her session'ın başında, bu sırayla oku
+## Read this at the start of every session, in order
 
-1. `docs/CONVENTIONS.md` — proje sahibinin yazım ve commit tercihleri. Zorunlu, atlanamaz, hiçbir metin yazmadan önce okunur.
-2. `STATE.md` — en üstteki girdi. `BLOCKER` doluysa günün ilk işi odur.
-3. `docs/BACKLOG.md` — Bölüm A (operasyon talimatları) ve sadece bugünün gün bloğu.
+1. `docs/CONVENTIONS.md` — the owner's writing and commit preferences. Mandatory, never skipped, read before writing any text at all.
+2. `STATE.md` — the top entry. If `BLOCKER` is filled in, clearing it is the first task of the day.
+3. `docs/BACKLOG.md` — section A (operating instructions) and only today's day block.
 
-Sonra `docs/BACKLOG.md` A1 adımlarını sırayla uygula. Session'ı A2 ile kapat.
+Then follow the A1 steps in `docs/BACKLOG.md` in order. Close the session with A2.
 
-## Bugünün gün numarası
+## Today's day number
 
-`STATE.md` içindeki son `DONE` girdinin "Tamamlanan gün" değeri artı bir. Son girdi `BLOCKED` ise gün numarası ilerlemez, aynı günle devam edilir.
+The `Completed day` value of the most recent `DONE` entry in `STATE.md`, plus one. If the most recent entry is `BLOCKED`, the day number does not advance and the same day continues.
 
-## Kısa hatırlatma
+## Short reminder
 
-Ayrıntısı `docs/CONVENTIONS.md` içinde, çelişki olursa o dosya kazanır.
+The details are in `docs/CONVENTIONS.md`, which wins on any conflict.
 
-- Repoya giden her metin lowercase. Sadece özel isimler, kod tanımlayıcıları ve yerleşik kısaltmalar büyük.
-- Commit ve PR metinlerinde AI attribution satırı yok.
-- `git push --force` ve history rewrite yasak.
-- Test yoksa özellik yok. Günde en az 5 anlamlı yeni test.
-- Ertesi günün işini bugün yapma.
+- Everything written into this repository is English.
+- Text written into the repository or into GitHub is lowercase. Only proper nouns, code identifiers and established acronyms are capitalized.
+- No comments inside function bodies. TSDoc on exported symbols is required and is not a comment in this sense.
+- No AI attribution in commit messages or PR descriptions.
+- No `git push --force` and no history rewrites.
+- No feature without a test. At least 5 meaningful new tests per day.
+- Do not do tomorrow's work today.

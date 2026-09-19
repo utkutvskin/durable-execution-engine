@@ -1,320 +1,321 @@
-# Durable Execution Engine: 30 Günlük Otomatik Session Backlog'u
+# Durable Execution Engine: Development Backlog
 
-Bu dosya `docs/BACKLOG.md` olarak repoda durur. Her otomatik daily session'da agent önce bu dosyayı, sonra `STATE.md` dosyasını okur, sadece o günün kapsamını yapar, commit ve push atar.
+This file lives at `docs/BACKLOG.md`. Each session reads this file, then `STATE.md`, does only that day's scope, then commits and pushes.
 
-**Stack (değiştirilemez):** TypeScript (strict), Node 22, PostgreSQL 16, pnpm workspaces, Vitest, Docker Compose.
-**Monorepo paketleri:** `packages/core`, `packages/worker`, `packages/api`, `packages/cli`, `apps/ui`, `examples/`.
+**Stack (fixed):** TypeScript (strict), Node 22, PostgreSQL 16, pnpm workspaces, Vitest, Docker Compose.
+**Monorepo packages:** `packages/core`, `packages/worker`, `packages/api`, `packages/cli`, `apps/ui`, `examples/`.
 
 ---
 
-## BÖLÜM A: AGENT OPERASYON TALİMATLARI
+## SECTION A: AGENT OPERATING INSTRUCTIONS
 
-### A1. Session başlangıç sırası (her gün, istisnasız)
+### A1. Session start sequence (every day, no exceptions)
 
 1. `git checkout main && git pull --ff-only`
-2. `docs/CONVENTIONS.md` dosyasının tamamını oku. Proje sahibinin kalıcı yazım ve commit tercihlerini tanımlar. Bu adım atlanamaz: commit mesajı, PR açıklaması, kod yorumu veya doküman yazmadan önce okunmuş olması gerekir. Yazım konusunda bu dosya ile backlog çelişirse `docs/CONVENTIONS.md` kazanır.
-3. `STATE.md` dosyasının en son girdisini oku. `BLOCKER` alanı doluysa, bugünün ilk ve öncelikli işi o blocker'ı çözmektir. Blocker çözülmeden günün kendi kapsamına geçme.
-4. `docs/BACKLOG.md` içinden bugünün gün numarasını bul (`STATE.md` içindeki son tamamlanan gün + 1). Sadece o günün bloğunu oku.
-5. Baseline doğrula: `pnpm install && pnpm run verify`. Kırmızıysa, bugünün birinci işi baseline'ı yeşile çevirmektir ve bu durum `STATE.md` içine yazılır.
-6. Günün kapsamını 3-6 alt göreve böl, `STATE.md` içine `IN_PROGRESS` olarak yaz, commit atma.
+2. Read `docs/CONVENTIONS.md` in full. It defines the owner's standing writing and commit preferences. This step is never skipped: it must happen before writing any commit message, PR description, code or document. Where this file and the backlog disagree on how something is written, `docs/CONVENTIONS.md` wins.
+3. Read the most recent entry in `STATE.md`. If the `BLOCKER` field is filled in, clearing that blocker is the first and highest-priority task of the day. Do not move on to the day's own scope before the blocker is cleared.
+4. Find today's day number in `docs/BACKLOG.md` (the last completed day in `STATE.md` + 1). Read only that day's block.
+5. Verify the baseline: `pnpm install && pnpm run verify`. If it is red, the first task of the day is turning the baseline green, and that is written into `STATE.md`.
+6. Split the day's scope into 3-6 subtasks, write them into `STATE.md` as `IN_PROGRESS`, do not commit.
 
-### A2. Session bitiş sırası
+### A2. Session close sequence
 
-1. `pnpm run verify` yeşil olmalı (lint + typecheck + unit + integration).
-2. O günün "Bitti kriteri" maddelerinin her biri için bunu kanıtlayan bir test veya çalıştırılabilir komut olmalı. Kanıtsız madde tamamlanmış sayılmaz.
-3. `STATE.md` güncelle: tamamlanan gün, eklenen dosyalar, alınan teknik kararlar, varsa blocker, yarına devredilen not.
-4. Yeni bir mimari karar alındıysa `docs/DECISIONS.md` içine ADR formatında ekle (Bağlam / Karar / Sonuç).
-5. Commit'leri at, `main`'e push et, `day-NN` annotated tag'i oluştur ve push et.
+1. `pnpm run verify` must be green (lint + typecheck + unit + integration).
+2. Each of that day's "Done when" items must have a test or a runnable command that proves it. An item without proof does not count as complete.
+3. Update `STATE.md`: the completed day, the files added, the technical decisions taken, the blocker if there is one, the note handed off to tomorrow.
+4. If a new architectural decision was taken, add it to `docs/DECISIONS.md` in ADR format (Context / Decision / Consequence).
+5. Make the commits, push to `main`, create the `day-NN` annotated tag and push it.
 
-### A3. Commit kuralları
+### A3. Commit rules
 
 - Conventional commits: `feat(core): ...`, `fix(worker): ...`, `test(api): ...`, `chore(ci): ...`, `docs: ...`
-- Commit mesajı, PR metni, kod yorumu ve doküman yazımı `docs/CONVENTIONS.md` kurallarına uyar: lowercase, sadece özel isimler büyük, hiçbir AI attribution satırı yok.
-- Günde 2-6 commit. Tek dev commit yasak, tek satırlık kozmetik commit de yasak.
-- Her commit kendi başına derlenmeli ve testleri geçmeli.
-- Günün son commit'i mutlaka `STATE.md` güncellemesini içerir ve mesajı `chore(state): day NN complete` olur.
-- `git push --force` ve history rewrite kesinlikle yasak.
+- Commit messages, PR text, and documents follow `docs/CONVENTIONS.md` — English, lowercase, no AI attribution line.
+- 2-6 commits per day. A single giant commit is forbidden, and so is a single-line cosmetic commit.
+- Every commit must compile and pass the tests on its own.
+- The last commit of the day always contains the `STATE.md` update and its message is `chore(state): day NN complete`.
+- `git push --force` and history rewrites are strictly forbidden.
 
-### A4. Başarısızlık protokolü
+### A4. Failure protocol
 
-Günün kapsamı bitmiyorsa `main`'e kırık kod push etme. Bunun yerine:
+If the day's scope is not finished, do not push broken code to `main`. Instead:
 
-1. Çalışmayı `wip/day-NN` branch'ine commit et ve o branch'i push et.
-2. `main` üzerinde sadece `STATE.md` güncellemesini commit et: `BLOCKER` alanına ne takıldığını, hangi dosyada, hangi testin kırmızı olduğunu ve denenen iki yaklaşımı yaz.
-3. Gün numarasını ilerletme. Ertesi session aynı gün numarasıyla devam eder ve `wip/day-NN` branch'inden çalışmayı geri alır.
-4. Aynı gün üst üste 2 kez bloke olursa, o günün kapsamını en küçük çalışan dikey dilime indir, gerisini `docs/DEFERRED.md` dosyasına taşı ve öyle kapat.
+1. Commit the work to a `wip/day-NN` branch and push that branch.
+2. On `main`, commit only the `STATE.md` update: write into the `BLOCKER` field what you got stuck on, in which file, which test is red, and the two approaches you tried.
+3. Do not advance the day number. The next session continues with the same day number and picks the work back up from the `wip/day-NN` branch.
+4. If the same day is blocked twice in a row, reduce that day's scope to the smallest working vertical slice, move the rest into `docs/DEFERRED.md`, and close it that way.
 
-### A5. Kapsam disiplini
+### A5. Scope discipline
 
-- Ertesi günün işini bugün yapma. Gün erken biterse Bölüm C'deki yedek görev havuzundan seç.
-- Önceki günlerin "Bitti kriteri" maddelerini gevşetme veya silme. Bir kriter yanlışsa `docs/DECISIONS.md` içine gerekçeyle ADR yaz, sonra değiştir.
-- `docs/OUT_OF_SCOPE.md` içindekiler v0.1'de yapılmaz: dağıtık consensus, kendi depolama motoru, gRPC, Kubernetes operatörü, multi-region.
-- Sır ve kimlik bilgisi commit etme. Sadece `.env.example` güncellenir.
-- Yeni üçüncü parti bağımlılık eklemeden önce gerekçesini `STATE.md` içine yaz. Kriptografi, tarih/saat ve kuyruk için hazır paket tercih et, çekirdek runtime mantığını kendin yaz.
+- Do not do tomorrow's work today. If the day finishes early, pick from the spare task pool in section C.
+- Do not loosen or delete the "Done when" items of previous days. If a criterion is wrong, write an ADR with the rationale into `docs/DECISIONS.md`, then change it.
+- What is in `docs/OUT_OF_SCOPE.md` is not done in v0.1: distributed consensus, a custom storage engine, gRPC, a Kubernetes operator, multi-region.
+- Do not commit secrets or credentials. Only `.env.example` is updated.
+- Before adding a new third-party dependency, write the rationale into `STATE.md`. Prefer an existing package for cryptography, date/time and the queue; write the core runtime logic yourself.
 
-### A6. Kalite bariyeri
+### A6. Quality bar
 
-- Test yoksa özellik yok. Her gün en az 5 anlamlı yeni test eklenir.
-- Zamanla ilgili her test sahte saat (fake clock) kullanır, `sleep` ile bekleyen test yazılmaz.
-- Integration testleri gerçek Postgres'e karşı koşar (Testcontainers veya compose üzerinde ephemeral schema).
-- `any` kullanımı yasak, `unknown` + daraltma kullan. `@ts-expect-error` sadece açıklamalı satırla.
-- Public API'ye eklenen her fonksiyonun TSDoc yorumu olur.
+- No feature without a test. At least 5 meaningful new tests are added every day.
+- Every time-related test uses a fake clock, no test waits with `sleep`.
+- Integration tests run against a real Postgres (Testcontainers or an ephemeral schema on compose).
+- Using `any` is forbidden, use `unknown` + narrowing. `@ts-expect-error` only on a line that carries its reason.
+- Every function added to the public API has a TSDoc comment.
+- No comments inside function bodies. TSDoc on exported symbols is required and does not count as one. See section 3 of `docs/CONVENTIONS.md`.
 
 ---
 
-## BÖLÜM B: 30 GÜNLÜK BACKLOG
+## SECTION B: THE 30-DAY BACKLOG
 
-### FAZ 1: TEMEL (Gün 1-3)
+### PHASE 1: FOUNDATION (Days 1-3)
 
-#### Gün 1: Monorepo iskeleti ve CI
+#### Day 1: Monorepo skeleton and CI
 
-**Hedef:** Boş ama tam kurulu bir geliştirme ortamı.
-**Kapsam:** pnpm workspaces, TypeScript strict config, ESLint + Prettier, Vitest kurulumu, `docker-compose.yml` (Postgres 16), `pnpm run verify` script'i (lint + typecheck + test), GitHub Actions CI, `.env.example`, `README.md` iskeleti, `STATE.md` ve `docs/DECISIONS.md` başlangıç dosyaları.
-**Bitti kriteri:** Temiz bir checkout'ta `pnpm install && docker compose up -d && pnpm run verify` tek seferde yeşil dönüyor. CI push'ta çalışıyor ve yeşil.
+**Goal:** An empty but fully set up development environment.
+**Scope:** pnpm workspaces, TypeScript strict config, ESLint + Prettier, Vitest setup, `docker-compose.yml` (Postgres 16), the `pnpm run verify` script (lint + typecheck + test), GitHub Actions CI, `.env.example`, a `README.md` skeleton, the initial `STATE.md` and `docs/DECISIONS.md` files.
+**Done when:** On a clean checkout, `pnpm install && docker compose up -d && pnpm run verify` comes back green in one go. CI runs on push and is green.
 **Commit:** `chore(repo): bootstrap monorepo`, `chore(ci): add verify pipeline`
 
-#### Gün 2: Veritabanı şeması ve migration altyapısı
+#### Day 2: Database schema and migration infrastructure
 
-**Hedef:** Kalıcılık katmanının şekli.
-**Kapsam:** Kendi yazdığın basit migration runner'ı veya `node-pg-migrate`. Tablolar: `namespaces`, `workflow_runs`, `run_events`, `tasks`, `timers`, `step_results`. İndeksler ve kısıtlar: `run_events(run_id, sequence_number)` üzerinde unique, `tasks` üzerinde `(state, visible_at)` partial index. Test harness: her test dosyasına izole schema açan helper.
-**Bitti kriteri:** `pnpm migrate:up` ve `pnpm migrate:down` idempotent çalışıyor. İki test dosyası aynı anda koştuğunda birbirinin verisini görmüyor (izolasyon testi).
+**Goal:** The shape of the persistence layer.
+**Scope:** Your own simple migration runner or `node-pg-migrate`. Tables: `namespaces`, `workflow_runs`, `run_events`, `tasks`, `timers`, `step_results`. Indexes and constraints: unique on `run_events(run_id, sequence_number)`, a partial index on `(state, visible_at)` on `tasks`. Test harness: a helper that opens an isolated schema for every test file.
+**Done when:** `pnpm migrate:up` and `pnpm migrate:down` run idempotently. When two test files run at the same time they do not see each other's data (isolation test).
 **Commit:** `feat(core): database schema and migrations`
 
-#### Gün 3: Event store ve optimistic concurrency
+#### Day 3: Event store and optimistic concurrency
 
-**Hedef:** Append-only olay günlüğü, tek doğruluk kaynağı.
-**Kapsam:** `EventStore` arayüzü: `append(runId, expectedSeq, events[])`, `read(runId, fromSeq)`. Event tipleri için discriminated union ve şema doğrulama (zod). Çakışmada `ConcurrencyError`. Payload serialization için `Codec` arayüzü (v0: JSON).
-**Bitti kriteri:** Aynı `expectedSeq` ile eşzamanlı iki append'ten tam olarak biri başarılı oluyor, diğeri `ConcurrencyError` alıyor (50 paralel denemeli stres testi). Olay günlüğü hiçbir kod yolunda güncellenmiyor veya silinmiyor.
+**Goal:** An append-only event log, the single source of truth.
+**Scope:** The `EventStore` interface: `append(runId, expectedSeq, events[])`, `read(runId, fromSeq)`. A discriminated union for event types and schema validation (zod). `ConcurrencyError` on a conflict. A `Codec` interface for payload serialization (v0: JSON).
+**Done when:** Of two concurrent appends with the same `expectedSeq`, exactly one succeeds and the other gets a `ConcurrencyError` (stress test with 50 parallel attempts). The event log is never updated or deleted on any code path.
 **Commit:** `feat(core): append-only event store with optimistic concurrency`
 
 ---
 
-### FAZ 2: RUNTIME ÇEKİRDEĞİ (Gün 4-8)
+### PHASE 2: RUNTIME CORE (Days 4-8)
 
-#### Gün 4: Workflow DSL ve komut modeli
+#### Day 4: Workflow DSL and command model
 
-**Hedef:** Kullanıcının yazacağı API yüzeyi.
-**Kapsam:** `defineWorkflow`, `ctx.step()`, `ctx.sleep()`, `ctx.now()`, `ctx.random()`, `ctx.uuid()`. Komut tipleri: `ScheduleStep`, `StartTimer`, `CompleteRun`, `FailRun`. Workflow ve step kaydı için registry. Henüz kalıcılık yok, hepsi bellekte.
-**Bitti kriteri:** Üç adımlı örnek workflow bellekte koşup doğru komut dizisini üretiyor. `ctx.now()` ve `ctx.random()` doğrudan `Date.now()` ve `Math.random()` çağırmıyor, enjekte edilen kaynaktan besleniyor (testle kanıtlı).
+**Goal:** The API surface the user will write against.
+**Scope:** `defineWorkflow`, `ctx.step()`, `ctx.sleep()`, `ctx.now()`, `ctx.random()`, `ctx.uuid()`. Command types: `ScheduleStep`, `StartTimer`, `CompleteRun`, `FailRun`. A registry for workflow and step registration. No persistence yet, everything in memory.
+**Done when:** A three-step example workflow runs in memory and produces the correct command sequence. `ctx.now()` and `ctx.random()` do not call `Date.now()` and `Math.random()` directly, they are fed from an injected source (proven by a test).
 **Commit:** `feat(core): workflow dsl and command model`
 
-#### Gün 5: Karar döngüsü ve replay motoru
+#### Day 5: Decision loop and replay engine
 
-**Hedef:** Olay günlüğünden durumu yeniden inşa etme.
-**Kapsam:** Decision loop: history'yi besle, workflow fonksiyonunu baştan çalıştır, tamamlanmış step'lerin sonucunu history'den ver, ilk tamamlanmamış noktada durdur ve yeni komutları topla. Promise scheduler'ı deterministik sıraya sok (mikro-task sızıntısı olmamalı).
-**Bitti kriteri:** Aynı history üzerinde 3 ardışık replay birebir aynı komut dizisini üretiyor. Kısmi history (3 adımın 2'si tamam) verildiğinde sadece 3. adımın komutu üretiliyor.
+**Goal:** Rebuilding state from the event log.
+**Scope:** Decision loop: feed in the history, run the workflow function from the start, serve the results of completed steps from the history, stop at the first incomplete point and collect the new commands. Put the promise scheduler into a deterministic order (there must be no micro-task leak).
+**Done when:** Three consecutive replays over the same history produce an identical command sequence. Given a partial history (2 of 3 steps complete), only the third step's command is produced.
 **Commit:** `feat(core): deterministic replay decision loop`
-**Yasak:** Bugün kalıcılığa dokunma, girdi hâlâ bellekteki history dizisi.
+**Forbidden:** Do not touch persistence today, the input is still the in-memory history array.
 
-#### Gün 6: Non-determinizm tespiti ve replay test harness'ı
+#### Day 6: Non-determinism detection and the replay test harness
 
-**Hedef:** Sessiz bozulmayı imkânsız kılmak.
-**Kapsam:** Replay sırasında üretilen komut ile history'deki kayıt karşılaştırması, uyumsuzlukta `NonDeterminismError` (hangi sequence'ta, ne beklenip ne bulundu). Kayıtlı history fixture'ları için `test/fixtures/histories/*.json` ve bunları toplu koşturan harness. Yasak API kullanımını yakalayan sandbox kontrolü (workflow içinde doğrudan `Date`, `Math.random`, `setTimeout` çağrısı hata versin).
-**Bitti kriteri:** Kasten değiştirilmiş workflow kodu eski history ile replay edildiğinde açıklayıcı `NonDeterminismError` fırlatıyor. Workflow gövdesinde `Date.now()` çağıran örnek test edilip reddediliyor.
+**Goal:** Making silent corruption impossible.
+**Scope:** Comparison of the command produced during replay against the record in the history, `NonDeterminismError` on a mismatch (at which sequence, what was expected and what was found). `test/fixtures/histories/*.json` for recorded history fixtures and a harness that runs them as a batch. A sandbox check that catches forbidden API usage (a direct `Date`, `Math.random` or `setTimeout` call inside a workflow must raise an error).
+**Done when:** When deliberately modified workflow code is replayed against an old history, it throws an explanatory `NonDeterminismError`. An example that calls `Date.now()` in a workflow body is tested and rejected.
 **Commit:** `feat(core): non-determinism detection`, `test(core): recorded history harness`
 
-#### Gün 7: Step çalıştırma sözleşmesi ve payload codec
+#### Day 7: Step execution contract and payload codec
 
-**Hedef:** Yan etkilerin (activity) tanımlı ve taşınabilir hâli.
-**Kapsam:** `defineStep` ile girdi/çıktı şeması, step timeout alanı, hata serileştirme (stack dahil, tipini koruyarak), `Codec` üzerinde büyük payload limiti ve sıkıştırma kancası, hassas alan maskeleme kancası.
-**Bitti kriteri:** Step'in fırlattığı özel hata sınıfı serileştirilip geri okunduğunda tipi ve mesajı korunuyor. 1 MB üstü payload açık bir `PayloadTooLargeError` veriyor.
+**Goal:** Side effects (activities) in a defined and portable form.
+**Scope:** Input/output schema via `defineStep`, a step timeout field, error serialization (including the stack, preserving its type), a large payload limit and a compression hook on `Codec`, a sensitive field masking hook.
+**Done when:** When the custom error class thrown by a step is serialized and read back, its type and message are preserved. A payload over 1 MB gives an explicit `PayloadTooLargeError`.
 **Commit:** `feat(core): step contract and payload codec`
 
-#### Gün 8: Run projeksiyonu ve durum makinesi
+#### Day 8: Run projection and state machine
 
-**Hedef:** Olay günlüğünden okunabilir run durumu.
-**Kapsam:** `workflow_runs` projeksiyonu, durumlar: `RUNNING`, `COMPLETED`, `FAILED`, `TIMED_OUT`, `CANCELLED`, `TERMINATED`. İzinli geçişler tablosu, geçersiz geçişte hata. Projeksiyonun olay günlüğünden sıfırdan yeniden inşa edilebilmesi (`rebuildProjection`).
-**Bitti kriteri:** Projeksiyon tablosu tamamen silinip olay günlüğünden yeniden kurulduğunda önceki hâliyle birebir aynı (property-based test, 200 rastgele olay dizisi). Terminal durumdaki bir run'a yeni komut uygulanamıyor.
+**Goal:** Readable run state from the event log.
+**Scope:** The `workflow_runs` projection, states: `RUNNING`, `COMPLETED`, `FAILED`, `TIMED_OUT`, `CANCELLED`, `TERMINATED`. A table of permitted transitions, an error on an invalid transition. The projection being rebuildable from the event log from scratch (`rebuildProjection`).
+**Done when:** When the projection table is deleted entirely and rebuilt from the event log, it is identical to its previous state (property-based test, 200 random event sequences). A new command cannot be applied to a run in a terminal state.
 **Commit:** `feat(core): run projection and state machine`
 
 ---
 
-### FAZ 3: DAĞITIM VE DAYANIKLILIK (Gün 9-13)
+### PHASE 3: DISTRIBUTION AND DURABILITY (Days 9-13)
 
-#### Gün 9: Task kuyruğu
+#### Day 9: Task queue
 
-**Hedef:** İşin worker'lara dağıtılması.
-**Kapsam:** `SELECT ... FOR UPDATE SKIP LOCKED` ile dequeue, visibility timeout, `enqueue` / `ack` / `nack` / `extend`, task tipleri (`WORKFLOW_TASK`, `STEP_TASK`), namespace bazlı task queue adı.
-**Bitti kriteri:** 8 paralel tüketici 1000 task'ı işlediğinde hiçbir task iki tüketiciye aynı anda verilmiyor ve hiçbiri kaybolmuyor. Ack'lenmeyen task visibility timeout sonrası yeniden görünür oluyor.
+**Goal:** Distributing the work to the workers.
+**Scope:** Dequeue with `SELECT ... FOR UPDATE SKIP LOCKED`, visibility timeout, `enqueue` / `ack` / `nack` / `extend`, task types (`WORKFLOW_TASK`, `STEP_TASK`), a namespace-based task queue name.
+**Done when:** When 8 parallel consumers process 1000 tasks, no task is handed to two consumers at the same time and none is lost. A task that is not acked becomes visible again after the visibility timeout.
 **Commit:** `feat(core): task queue with skip-locked dequeue`
 
-#### Gün 10: Idempotency ve tek yazım garantisi
+#### Day 10: Idempotency and the single-write guarantee
 
-**Hedef:** At-least-once teslimat altında doğruluk.
-**Kapsam:** `step_results` üzerinde `(run_id, step_id, attempt_key)` unique kısıtı, step sonucunun ve olay yazımının tek transaction'da atomik olması, tekrar teslimde var olan sonucun döndürülmesi, workflow task'larında da aynı koruma.
-**Bitti kriteri:** Aynı step task'ı kasten 5 kez teslim edildiğinde step gövdesi kaç kez çalışırsa çalışsın olay günlüğüne tam olarak bir sonuç yazılıyor. Transaction ortasında kesilen yazım kısmi kayıt bırakmıyor.
+**Goal:** Correctness under at-least-once delivery.
+**Scope:** A `(run_id, step_id, attempt_key)` unique constraint on `step_results`, the step result and the event write being atomic in a single transaction, returning the existing result on redelivery, the same protection on workflow tasks as well.
+**Done when:** When the same step task is deliberately delivered 5 times, exactly one result is written to the event log no matter how many times the step body runs. A write cut off in the middle of a transaction leaves no partial record.
 **Commit:** `feat(core): idempotent step result recording`
 
-#### Gün 11: Worker süreci, lease ve heartbeat
+#### Day 11: Worker process, lease and heartbeat
 
-**Hedef:** Uzun süren işi güvenle tutma.
-**Kapsam:** Worker poll döngüsü, eşzamanlılık limiti, heartbeat ile lease uzatma, `WorkerOptions` (queue, concurrency, poll interval), backoff'lu boş kuyruk beklemesi, graceful shutdown (SIGTERM'de yeni task alma, mevcutları bitir, timeout'ta bırak).
-**Bitti kriteri:** Heartbeat atan 60 saniyelik bir step, 10 saniyelik visibility timeout'a rağmen başka worker'a devredilmiyor. SIGTERM sonrası çalışan task'lar tamamlanıp süreç temiz çıkıyor (exit code 0).
+**Goal:** Holding long-running work safely.
+**Scope:** The worker poll loop, a concurrency limit, lease renewal via heartbeat, `WorkerOptions` (queue, concurrency, poll interval), backoff while waiting on an empty queue, graceful shutdown (on SIGTERM take no new tasks, finish the current ones, drop them on timeout).
+**Done when:** A 60-second step that heartbeats is not handed over to another worker despite a 10-second visibility timeout. After SIGTERM the running tasks complete and the process exits cleanly (exit code 0).
 **Commit:** `feat(worker): poll loop, lease renewal and graceful shutdown`
 
-#### Gün 12: Crash recovery
+#### Day 12: Crash recovery
 
-**Hedef:** Motorun asıl vaadi.
-**Kapsam:** Sahipsiz lease reclaim eden janitor görevi, worker kimliği ve sürüm damgası, yarıda kalan run'ların tespiti, recovery metrikleri, `SIGKILL` senaryolarını kuran test altyapısı (worker'ı ayrı süreç olarak başlatıp öldürme).
-**Bitti kriteri:** Step'in tam ortasında `SIGKILL` ile öldürülen worker'ın işini ikinci worker devralıp akışı doğru sonuçla bitiriyor. 20 tekrarlı kaos testinde run'ların tamamı terminal duruma ulaşıyor, hiçbiri kayıp kalmıyor.
+**Goal:** The engine's real promise.
+**Scope:** A janitor task that reclaims orphaned leases, worker identity and version stamp, detection of runs left half-finished, recovery metrics, a test infrastructure that sets up `SIGKILL` scenarios (starting the worker as a separate process and killing it).
+**Done when:** A second worker takes over the work of a worker killed with `SIGKILL` right in the middle of a step and finishes the flow with the correct result. In a 20-repetition chaos test all runs reach a terminal state, none is left lost.
 **Commit:** `feat(worker): crash recovery and lease reclaim`
 
-#### Gün 13: Retry politikaları ve dead letter
+#### Day 13: Retry policies and dead letter
 
-**Hedef:** Hata karşısında öngörülebilir davranış.
-**Kapsam:** `RetryPolicy` (initialInterval, backoffCoefficient, maxInterval, maxAttempts, jitter), `NonRetryableError`, step-level ve workflow-level timeout, denemelerin olay günlüğüne yazılması, `dead_letters` tablosu ve yeniden kuyruğa alma fonksiyonu.
-**Bitti kriteri:** Sahte saatle backoff aralıkları beklenen değerlerle assert ediliyor. `NonRetryableError` hiç tekrar denenmiyor. Maksimum denemesi tükenen step DLQ'ya düşüyor ve manuel olarak yeniden kuyruğa alınabiliyor.
+**Goal:** Predictable behavior in the face of errors.
+**Scope:** `RetryPolicy` (initialInterval, backoffCoefficient, maxInterval, maxAttempts, jitter), `NonRetryableError`, step-level and workflow-level timeout, attempts being written to the event log, the `dead_letters` table and a requeue function.
+**Done when:** Backoff intervals are asserted against the expected values with a fake clock. `NonRetryableError` is never retried. A step that exhausts its maximum attempts lands in the DLQ and can be requeued manually.
 **Commit:** `feat(core): retry policies and dead letter queue`
 
 ---
 
-### FAZ 4: ZAMAN VE AKIŞ KONTROLÜ (Gün 14-18)
+### PHASE 4: TIME AND CONTROL FLOW (Days 14-18)
 
-#### Gün 14: Kalıcı timer'lar
+#### Day 14: Durable timers
 
-**Hedef:** `ctx.sleep()` in gerçekten dayanıklı hâli.
-**Kapsam:** `timers` tablosu, scheduler tick döngüsü, vadesi gelen timer'ın workflow task'ına dönüşmesi, sistem kapalıyken geçen süre için catch-up, saat kayması ve geri gitmeye karşı monotonik koruma.
-**Bitti kriteri:** 10 dakikalık `sleep` içeren run'da motor tamamen kapatılıp 10 dakika sonra açıldığında run hemen ilerliyor (sahte saatle). Vadesi geçmiş 500 timer açılışta doğru sırayla işleniyor.
+**Goal:** `ctx.sleep()` in its genuinely durable form.
+**Scope:** The `timers` table, the scheduler tick loop, a due timer turning into a workflow task, catch-up for the time that passed while the system was down, monotonic protection against clock drift and time going backwards.
+**Done when:** In a run containing a 10-minute `sleep`, when the engine is shut down completely and brought back up 10 minutes later, the run advances immediately (with a fake clock). 500 overdue timers are processed in the correct order at startup.
 **Commit:** `feat(core): durable timers and scheduler`
 
-#### Gün 15: Zamanlanmış ve tekrarlayan workflow'lar
+#### Day 15: Scheduled and recurring workflows
 
-**Hedef:** Cron yeteneği.
-**Kapsam:** `schedules` tablosu, cron ifade parse'ı, zaman dilimi desteği, overlap politikası (`skip`, `buffer_one`, `allow_all`), duraklat/devam et, geçmiş tetiklemeleri backfill.
-**Bitti kriteri:** `*/5 * * * *` tanımı sahte saatle 1 saat ilerletildiğinde tam 12 run başlatıyor. `skip` politikasıyla önceki run bitmeden yenisi başlamıyor. Duraklatılan schedule hiç tetiklenmiyor.
+**Goal:** Cron capability.
+**Scope:** The `schedules` table, cron expression parsing, time zone support, overlap policy (`skip`, `buffer_one`, `allow_all`), pause/resume, backfill of past triggers.
+**Done when:** A `*/5 * * * *` definition starts exactly 12 runs when the fake clock is advanced by 1 hour. With the `skip` policy a new run does not start before the previous one finishes. A paused schedule never triggers.
 **Commit:** `feat(core): cron schedules`
 
-#### Gün 16: Signal ve query
+#### Day 16: Signals and queries
 
-**Hedef:** Çalışan run ile dışarıdan etkileşim.
-**Kapsam:** `signalRun` API'si ve olay olarak kaydı, `ctx.waitForSignal(name)`, sinyal tamponlama (run henüz beklemiyorken gelen sinyal kaybolmaz), `ctx.select()` ile ilk tamamlanan bekleme, `queryRun` ile yan etkisiz anlık durum okuma.
-**Bitti kriteri:** Beklemeye girmeden önce gönderilen sinyal, run beklemeye geçtiğinde teslim ediliyor. `select` iki bekleme arasından ilk tamamlanana dallanıyor ve replay'de aynı dalı seçiyor. Query çağrısı olay günlüğüne hiçbir şey yazmıyor.
+**Goal:** Interacting with a running run from the outside.
+**Scope:** The `signalRun` API and its recording as an event, `ctx.waitForSignal(name)`, signal buffering (a signal that arrives while the run is not yet waiting is not lost), the first-completed wait via `ctx.select()`, side-effect-free point-in-time state reads via `queryRun`.
+**Done when:** A signal sent before the run enters the wait is delivered when the run starts waiting. `select` branches to whichever of the two waits completes first and picks the same branch on replay. A query call writes nothing to the event log.
 **Commit:** `feat(core): signals, buffering and queries`
 
-#### Gün 17: İptal ve compensation (saga)
+#### Day 17: Cancellation and compensation (saga)
 
-**Hedef:** Geri alınabilir iş akışları.
-**Kapsam:** `cancelRun` ve `terminateRun` ayrımı (graceful vs sert), cancellation scope'u ve alt adımlara yayılması, `ctx.onCancel()` ve compensation kaydı, iptal sırasında çalışan step'in beklenmesi, `CancelledError` semantiği.
-**Bitti kriteri:** İptal edilen saga, kaydedilen compensation adımlarını ters sırayla çalıştırıp `CANCELLED` durumunda kapanıyor. `terminate` compensation çalıştırmadan anında `TERMINATED` yapıyor. İptal sonrası yeni step kuyruğa alınmıyor.
+**Goal:** Reversible workflows.
+**Scope:** The distinction between `cancelRun` and `terminateRun` (graceful vs hard), the cancellation scope and its propagation to substeps, `ctx.onCancel()` and compensation registration, waiting for the running step during cancellation, `CancelledError` semantics.
+**Done when:** A cancelled saga runs the registered compensation steps in reverse order and closes in the `CANCELLED` state. `terminate` moves to `TERMINATED` immediately without running compensation. No new step is enqueued after cancellation.
 **Commit:** `feat(core): cancellation scopes and compensation`
 
-#### Gün 18: Child workflow ve fan-out/fan-in
+#### Day 18: Child workflows and fan-out/fan-in
 
-**Hedef:** Kompozisyon.
-**Kapsam:** `ctx.startChild()` ve `ctx.executeChild()`, parent-child ilişkisi ve `parentClosePolicy`, paralel step'lerin deterministik `all` / `allSettled` karşılığı, çocuk sayısına üst sınır ve backpressure.
-**Bitti kriteri:** 100 child içeren fan-out/fan-in run'ı doğru toplam sonuçla tamamlanıyor. Parent iptal edildiğinde `parentClosePolicy: cancel` olan çocuklar da iptal oluyor, `abandon` olanlar çalışmaya devam ediyor.
+**Goal:** Composition.
+**Scope:** `ctx.startChild()` and `ctx.executeChild()`, the parent-child relationship and `parentClosePolicy`, a deterministic equivalent of `all` / `allSettled` for parallel steps, an upper bound on the number of children and backpressure.
+**Done when:** A fan-out/fan-in run with 100 children completes with the correct aggregate result. When the parent is cancelled, the children with `parentClosePolicy: cancel` are cancelled too, while those with `abandon` keep running.
 **Commit:** `feat(core): child workflows and parallel execution`
 
 ---
 
-### FAZ 5: ÖLÇEK VE EVRİM (Gün 19-21)
+### PHASE 5: SCALE AND EVOLUTION (Days 19-21)
 
-#### Gün 19: continue-as-new ve history sıkıştırma
+#### Day 19: continue-as-new and history compaction
 
-**Hedef:** Sonsuz çalışan workflow'ların history'sinin şişmemesi.
-**Kapsam:** `ctx.continueAsNew(input)`, run zinciri ve `first_run_id` takibi, history boyut/olay sayısı eşiği ve uyarı, eski run'lar için snapshot yazımı ve olay budama (retention politikası ile).
-**Bitti kriteri:** 10.000 iterasyonluk döngü workflow'u sabit bellek ve sabit history boyutuyla koşuyor. Zincirin tamamı tek `first_run_id` ile sorgulanabiliyor. Budama sonrası snapshot'tan replay doğru sonuç veriyor.
+**Goal:** Keeping the history of endlessly running workflows from bloating.
+**Scope:** `ctx.continueAsNew(input)`, run chain and `first_run_id` tracking, a history size/event count threshold and warning, snapshot writing for old runs and event pruning (with a retention policy).
+**Done when:** A 10,000-iteration loop workflow runs with constant memory and constant history size. The whole chain can be queried by a single `first_run_id`. After pruning, replay from the snapshot gives the correct result.
 **Commit:** `feat(core): continue-as-new and history compaction`
 
-#### Gün 20: Sticky execution ve replay cache
+#### Day 20: Sticky execution and replay cache
 
-**Hedef:** Performans: her task'ta sıfırdan replay etmemek.
-**Kapsam:** Worker başına run cache'i (LRU), sticky queue ile aynı run'ı aynı worker'a yönlendirme, cache miss'te tam replay'e düşme, sticky timeout ve cache invalidation.
-**Bitti kriteri:** 500 adımlı bir workflow'da sticky cache açıkken toplam replay sayısı, kapalı durumun en az %80 altında (benchmark testi ile ölçülü). Cache kasten boşaltıldığında sonuç değişmiyor.
+**Goal:** Performance: not replaying from scratch on every task.
+**Scope:** A per-worker run cache (LRU), routing the same run to the same worker via a sticky queue, falling back to a full replay on a cache miss, sticky timeout and cache invalidation.
+**Done when:** For a 500-step workflow, the total number of replays with the sticky cache on is at least 80% below the off state (measured with a benchmark test). When the cache is deliberately flushed, the result does not change.
 **Commit:** `feat(worker): sticky execution cache`
 
-#### Gün 21: Workflow versiyonlama
+#### Day 21: Workflow versioning
 
-**Hedef:** Çalışan run'lar bozulmadan kod değiştirebilmek.
-**Kapsam:** `ctx.patched(patchId)` ve `ctx.deprecatePatch(patchId)`, patch kararlarının olay günlüğüne yazılması, worker build id damgası, versiyon uyumsuzluğunda güvenli reddetme, versiyon rehberi dokümanı.
-**Bitti kriteri:** v1 kodu ile başlamış ve yarıda kalmış run'lar, v2 kodu devreye alındıktan sonra `NonDeterminismError` almadan tamamlanıyor (kayıtlı history fixture'ları ile kanıtlı). Yeni run'lar v2 dalını kullanıyor.
+**Goal:** Being able to change the code without breaking running runs.
+**Scope:** `ctx.patched(patchId)` and `ctx.deprecatePatch(patchId)`, writing patch decisions to the event log, the worker build id stamp, safe rejection on a version mismatch, a versioning guide document.
+**Done when:** Runs that started on v1 code and were left half-finished complete without a `NonDeterminismError` once v2 code is deployed (proven with recorded history fixtures). New runs use the v2 branch.
 **Commit:** `feat(core): workflow versioning with patch gates`
 
 ---
 
-### FAZ 6: ÜRÜN YÜZEYİ (Gün 22-26)
+### PHASE 6: PRODUCT SURFACE (Days 22-26)
 
-#### Gün 22: HTTP API ve kimlik doğrulama
+#### Day 22: HTTP API and authentication
 
-**Hedef:** Motorun dışarıya açılması.
-**Kapsam:** `startRun`, `signalRun`, `cancelRun`, `terminateRun`, `describeRun`, `listRuns`, `getHistory` uçları. API key auth, namespace izolasyonu (her sorguda zorunlu tenant filtresi), start için idempotency key, OpenAPI şeması üretimi.
-**Bitti kriteri:** Namespace A'nın anahtarıyla namespace B'nin run'ına erişim 404 dönüyor (her uç için test). Aynı idempotency key ile iki `startRun` tek run yaratıyor. OpenAPI çıktısı şema doğrulamasından geçiyor.
+**Goal:** Opening the engine to the outside.
+**Scope:** The `startRun`, `signalRun`, `cancelRun`, `terminateRun`, `describeRun`, `listRuns`, `getHistory` endpoints. API key auth, namespace isolation (a mandatory tenant filter on every query), an idempotency key for start, OpenAPI schema generation.
+**Done when:** Accessing namespace B's run with namespace A's key returns 404 (a test for every endpoint). Two `startRun` calls with the same idempotency key create a single run. The OpenAPI output passes schema validation.
 **Commit:** `feat(api): rest endpoints with namespace isolation`
 
-#### Gün 23: Kotalar, rate limit ve backpressure
+#### Day 23: Quotas, rate limiting and backpressure
 
-**Hedef:** Kötü komşu problemini engellemek.
-**Kapsam:** Namespace başına rate limit (token bucket), eşzamanlı run ve pending task kotaları, kota aşımında `429` ve `Retry-After`, kuyruk derinliğine göre worker poll backpressure'ı, poison pill koruması (aynı task N kez worker öldürürse karantina).
-**Bitti kriteri:** Kotasını aşan namespace `429` alırken diğer namespace etkilenmeden çalışmaya devam ediyor. Worker'ı sürekli çökerten task 3 denemeden sonra karantinaya alınıyor ve kuyruğu bloke etmiyor.
+**Goal:** Preventing the noisy neighbor problem.
+**Scope:** A per-namespace rate limit (token bucket), concurrent run and pending task quotas, `429` and `Retry-After` on quota overrun, worker poll backpressure based on queue depth, poison pill protection (if the same task kills a worker N times, quarantine it).
+**Done when:** A namespace that exceeds its quota gets `429` while another namespace keeps running unaffected. A task that keeps crashing the worker is quarantined after 3 attempts and does not block the queue.
 **Commit:** `feat(api): quotas, rate limiting and poison pill protection`
 
-#### Gün 24: Dağıtık izleme (tracing)
+#### Day 24: Distributed tracing
 
-**Hedef:** Bir run'ın uçtan uca görünürlüğü.
-**Kapsam:** OpenTelemetry entegrasyonu, workflow span'i altında step ve timer span'leri, trace context'in start çağrısından worker'a ve child workflow'lara taşınması, replay sırasında sahte span üretmeme, örnekleme (sampling) ayarı.
-**Bitti kriteri:** Child workflow içeren bir run, Jaeger'da tek ve kopuksuz bir span ağacı olarak görünüyor (compose ile kurulu Jaeger üzerinde doğrulanmış). Replay edilen adımlar duplicate span üretmiyor.
+**Goal:** End-to-end visibility of a run.
+**Scope:** OpenTelemetry integration, step and timer spans under the workflow span, carrying the trace context from the start call to the worker and to child workflows, not producing fake spans during replay, the sampling setting.
+**Done when:** A run containing a child workflow appears in Jaeger as a single unbroken span tree (verified against the Jaeger set up with compose). Replayed steps do not produce duplicate spans.
 **Commit:** `feat(observability): opentelemetry tracing`
 
-#### Gün 25: Metrikler, loglar ve sağlık uçları
+#### Day 25: Metrics, logs and health endpoints
 
-**Hedef:** Operasyona hazırlık.
-**Kapsam:** Prometheus metrikleri (kuyruk derinliği, task latency histogramı, retry oranı, timer gecikmesi, aktif worker sayısı, run durum sayaçları), yapısal JSON loglar ve korelasyon id'leri, `/health` ve `/ready` uçları, örnek Grafana dashboard JSON'u.
-**Bitti kriteri:** `/metrics` çıktısı Prometheus formatında parse ediliyor ve beklenen 8 metriği içeriyor (test ile). Postgres kapalıyken `/ready` 503, `/health` 200 dönüyor. Dashboard JSON'u repoda.
+**Goal:** Operational readiness.
+**Scope:** Prometheus metrics (queue depth, task latency histogram, retry rate, timer lag, active worker count, run state counters), structured JSON logs and correlation ids, the `/health` and `/ready` endpoints, an example Grafana dashboard JSON.
+**Done when:** The `/metrics` output parses in Prometheus format and contains the expected 8 metrics (by test). With Postgres down, `/ready` returns 503 and `/health` returns 200. The dashboard JSON is in the repo.
 **Commit:** `feat(observability): metrics, structured logs and health probes`
 
-#### Gün 26: Web UI
+#### Day 26: Web UI
 
-**Hedef:** İnsan gözüyle izlenebilirlik.
-**Kapsam:** Run listesi (durum, namespace, tarih, workflow tipi filtreleri, sayfalama), run detayında zaman çizelgeli olay geçmişi, girdi/çıktı/hata görüntüleyici, SSE ile canlı güncelleme, UI üzerinden signal gönderme, iptal ve DLQ'dan yeniden kuyruğa alma.
-**Bitti kriteri:** Çalışan bir workflow UI'da sayfa yenilemeden ilerlerken görülüyor, UI'dan gönderilen sinyalle dallanıyor ve UI'dan iptal edilebiliyor (Playwright ile uçtan uca test).
+**Goal:** Observability through human eyes.
+**Scope:** A run list (status, namespace, date, workflow type filters, pagination), a timelined event history on the run detail, an input/output/error viewer, live updates via SSE, sending a signal from the UI, cancellation and requeue from the DLQ.
+**Done when:** A running workflow is seen advancing in the UI without a page refresh, branches on a signal sent from the UI, and can be cancelled from the UI (end-to-end test with Playwright).
 **Commit:** `feat(ui): run explorer with live updates`
 
 ---
 
-### FAZ 7: SERTLEŞTİRME VE YAYIN (Gün 27-30)
+### PHASE 7: HARDENING AND RELEASE (Days 27-30)
 
-#### Gün 27: Kaos testleri ve invariant denetleyici
+#### Day 27: Chaos tests and the invariant checker
 
-**Hedef:** Doğruluğu kanıtlamak.
-**Kapsam:** Fault injection suite: worker kill, DB bağlantı kopması ve geri gelmesi, çift teslimat, saat ileri/geri kaydırma, yavaş disk simülasyonu, ağ gecikmesi. Invariant checker: her run ya terminal ya ilerliyor, ack'lenmemiş task kaybolmuyor, step sonucu asla iki kez yazılmıyor, projeksiyon olay günlüğüyle tutarlı.
-**Bitti kriteri:** 6 arıza senaryosunun her biri 10 tekrar koşuyor ve invariant ihlali sıfır. Rapor `docs/CHAOS_REPORT.md` dosyasına yazılıyor.
+**Goal:** Proving correctness.
+**Scope:** Fault injection suite: worker kill, DB connection loss and recovery, double delivery, shifting the clock forward and backward, slow disk simulation, network latency. Invariant checker: every run is either terminal or advancing, an unacked task is not lost, a step result is never written twice, the projection is consistent with the event log.
+**Done when:** Each of the 6 failure scenarios runs 10 repetitions and there are zero invariant violations. The report is written into `docs/CHAOS_REPORT.md`.
 **Commit:** `test(chaos): fault injection suite and invariant checker`
 
-#### Gün 28: Performans ölçümü ve ayar
+#### Day 28: Performance measurement and tuning
 
-**Hedef:** Sayılarla konuşmak.
-**Kapsam:** Benchmark harness (saniyede başlatılan run, saniyede tamamlanan step, uçtan uca p50/p95/p99 gecikme), connection pool ve batch boyutu ayarı, sıcak sorgular için indeks gözden geçirme ve `EXPLAIN ANALYZE` kanıtları, olay yazımında batching.
-**Bitti kriteri:** Tek node üzerinde ölçülmüş ve `docs/BENCHMARKS.md` dosyasına yazılmış taban değerler var. En az bir somut darboğaz tespit edilip düzeltilmiş ve iyileşme öncesi/sonrası sayı ile gösterilmiş.
+**Goal:** Speaking in numbers.
+**Scope:** Benchmark harness (runs started per second, steps completed per second, end-to-end p50/p95/p99 latency), connection pool and batch size tuning, an index review for hot queries and `EXPLAIN ANALYZE` evidence, batching on event writes.
+**Done when:** There are baseline figures measured on a single node and written into `docs/BENCHMARKS.md`. At least one concrete bottleneck has been identified and fixed, and the improvement shown with a before/after number.
 **Commit:** `perf(core): query and batching optimizations`, `docs: benchmark results`
 
-#### Gün 29: CLI ve örnek uygulamalar
+#### Day 29: CLI and example applications
 
-**Hedef:** Geliştirici deneyimi.
-**Kapsam:** CLI: `wf dev` (tek komutla Postgres + api + worker + ui), `wf worker`, `wf run start|signal|cancel|describe|list`, `wf migrate`. İki tam örnek: ödeme saga'sı (rezervasyon, tahsilat, compensation) ve ETL pipeline (fan-out ile batch işleme, retry, cron).
-**Bitti kriteri:** Temiz makinede `npx wf dev` ile ortam ayağa kalkıyor ve her iki örnek tek komutla uçtan uca koşuyor. Örneklerin kendi testleri CI'da çalışıyor.
+**Goal:** Developer experience.
+**Scope:** CLI: `wf dev` (Postgres + api + worker + ui in a single command), `wf worker`, `wf run start|signal|cancel|describe|list`, `wf migrate`. Two complete examples: a payment saga (reservation, capture, compensation) and an ETL pipeline (batch processing with fan-out, retry, cron).
+**Done when:** On a clean machine `npx wf dev` brings the environment up and both examples run end to end with a single command. The examples' own tests run in CI.
 **Commit:** `feat(cli): developer commands`, `docs(examples): payment saga and etl pipeline`
 
-#### Gün 30: Dokümantasyon, paketleme ve v0.1.0
+#### Day 30: Documentation, packaging and v0.1.0
 
-**Hedef:** Yayınlanabilir ürün.
-**Kapsam:** README (5 dakikalık hızlı başlangıç), `docs/ARCHITECTURE.md` (diyagramlı), `docs/CONCEPTS.md` (determinizm, versiyonlama, retry, idempotency), API referansı, üretim dağıtım notları, çok aşamalı Dockerfile ve yayınlanan image, `CHANGELOG.md`, semver etiketi `v0.1.0`, `docs/ROADMAP.md`.
-**Bitti kriteri:** Repoyu ilk kez gören biri sadece README'yi takip ederek 5 dakikada bir workflow çalıştırabiliyor (adımlar temiz konteynerde doğrulanmış). `v0.1.0` tag'i ve release notu yayında.
+**Goal:** A releasable product.
+**Scope:** README (a 5-minute quick start), `docs/ARCHITECTURE.md` (with diagrams), `docs/CONCEPTS.md` (determinism, versioning, retry, idempotency), the API reference, production deployment notes, a multi-stage Dockerfile and the published image, `CHANGELOG.md`, the semver tag `v0.1.0`, `docs/ROADMAP.md`.
+**Done when:** Someone seeing the repo for the first time can run a workflow in 5 minutes by following only the README (the steps verified in a clean container). The `v0.1.0` tag and the release note are published.
 **Commit:** `docs: architecture and concepts`, `chore(release): v0.1.0`
 
 ---
 
-## BÖLÜM C: YEDEK GÖREV HAVUZU
+## SECTION C: SPARE TASK POOL
 
-Gün erken biterse sırayla buradan al, ertesi günün kapsamına dokunma.
+If the day finishes early, take from here in order, do not touch the next day's scope.
 
-1. Mevcut modülün test kapsamını ölç, en düşük kapsamlı dosyaya test yaz.
-2. Property-based test ekle (fast-check) mevcut bir invariant için.
-3. Public API'de eksik TSDoc yorumlarını tamamla.
-4. `docs/CONCEPTS.md` içine bugün yazdığın mekanizmanın açıklamasını ekle.
-5. Bir hata mesajını daha teşhis edilebilir hâle getir (bağlam, olası neden, çözüm önerisi).
-6. CI süresini kısalt (cache, paralel job).
-7. `docs/DECISIONS.md` içine bugünkü örtük kararları ADR olarak yaz.
+1. Measure the test coverage of the current module, write tests for the file with the lowest coverage.
+2. Add a property-based test (fast-check) for an existing invariant.
+3. Fill in the missing TSDoc comments on the public API.
+4. Add an explanation of the mechanism you wrote today into `docs/CONCEPTS.md`.
+5. Make an error message more diagnosable (context, likely cause, suggested fix).
+6. Shorten the CI time (cache, parallel jobs).
+7. Write today's implicit decisions into `docs/DECISIONS.md` as ADRs.
 
-## BÖLÜM D: RİSKLİ GÜNLER
+## SECTION D: HIGH-RISK DAYS
 
-Gün 5, 6, 12, 19, 21 ve 27 taşma riski en yüksek günlerdir. Bu günlerde kapsamı bölmek gerekirse çekirdek davranışı koru, ergonomiyi ve ek testleri `docs/DEFERRED.md` dosyasına ertele. Determinizm, crash recovery ve idempotency garantilerinden asla feragat etme.
+Days 5, 6, 12, 19, 21 and 27 carry the highest risk of overrun. If the scope has to be split on these days, preserve the core behavior and defer the ergonomics and the extra tests to `docs/DEFERRED.md`. Never give up the determinism, crash recovery and idempotency guarantees.

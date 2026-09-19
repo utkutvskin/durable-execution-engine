@@ -1,23 +1,24 @@
-# STATE
+# State
 
-Bu dosyayı her session A1/A2'ye göre günceller. En son girdi en üstte durur (en yeniden en eskiye). Her girdi kendi başına okunabilir olmalı; önceki günün notuna bakmaya gerek kalmasın.
+Every session updates this file per A1 and A2. The newest entry sits at the top. Each entry must be readable on its own, with no need to consult the previous day's note.
 
-Alan sözlüğü:
-- **Gün:** backlog'daki gün numarası.
-- **Durum:** `IN_PROGRESS` | `DONE` | `BLOCKED`.
-- **Tamamlanan gün:** bu girdi kapanışta yazıldıysa DONE olan son gün numarası; sonraki session bir sonraki günü buradan hesaplar.
-- **Eklenen/değişen dosyalar:** kısa liste.
-- **Teknik kararlar:** varsa `docs/DECISIONS.md`'ye eklenen ADR'lere referans.
-- **BLOCKER:** doluysa bir sonraki session önce bunu çözer. Boşsa `-`.
-- **Devir notu:** yarına bırakılan, unutulmaması gereken tek satırlık not.
+Field glossary:
+
+- **Day:** the day number in the backlog.
+- **Status:** `IN_PROGRESS` | `DONE` | `BLOCKED`.
+- **Completed day:** when this entry is written at close, the last day number that reached DONE. The next session computes its own day number from here.
+- **Files added or changed:** a short list.
+- **Technical decisions:** references to any ADRs added to `docs/DECISIONS.md`.
+- **BLOCKER:** when filled in, the next session clears this before anything else. Otherwise `-`.
+- **Handoff note:** the one line that must not be forgotten tomorrow.
 
 ---
 
-## Gün 0 (başlangıç)
+## Day 0 (bootstrap)
 
-- **Durum:** DONE
-- **Tamamlanan gün:** 0
-- **Eklenen/değişen dosyalar:** `docs/BACKLOG.md`, `STATE.md`, `docs/CONVENTIONS.md`, `CLAUDE.md`
-- **Teknik kararlar:** -
+- **Status:** DONE
+- **Completed day:** 0
+- **Files added or changed:** `docs/BACKLOG.md`, `STATE.md`, `docs/CONVENTIONS.md`, `CLAUDE.md`
+- **Technical decisions:** -
 - **BLOCKER:** -
-- **Devir notu:** Gün 1'den başla (monorepo iskeleti ve CI). Başlamadan önce `docs/CONVENTIONS.md` oku, A1 adım 2 zorunlu.
+- **Handoff note:** Start from day 1 (monorepo skeleton and CI). Read `docs/CONVENTIONS.md` before you start; A1 step 2 is mandatory.

@@ -1,25 +1,35 @@
-# Yazım ve commit tercihleri
+# Conventions
 
-Bu dosya proje sahibinin kalıcı tercihlerini tanımlar. Her session'ın başında okunur (`docs/BACKLOG.md`, A1 adım 2). Yazım konusunda bu dosya ile backlog çelişirse bu dosya kazanır.
+This file holds the project owner's standing preferences. Every session reads it first (`docs/BACKLOG.md`, section A1 step 2). Where this file and the backlog disagree on how something is written, this file wins.
 
-Bu kurallar makineye değil repoya bağlıdır. Hangi agent, hangi araç veya hangi makine çalışırsa çalışsın geçerlidir.
+These rules belong to the repository, not to a machine. They apply whatever agent, tool or machine is running.
 
 ---
 
-## 1. Lowercase yazım
+## 1. Everything is written in English
 
-Repoya veya GitHub'a giden her metin lowercase yazılır. Sadece özel isimler büyük harfle başlar.
+Every word committed to this repository or published to GitHub is English.
 
-**Kapsam:** commit mesajları, PR başlık ve açıklamaları, branch adları, kod yorumları, log ve hata mesajları, README ve diğer dokümanlar.
+That covers commit messages, PR titles and descriptions, branch names, code identifiers, log and error messages, test names, TSDoc, README, every file under `docs/`, and every new entry in `STATE.md`.
 
-**Gerçek yazımını koruyan istisnalar:**
+---
 
-- Özel isimler: `TypeScript`, `PostgreSQL`, `Postgres`, `Node`, `Docker`, `GitHub`, `Vitest`, `Prometheus`, `Grafana`, `Jaeger`, `OpenTelemetry`, `Playwright`.
-- Kod tanımlayıcıları, kodda nasıl yazılıyorsa aynen öyle: `EventStore`, `ConcurrencyError`, `NonDeterminismError`, `RetryPolicy`, `ctx.sleep()`, `parentClosePolicy`.
-- Yerleşik kısaltmalar: `API`, `CLI`, `UI`, `DSL`, `CI`, `SQL`, `HTTP`, `REST`, `ADR`, `DLQ`, `LRU`, `SSE`, `ETL`.
-- Veritabanı durum sabitleri kodda nasılsa öyle: `RUNNING`, `COMPLETED`, `CANCELLED`.
+## 2. Lowercase
 
-**Conventional commit örnekleri:**
+Text written into the repository or into GitHub is lowercase. Only proper nouns start with a capital.
+
+**Lowercase applies to:** commit messages, PR titles and descriptions, branch names, tag messages, log and error messages, and test names.
+
+**Normal sentence capitalization applies to:** prose inside `README.md` and the files under `docs/`, so that documents stay readable. Every commit string, command, identifier or state constant quoted inside a document still follows its own casing rule.
+
+**Exceptions that keep their real casing:**
+
+- Proper nouns: `TypeScript`, `PostgreSQL`, `Postgres`, `Node`, `Docker`, `GitHub`, `Vitest`, `Prometheus`, `Grafana`, `Jaeger`, `OpenTelemetry`, `Playwright`.
+- Code identifiers, spelled exactly as the code spells them: `EventStore`, `ConcurrencyError`, `NonDeterminismError`, `RetryPolicy`, `ctx.sleep()`, `parentClosePolicy`.
+- Established acronyms: `API`, `CLI`, `UI`, `DSL`, `CI`, `SQL`, `HTTP`, `REST`, `ADR`, `DLQ`, `LRU`, `SSE`, `ETL`.
+- State constants as the code declares them: `RUNNING`, `COMPLETED`, `CANCELLED`.
+
+**Commit message examples:**
 
 ```
 feat(core): append-only event store with optimistic concurrency
@@ -28,32 +38,52 @@ test(core): recorded history replay harness
 chore(state): day 07 complete
 ```
 
-Tip zaten lowercase. Açıklama da lowercase kalır. Cümle büyük harfle başlamaz.
-
-**Mevcut dosyalar:** bu kural agent'ların yazdığı yeni metni bağlar. Proje sahibinin kendi yazdığı `docs/BACKLOG.md` ve `STATE.md` dosyaları olduğu gibi kalır, onları lowercase'e çevirme. `STATE.md` içine eklenen yeni girdilerin serbest metin kısmı bu kurala uyar.
+The type is already lowercase. The description stays lowercase too. A commit subject never starts with a capital.
 
 ---
 
-## 2. AI attribution yok
+## 3. No comments in code
 
-Commit mesajlarına `Co-Authored-By: Claude ...` veya benzeri bir satır eklenmez. PR açıklamalarına "Generated with Claude Code" benzeri bir satır eklenmez. Hiçbir AI aracı commit veya PR metninde yazar olarak görünmez.
+The code explains itself. Do not write explanatory comments inside function bodies.
 
-**Gerekçe:** proje sahibi bu işi kendi adı altında yayınlıyor ve GitHub contributor listesinde bir AI aracı istemiyor. Trailer eklendiği anda GitHub o aracı contributor olarak sayar.
+**Allowed:**
 
-Claude Code kullanan bir agent bunu makine seviyesinde de kapatabilir:
+- TSDoc on every exported symbol. Backlog A6 requires it. TSDoc documents the contract a caller depends on, not the implementation.
+- A lint or type suppression that carries its reason on the same line, for example `@ts-expect-error <reason>`. Backlog A6 requires the reason.
+
+**Not allowed:**
+
+- A comment that restates what the line below it does.
+- Phase-narrating comments such as `// step 1: load` or `// now validate`.
+- Commented-out code. Delete it; git remembers.
+- `TODO` and `FIXME`. Unfinished work goes to the `BLOCKER` field in `STATE.md` or to `docs/DEFERRED.md`, where it is actually tracked.
+
+If a piece of code needs a comment to be understood, rename it, extract it, or reshape it until it does not.
+
+If a genuinely non-obvious constraint cannot be expressed in code, such as an external system's bug or a protocol quirk, encode it as a test with a descriptive name instead of a comment. A test fails when the constraint is violated; a comment does not.
+
+---
+
+## 4. No AI attribution
+
+Commit messages carry no `Co-Authored-By: Claude ...` line or anything like it. PR descriptions carry no "Generated with Claude Code" line or anything like it. No AI tool appears as an author in commit or PR text.
+
+**Why:** the owner publishes this work under their own name and does not want an AI tool in the GitHub contributor list. GitHub counts a tool as a contributor the moment such a trailer appears.
+
+An agent running Claude Code can also switch this off at the machine level:
 
 ```json
 // ~/.claude/settings.json
 { "attribution": { "commit": "", "pr": "" } }
 ```
 
-O ayar makineye özeldir ve başka bir makinede veya başka bir araçta çalışan agent'ı bağlamaz. Bağlayıcı olan bu dosyadır.
+That setting is local to one machine and does not bind an agent running elsewhere or under a different tool. This file is what binds.
 
 ---
 
-## 3. Yanlışlıkla eklenen attribution
+## 5. Attribution added by mistake
 
-`docs/BACKLOG.md` A3 gereği `git push --force` ve history rewrite yasaktır. Bir commit yanlışlıkla attribution satırı içeriyorsa:
+Backlog A3 forbids `git push --force` and history rewrites.
 
-- Henüz push edilmediyse `git commit --amend` ile düzelt.
-- Push edildiyse kendi başına düzeltmeye çalışma. `STATE.md` içindeki `BLOCKER` alanına hangi commit olduğunu yaz ve proje sahibine bırak. History rewrite kararı ona aittir.
+- Not pushed yet: fix it with `git commit --amend`.
+- Already pushed: do not try to fix it. Write the commit hash into the `BLOCKER` field in `STATE.md` and leave it to the owner. Rewriting published history is the owner's decision.
