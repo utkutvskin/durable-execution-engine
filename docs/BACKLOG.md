@@ -24,7 +24,7 @@ This file lives at `docs/BACKLOG.md`. Each session reads this file, then `STATE.
 2. Each of that day's "Done when" items must have a test or a runnable command that proves it. An item without proof does not count as complete.
 3. Update `STATE.md`: the completed day, the files added, the technical decisions taken, the blocker if there is one, the note handed off to tomorrow.
 4. If a new architectural decision was taken, add it to `docs/DECISIONS.md` in ADR format (Context / Decision / Consequence).
-5. Make the commits, push to `main`, create the `day-NN` annotated tag and push it.
+5. Make the commits, push to `main`. No `day-NN` tag: this repository does not use daily tags, `STATE.md`'s `Completed day` field and the commit history are the record of progress. This does not apply to the `v0.1.0` release tag on day 30.
 
 ### A3. Commit rules
 
