@@ -1,0 +1,16 @@
+{
+  "name": "@dee/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Worker process: poll loop, lease renewal, crash recovery and sticky execution cache.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@dee/core": "workspace:*"
+  }
+}

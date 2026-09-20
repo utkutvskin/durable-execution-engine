@@ -1,0 +1,13 @@
+{
+  "name": "@dee/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Core runtime: event store, replay engine, workflow dsl and persistence.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc -p tsconfig.json"
+  }
+}

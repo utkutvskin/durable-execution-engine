@@ -1,0 +1,13 @@
+{
+  "name": "@dee/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Run explorer web ui: run list, event timeline, signals and live updates.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc -p tsconfig.json"
+  }
+}

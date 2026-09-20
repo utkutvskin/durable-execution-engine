@@ -1,0 +1,19 @@
+{
+  "name": "@dee/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Developer cli: wf dev, wf worker, wf run and wf migrate commands.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "wf": "./dist/index.js"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@dee/core": "workspace:*"
+  }
+}

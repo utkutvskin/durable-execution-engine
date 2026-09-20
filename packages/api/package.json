@@ -1,0 +1,16 @@
+{
+  "name": "@dee/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "HTTP api surface: rest endpoints, authentication, quotas and rate limiting.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@dee/core": "workspace:*"
+  }
+}
