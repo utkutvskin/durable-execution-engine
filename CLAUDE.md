@@ -21,7 +21,7 @@ The details are in `docs/CONVENTIONS.md`, which wins on any conflict.
 - Everything written into this repository is English.
 - Text written into the repository or into GitHub is lowercase. Only proper nouns, code identifiers and established acronyms are capitalized.
 - No comments inside function bodies. TSDoc on exported symbols is required and is not a comment in this sense.
-- No AI attribution in commit messages or PR descriptions.
+- No AI attribution in commit messages or PR descriptions, and every commit is authored as the owner: `git config user.name`/`user.email` (local, not global) are set to the owner's identity before the first commit of the session. See `docs/CONVENTIONS.md`, section 4.
 - No `git push --force` and no history rewrites.
 - No feature without a test. At least 5 meaningful new tests per day.
 - Do not do tomorrow's work today.

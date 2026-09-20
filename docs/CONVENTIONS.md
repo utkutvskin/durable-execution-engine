@@ -79,6 +79,15 @@ An agent running Claude Code can also switch this off at the machine level:
 
 That setting is local to one machine and does not bind an agent running elsewhere or under a different tool. This file is what binds.
 
+The same reasoning applies to the commit author/committer identity itself, not only to trailer lines: every commit is authored as the owner, never as an agent or tool. At the start of every session, before the first commit, set the local (not global) git identity:
+
+```sh
+git config user.name "Utku Taskin"
+git config user.email "utkutvskin@gmail.com"
+```
+
+Because authorship uses the owner's own GitHub account email, GitHub's contributors graph credits only the owner. No agent, bot or tool account appears there, ever, on this repository. A commit authored this way shows as unsigned ("Unverified") on GitHub, since no signing key is configured for it here; that is expected and is not a sign of tampering, it is simply not GPG/SSH-signed.
+
 ---
 
 ## 5. Attribution added by mistake
