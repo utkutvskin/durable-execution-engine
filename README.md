@@ -36,6 +36,23 @@ pnpm run verify
 
 `pnpm run verify` runs lint, typecheck and the test suite, in that order.
 
+## Database
+
+Schema changes live as SQL migration pairs under `packages/core/migrations`,
+applied by the runner in `packages/core/src/db/migrator.ts`:
+
+```sh
+pnpm run migrate:up    # applies every pending migration
+pnpm run migrate:down  # reverts the most recently applied migration
+```
+
+Both read `DATABASE_URL`, falling back to the same defaults as
+`docker-compose.yml` (`postgres://dee:dee@localhost:5432/dee`) when it is
+unset. Integration tests do not need a migrated database ahead of time:
+each test file opens its own throwaway Postgres schema and migrates it
+directly (`packages/core/src/db/test-harness.ts`), so `pnpm run verify`
+only needs a reachable Postgres 16, not a pre-migrated one.
+
 ## Documentation
 
 - `docs/BACKLOG.md` — the development backlog and the operating instructions for each session.

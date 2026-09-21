@@ -71,3 +71,57 @@ database, so local and CI environments match.
 does not exercise anything that touches postgres yet, since no
 database-backed code exists before day 2. From day 2 onward, integration
 tests require the compose service (or an equivalent) to be running.
+
+---
+
+## ADR-0005: a hand-written SQL migration runner over `node-pg-migrate`
+
+**Context:** day 2 (`docs/BACKLOG.md`) allows either "your own simple
+migration runner or `node-pg-migrate`". A5 prefers writing core runtime
+logic in-house and reserves third-party packages for things like
+cryptography, date/time and the queue, none of which a migration runner is.
+
+**Decision:** `packages/core/src/db/migrator.ts` is a small hand-written
+runner: migrations are plain `<id>.up.sql` / `<id>.down.sql` file pairs
+under `packages/core/migrations`, applied in filename order inside
+individual transactions, tracked in a `schema_migrations` table.
+`migrateUp`/`migrateDown` are plain functions over a `pg.Pool`, so they are
+directly unit-testable without shelling out to a CLI. The only new runtime
+dependency is `pg` itself, the client every approach needs regardless.
+`packages/core/src/db/cli.ts` is a thin wrapper exposing `up`/`down` to
+`pnpm run migrate:up` / `migrate:down`.
+
+**Consequence:** no migration-numbering conventions or config file format
+to learn beyond ours; adding a migration is adding a pair of `.sql` files.
+The runner does not support down-migrations to an arbitrary target version
+in one call (only `steps` most-recent, default 1) or migration name
+collision checks beyond filename uniqueness; if either is needed later, it
+is a small addition to `migrator.ts`, not a new dependency.
+
+---
+
+## ADR-0006: integration tests get a fresh Postgres schema per test file, not Testcontainers
+
+**Context:** A6 requires integration tests to run against a real Postgres
+and explicitly allows either Testcontainers or an ephemeral schema on
+compose. Day 2 additionally requires that two test files running at the
+same time do not see each other's data.
+
+**Decision:** `packages/core/src/db/test-harness.ts` exposes
+`createIsolatedSchema`/`createIsolatedDatabase`: each call opens one
+Postgres connection, `create schema`s a fresh, randomly named schema, and
+returns a `pg.Pool` whose connections default to it via the `-c
+search_path=<schema>` connection option, so table-unqualified SQL is
+already scoped correctly. `createIsolatedDatabase` additionally runs
+`migrateUp` against that schema. `close()` drops the schema and ends both
+pools. Every test file calls this once against the same running Postgres
+instance (compose locally, the CI service container, or a natively
+installed Postgres where Docker is unavailable) rather than starting a
+throwaway container per file.
+
+**Consequence:** test files run in true isolation from each other without
+paying a container-startup cost per file, and the same Postgres instance
+serves every test file in a run. This relies on a reachable Postgres
+existing before `pnpm run test` runs (the compose service, CI's service
+container, or an equivalent); it does not provision one itself the way
+Testcontainers would.
