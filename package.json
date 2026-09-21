@@ -17,7 +17,9 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --if-present run typecheck",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "migrate:up": "pnpm --filter @dee/core run migrate:up",
+    "migrate:down": "pnpm --filter @dee/core run migrate:down"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
