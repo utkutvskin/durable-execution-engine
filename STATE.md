@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 2: database schema and migration infrastructure
+
+- **Status:** DONE
+- **Completed day:** 2
+- **Files added or changed:** `packages/core/migrations/0001_initial_schema.{up,down}.sql`, `packages/core/src/db/{migrator,env,cli,test-harness}.ts` and their `*.test.ts` files, `packages/core/package.json` (new `pg`/`@types/pg` dependencies, `migrate:up`/`migrate:down` scripts), root `package.json` (`migrate:up`/`migrate:down` scripts delegating to `@dee/core`), `docs/DECISIONS.md` (ADR-0005, ADR-0006), `README.md` (a "Database" section documenting the migration commands)
+- **Technical decisions:** ADR-0005 and ADR-0006 in `docs/DECISIONS.md` (a hand-written SQL migration runner instead of `node-pg-migrate`; integration tests each open their own randomly named Postgres schema instead of Testcontainers). Dependency added: `pg` plus its `@types/pg` types, the standard node postgres client — needed by the migration runner and by every database-backed package from here on, not something to hand-roll per A5.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (15 test files, 33 tests, 15 of them new today). `pnpm run migrate:up` / `migrate:down` were run by hand against a real database twice each and confirmed idempotent (second `up` reports "nothing to do", second `down` too), matching the day's "done when". Day 1's Docker worry turned out to be bigger than diagnosed: this sandbox has no Docker daemon at all (`docker compose up -d` fails with "connect: no such file or directory" on `/var/run/docker.sock`, not just a registry block), so `docker compose up -d` still cannot be run here. What unblocked today is that Postgres 16 is natively installed in this sandbox image; `service postgresql start` brings it up on `localhost:5432`, and the `dee`/`dee`/`dee` role, password and database from `.env.example` were created by hand to match. Nothing in the code depends on Docker specifically — `resolveDatabaseUrl` and the test harness only need a reachable Postgres, compose or otherwise — so this is a sandbox-setup fact for the next session, not a code change. CI is unaffected either way: `.github/workflows/ci.yml` already runs `postgres:16` as an unrestricted GitHub Actions service container (day 1), which is what `pnpm run verify`'s integration tests actually run against there. The next session should still confirm CI is green on the pushed commit before trusting this further, and, if it lands in a fresh sandbox without a preinstalled Postgres either, will need to either get Docker working or find another local Postgres before day 3's event-store tests can run.
+
+---
+
 ## Day 1: monorepo skeleton and CI
 
 - **Status:** DONE
