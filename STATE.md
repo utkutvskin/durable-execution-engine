@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 3: event store and optimistic concurrency
+
+- **Status:** DONE
+- **Completed day:** 3
+- **Files added or changed:** `packages/core/src/event-store/{events,codec,errors,event-store}.ts` and their `*.test.ts` files, `packages/core/src/index.ts` (re-exports the event store's public api), `packages/core/package.json` (new `zod` dependency), `docs/DECISIONS.md` (ADR-0007, ADR-0008)
+- **Technical decisions:** ADR-0007 and ADR-0008 in `docs/DECISIONS.md` (optimistic concurrency via a sequence-number precheck plus the existing unique constraint, no extra locking; `Codec` converts to/from the wire string rather than the value `pg` would already parse). Dependency added: `zod`, named explicitly by day 3's scope ("schema validation (zod)") for the `workflowEventSchema` discriminated union — not a dependency choice made outside the day's own scope, per A5.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (18 test files, 48 tests, 15 of them new today, including a 50-parallel-attempt stress test asserting exactly one `EventStore.append` wins a race on the same `expectedSeq` and the other 49 get `ConcurrencyError`). The event catalog in `events.ts` (`run_started`, `run_completed`, `run_failed`, `step_scheduled`, `step_completed`, `step_failed`, `timer_started`, `timer_fired`) is deliberately just the lifecycle events the store itself needed to be exercised against; day 4's workflow DSL and command model will likely need to extend or reshape this set, which is expected and fine. Same sandbox-setup note as day 2 stands: this container has no Docker daemon, so postgres is the natively installed `service postgresql start` on `localhost:5432`, and its `dee` role/database do not survive a container restart — the next session should check `service postgresql status` and recreate the `dee`/`dee`/`dee` role and database by hand (matching `.env.example`) if they are missing before trusting a red `pnpm run verify` as a real failure.
+
+---
+
 ## Day 2: database schema and migration infrastructure
 
 - **Status:** DONE
