@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 4: workflow dsl and command model
+
+- **Status:** DONE
+- **Completed day:** 4
+- **Files added or changed:** `packages/core/src/workflow/{commands,context,sources,step-registry,workflow-registry,define-workflow,run-workflow}.ts` and their `*.test.ts` files, `packages/core/src/index.ts` (re-exports the workflow module's public api), `docs/DECISIONS.md` (ADR-0009, ADR-0010)
+- **Technical decisions:** ADR-0009 and ADR-0010 in `docs/DECISIONS.md` (workflows and steps are registered by name in a `WorkflowRegistry`/`StepRegistry` rather than passed as closures, so day 5's replay engine can serve a completed step's result by `stepId` without needing to reconstruct a closure; `runWorkflowInMemory` resolves every `ctx.step()` and `ctx.sleep()` call in one straight pass with no suspension, which is deliberately as far as today's scope goes — day 5 wraps this runner with the history-driven decision loop, it does not replace it). No new dependency.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (23 test files, 64 tests, 16 of them new today). The three-step `ship-order` example workflow in `run-workflow.test.ts` exercises `ctx.step()` three times and `ctx.sleep()` once and asserts the exact `schedule_step` / `start_timer` / `complete_run` command sequence; a second test spies on `Date.now`/`Math.random` to prove `ctx.now()`/`ctx.random()` only ever read from the injected `ClockSource`/`RandomSource`, never the global. `WorkflowContext.step()` is generic only in its result type (`step<TResult>(stepType, input: unknown)`), not its input type — `@typescript-eslint/no-unnecessary-type-parameters` rejected a type parameter used only in the parameter position, and a step's input is not actually checked against anything at the call site anyway since the registry pairs the type with the handler only at `register()` time, not at every `ctx.step()` call. Same sandbox-setup note as day 3 stands: the `dee` role/database did not survive the container restart and were recreated by hand again this session; the next session should expect to do the same unless the sandbox image changes. Day 5 (decision loop and replay engine) is next: it needs to feed in a recorded history, serve completed steps' results from it instead of calling `steps.get(stepType)` and executing directly, and stop at the first incomplete point — `runWorkflowInMemory`'s straight-through `ctx.step()`/`ctx.sleep()` implementation in `run-workflow.ts` is exactly the piece that logic replaces the inside of, not the `WorkflowContext`/command/registry surface around it, which should carry over unchanged.
+
+---
+
 ## Day 3: event store and optimistic concurrency
 
 - **Status:** DONE
