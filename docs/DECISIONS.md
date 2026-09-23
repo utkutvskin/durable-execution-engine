@@ -177,3 +177,52 @@ compression and masking hooks are additional string-to-string
 transformations on this same interface, with no change to `EventStore` or
 to the column type. The cost is one explicit `::text` cast on every read
 that would otherwise be unnecessary.
+
+---
+
+## ADR-0009: workflows and steps are registered by name, not passed as closures
+
+**Context:** day 4 asks for `defineWorkflow`, `ctx.step()` and "a registry
+for workflow and step registration". A workflow's `ctx.step()` call could
+instead take the step's implementation directly as a closure argument, the
+way a plain in-memory callback API would.
+
+**Decision:** `StepRegistry` and `WorkflowRegistry` hold implementations
+keyed by a `stepType`/`workflowType` string, registered once with
+`register()` and looked up with `get()`. `ctx.step(stepType, input)` refers
+to a step by that string, not by passing its function. `defineWorkflow`
+only pairs a `workflowType` with its handler; it does not itself register
+anything.
+
+**Consequence:** a step's implementation lives in exactly one place (the
+registry a worker builds at startup) rather than inside every workflow
+that calls it, which is what day 5's replay engine needs: it can serve a
+completed step's result from history by `stepId` without ever having to
+serialize or re-create a closure. The cost is a run-time lookup failure
+(`no step registered for type "..."`) instead of a compile-time error when
+a workflow calls a step type that was never registered; `runWorkflowInMemory`
+turns that into a `fail_run` command like any other handler error, since
+from the run's perspective it is one.
+
+---
+
+## ADR-0010: `ctx.step()` and `ctx.sleep()` resolve immediately, with no suspension yet
+
+**Context:** day 4's scope is explicit: "no persistence yet, everything in
+memory". Day 5 ("decision loop and replay engine") is where a workflow run
+stops at its first incomplete point, driven by which steps' results are
+already in history.
+
+**Decision:** `runWorkflowInMemory` runs a workflow handler straight
+through: every `ctx.step()` call executes its registered step handler and
+resolves with its result in the same pass, and every `ctx.sleep()` call
+records a `start_timer` command and resolves without waiting. Nothing
+here reads or replays a history; the command sequence a run produces is
+only ever this one pass's decisions.
+
+**Consequence:** day 4 can prove the DSL's surface and command shapes
+end to end with a real multi-step example workflow, without building the
+history-driven decision loop first. The cost is that this runner cannot
+yet answer day 5's question ("given a partial history, produce only the
+next command"); `runWorkflowInMemory` is the piece the decision loop will
+wrap, not replace, once history comes in on day 5.
