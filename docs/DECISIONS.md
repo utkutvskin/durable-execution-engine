@@ -226,3 +226,42 @@ history-driven decision loop first. The cost is that this runner cannot
 yet answer day 5's question ("given a partial history, produce only the
 next command"); `runWorkflowInMemory` is the piece the decision loop will
 wrap, not replace, once history comes in on day 5.
+
+---
+
+## ADR-0011: quiescence in the decision loop is detected with one `setImmediate` tick, not a tick-counting loop
+
+**Context:** day 5's decision loop re-runs a workflow handler from the top
+on every decision, serving each `ctx.step()`/`ctx.sleep()` call its result
+straight out of the given history and never settling the ones history has
+no result for yet. That handler is a real `async function`: its `await`
+points resume on the native microtask queue, in an order this code does
+not control directly. The loop has to know when that resumption has run as
+far as it is going to — either the handler has settled, or it has stalled
+on a step/timer with no result yet — before it can read off the commands
+that decision produced. Getting this wrong is exactly the "micro-task
+leak" day 5 warns about: stopping one tick early misses a command that was
+one resolved `await` away, and a scheme that guesses a tick count can
+leave a callback scheduled that fires after the loop has already returned
+its result.
+
+**Decision:** the loop is driven to quiescence by waiting on a single
+`setImmediate` tick (`drainToQuiescence` in `decision-loop.ts`) rather than
+by looping a fixed or counted number of `await Promise.resolve()` ticks.
+Node performs a full microtask checkpoint — draining every microtask
+queued so far and every microtask those in turn queue, to a fixed point —
+before it runs the next macrotask, so one `setImmediate` boundary is
+guaranteed to run a promise chain built only from already-settled
+promises all the way to wherever it settles or stalls, regardless of how
+many `await` points are on the way there. A step or timer with no
+recorded result is served a promise created with `new Promise(() => ...)`
+whose executor never calls `resolve`/`reject`, so it schedules nothing at
+all: there is no leaked callback left for a later tick to fire.
+
+**Consequence:** the loop needs exactly one drain call per decision, with
+no magic retry count to tune and no risk of stopping mid-chain. The cost
+is that this relies on Node's macrotask/microtask ordering guarantee
+rather than a queue the code inspects directly, and it assumes a workflow
+handler never itself schedules a real timer or I/O callback under replay;
+day 6's forbidden-API sandbox check is what will make that assumption
+enforced rather than just relied upon.
