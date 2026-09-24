@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 5: decision loop and replay engine
+
+- **Status:** DONE
+- **Completed day:** 5
+- **Files added or changed:** `packages/core/src/workflow/decision-loop.ts` and its `decision-loop.test.ts`, `packages/core/src/index.ts` (re-exports `runDecisionLoop`, `DecisionLoopOptions`, `DecisionResult`), `docs/DECISIONS.md` (ADR-0011)
+- **Technical decisions:** ADR-0011 in `docs/DECISIONS.md` (quiescence is detected with one `setImmediate` tick rather than a counted `await Promise.resolve()` loop, since a macrotask boundary is Node's own guarantee that every microtask a promise chain can still produce has run; a step or timer with no result yet is served a promise whose executor never calls `resolve`/`reject`, so nothing is ever left scheduled to leak into a later tick). No new dependency.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (24 test files, 72 tests, 8 of them new today). `runDecisionLoop` re-runs a workflow handler from the start against a given `readonly WorkflowEvent[]` history: `ctx.step()`/`ctx.sleep()` calls whose `step-N`/`timer-N` id already has a `step_completed`/`step_failed`/`timer_fired` event resolve straight from that event, calls whose id is already `step_scheduled`/`timer_started` but not yet finished stay pending with no new command, and a call with no matching event at all gets a new `schedule_step`/`start_timer` command pushed and then stays pending too — so `commands` on the returned `DecisionResult` only ever holds what this particular decision newly discovered, never anything already implied by the history it was given. It never looks a step type up in a `StepRegistry` and never runs a step's body: that is deliberate, since replay's only job is to answer "what is the next command", not to perform the side effect the command asks a worker to perform. Proven by test: three consecutive decisions over the same fixed history produce byte-for-byte identical `commands` arrays; a history with 2 of 3 steps complete produces only the third step's `schedule_step` command; a step already `step_scheduled` but not yet completed produces no command at all (same for a timer already `timer_started`); a `step_failed` event's `{name, message}` is reconstructed into a real `Error` and propagates as the run's `fail_run`; two `setImmediate` ticks after the loop returns, its `commands` array is unchanged, which is the closest a test gets to directly proving "no micro-task leak" from outside. Same sandbox-setup note as day 3 and day 4 stands: the `dee` role/database did not survive the container restart and were recreated by hand again this session. Day 6 (non-determinism detection and the replay test harness) is next: it needs to run a decision twice — once against the recorded command from history, once as a fresh `runDecisionLoop` decision — and raise `NonDeterminismError` the first time they diverge at a given sequence position; the `commands`-only-contains-what's-new shape this day settled on is exactly what that comparison diffs against, so it should carry over unchanged, and the `test/fixtures/histories/*.json` harness day 6 asks for can be built directly on top of the `WorkflowEvent` arrays this day's tests already construct by hand.
+
+---
+
 ## Day 4: workflow dsl and command model
 
 - **Status:** DONE
