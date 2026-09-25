@@ -35,6 +35,7 @@ export const runFailedEventSchema = z.object({
 export const stepScheduledEventSchema = z.object({
   type: z.literal("step_scheduled"),
   stepId: z.string().min(1),
+  stepType: z.string().min(1),
   input: z.unknown(),
 });
 

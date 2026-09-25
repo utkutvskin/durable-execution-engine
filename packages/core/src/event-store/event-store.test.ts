@@ -45,7 +45,7 @@ describe("createPostgresEventStore", () => {
   it("assigns consecutive sequence numbers starting at expectedSeq + 1", async () => {
     const events: WorkflowEvent[] = [
       { type: "run_started", workflowType: "ship-order", input: {} },
-      { type: "step_scheduled", stepId: "charge-card", input: {} },
+      { type: "step_scheduled", stepId: "charge-card", stepType: "charge-card", input: {} },
     ];
     const stored = await store.append(runId, 0, events);
     expect(stored.map((entry) => entry.sequenceNumber)).toEqual([1, 2]);
@@ -61,7 +61,7 @@ describe("createPostgresEventStore", () => {
   it("reads back an appended history in ascending sequence order", async () => {
     await store.append(runId, 0, [{ type: "run_started", workflowType: "ship-order", input: {} }]);
     await store.append(runId, 1, [
-      { type: "step_scheduled", stepId: "charge-card", input: { amount: 42 } },
+      { type: "step_scheduled", stepId: "charge-card", stepType: "charge-card", input: { amount: 42 } },
     ]);
 
     const history = await store.read(runId);
@@ -69,6 +69,7 @@ describe("createPostgresEventStore", () => {
     expect(history[1]?.event).toEqual({
       type: "step_scheduled",
       stepId: "charge-card",
+      stepType: "charge-card",
       input: { amount: 42 },
     });
   });
@@ -76,7 +77,7 @@ describe("createPostgresEventStore", () => {
   it("reads only the events after fromSeq", async () => {
     await store.append(runId, 0, [
       { type: "run_started", workflowType: "ship-order", input: {} },
-      { type: "step_scheduled", stepId: "charge-card", input: {} },
+      { type: "step_scheduled", stepId: "charge-card", stepType: "charge-card", input: {} },
       { type: "step_completed", stepId: "charge-card", result: {} },
     ]);
 
@@ -88,7 +89,9 @@ describe("createPostgresEventStore", () => {
     await store.append(runId, 0, [{ type: "run_started", workflowType: "ship-order", input: {} }]);
 
     await expect(
-      store.append(runId, 0, [{ type: "step_scheduled", stepId: "charge-card", input: {} }]),
+      store.append(runId, 0, [
+        { type: "step_scheduled", stepId: "charge-card", stepType: "charge-card", input: {} },
+      ]),
     ).rejects.toThrow(ConcurrencyError);
 
     expect(await store.read(runId)).toHaveLength(1);
@@ -107,7 +110,7 @@ describe("createPostgresEventStore", () => {
   it("lets exactly one of 50 concurrent appends with the same expectedSeq win", async () => {
     const attempts = Array.from({ length: 50 }, (_, index) =>
       store.append(runId, 0, [
-        { type: "step_scheduled", stepId: `step-${String(index)}`, input: {} },
+        { type: "step_scheduled", stepId: `step-${String(index)}`, stepType: "charge-card", input: {} },
       ]),
     );
     const settled = await Promise.allSettled(attempts);

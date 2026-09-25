@@ -33,6 +33,8 @@ export type { WorkflowContext, WorkflowHandler } from "./workflow/context.js";
 export { runDecisionLoop } from "./workflow/decision-loop.js";
 export type { DecisionLoopOptions, DecisionResult } from "./workflow/decision-loop.js";
 export { defineWorkflow } from "./workflow/define-workflow.js";
+export { NonDeterminismError } from "./workflow/errors.js";
+export { ForbiddenApiError } from "./workflow/sandbox.js";
 export {
   runRegisteredWorkflowInMemory,
   runWorkflowInMemory,

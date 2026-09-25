@@ -1,6 +1,9 @@
+import { isDeepStrictEqual } from "node:util";
 import type { WorkflowEvent } from "../event-store/events.js";
 import type { WorkflowCommand } from "./commands.js";
 import type { WorkflowContext, WorkflowHandler } from "./context.js";
+import { NonDeterminismError } from "./errors.js";
+import { ForbiddenApiError, guardAgainstForbiddenApis } from "./sandbox.js";
 import type { ClockSource, RandomSource } from "./sources.js";
 
 /**
@@ -78,6 +81,22 @@ function createReplayContext(
       stepSequence += 1;
       const stepId = `step-${String(stepSequence)}`;
 
+      const scheduled = findEvent(
+        history,
+        (event): event is Extract<WorkflowEvent, { type: "step_scheduled" }> =>
+          event.type === "step_scheduled" && event.stepId === stepId,
+      );
+      if (
+        scheduled !== undefined &&
+        (scheduled.stepType !== stepType || !isDeepStrictEqual(scheduled.input, input))
+      ) {
+        throw new NonDeterminismError(
+          stepId,
+          { stepType: scheduled.stepType, input: scheduled.input },
+          { stepType, input },
+        );
+      }
+
       const completed = findEvent(
         history,
         (event): event is Extract<WorkflowEvent, { type: "step_completed" }> =>
@@ -96,10 +115,7 @@ function createReplayContext(
         return Promise.reject(reconstructError(failed.error));
       }
 
-      const alreadyScheduled = history.some(
-        (event) => event.type === "step_scheduled" && event.stepId === stepId,
-      );
-      if (!alreadyScheduled) {
+      if (scheduled === undefined) {
         newCommands.push({ type: "schedule_step", stepId, stepType, input });
       }
 
@@ -150,6 +166,16 @@ function createReplayContext(
  * the workflow function itself the single source of truth for a run's
  * control flow, with the history only ever supplying results, never
  * control-flow branches.
+ *
+ * The handler runs with `Date.now`, `Math.random` and `setTimeout` guarded
+ * (see `guardAgainstForbiddenApis`): a workflow that calls one of them
+ * directly, instead of `ctx.now()` / `ctx.random()` / `ctx.sleep()`, fails
+ * with a `ForbiddenApiError`. A `ctx.step()` call whose `stepType` or
+ * `input` disagrees with the `step_scheduled` event history already
+ * recorded for that `stepId` fails with a `NonDeterminismError`. Both are
+ * engine-integrity failures rather than ordinary workflow failures, so
+ * `runDecisionLoop` rethrows them instead of reporting them as a
+ * `fail_run` outcome.
  */
 export async function runDecisionLoop<TInput, TResult>(
   handler: WorkflowHandler<TInput, TResult>,
@@ -165,19 +191,27 @@ export async function runDecisionLoop<TInput, TResult>(
     | { readonly outcome: "failed"; readonly error: Error }
     | undefined;
 
-  handler(ctx, input).then(
-    (result) => {
-      settled = { outcome: "completed", result };
-    },
-    (reason: unknown) => {
-      settled = { outcome: "failed", error: toError(reason) };
-    },
-  );
+  await guardAgainstForbiddenApis(async () => {
+    handler(ctx, input).then(
+      (result) => {
+        settled = { outcome: "completed", result };
+      },
+      (reason: unknown) => {
+        settled = { outcome: "failed", error: toError(reason) };
+      },
+    );
 
-  await drainToQuiescence();
+    await drainToQuiescence();
+  });
 
   if (settled === undefined) {
     return { outcome: "suspended", commands };
+  }
+  if (
+    settled.outcome === "failed" &&
+    (settled.error instanceof NonDeterminismError || settled.error instanceof ForbiddenApiError)
+  ) {
+    throw settled.error;
   }
   if (settled.outcome === "completed") {
     commands.push({ type: "complete_run", result: settled.result });
