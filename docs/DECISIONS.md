@@ -265,3 +265,126 @@ rather than a queue the code inspects directly, and it assumes a workflow
 handler never itself schedules a real timer or I/O callback under replay;
 day 6's forbidden-API sandbox check is what will make that assumption
 enforced rather than just relied upon.
+
+---
+
+## ADR-0012: non-determinism is detected by comparing `ctx.step()` calls against the recorded `step_scheduled` event, not by comparing whole command sequences
+
+**Context:** day 6 needs to catch the case where the workflow code being
+replayed no longer makes the same decisions as the code that produced a
+given history: a `stepId` is assigned purely from call order (`step-1`,
+`step-2`, ...), so if code changes reorder, add, remove or retype a step
+call, a later call can land on a `stepId` that history already has an
+opinion about, and the existing decision loop would silently trust that
+opinion. Catching this needs something in history for a replayed call to
+be compared against; `stepScheduledEventSchema` (from day 3) recorded
+only `stepId` and `input`, not `stepType`, so a step call that keeps its
+input by coincidence but changes what step it actually invokes had
+nothing to catch it.
+
+**Decision:** `stepScheduledEventSchema` gains a required `stepType`
+field, matching `ScheduleStepCommand`'s shape. `WorkflowContext.step()` in
+`decision-loop.ts`'s replay context looks up the `step_scheduled` event
+already recorded for the call's `stepId` (if any) before doing anything
+else with it, and compares its `stepType` and `input` (via
+`node:util`'s `isDeepStrictEqual`, not `===`, since `input` is
+structured data) against the call actually being made. A mismatch throws
+`NonDeterminismError` naming the `stepId` and both the expected and the
+found `{ stepType, input }`. Sleep/timer calls are not compared the same
+way: an in-flight or already-fired timer's `fireAt` is never recomputed
+during replay (see `decision-loop.ts`), so there is nothing on that path
+for a later call to disagree with; catching a workflow that changes
+*whether* it sleeps at a given point at all is left to day 8's projection
+and future work, not solved here.
+
+`NonDeterminismError` and the forbidden-API sandbox's `ForbiddenApiError`
+(ADR-0013) are both engine-integrity failures, not ordinary workflow
+failures: `runDecisionLoop` rethrows them directly instead of folding them
+into a `fail_run` command the way a genuine handler rejection is folded.
+A `fail_run` command is a legitimate, expected run outcome a worker would
+persist and move on from; a non-deterministic replay or a forbidden API
+call means the decision itself cannot be trusted, which a caller needs to
+be able to tell apart from "the workflow's business logic decided to
+fail".
+
+**Consequence:** every existing and future `step_scheduled` event needs a
+`stepType`, which touched day 3's and day 5's test fixtures (event store
+round-trip tests, the decision loop's hand-built histories) but not their
+own "done when" criteria — those tests still prove the same optimistic
+concurrency, ordering and replay behavior, just against a slightly wider
+event shape. The cost is that non-determinism detection is currently
+scoped to step identity and input, not to every way two decisions can
+diverge (a changed sleep duration or a dropped call being the main gaps);
+widening it further is deferred rather than attempted today, per day 6's
+own scope.
+
+---
+
+## ADR-0013: the forbidden-API sandbox patches globals with a reference count, not a per-call save/restore
+
+**Context:** day 6 needs `Date.now()`, `Math.random()` and `setTimeout()`
+called directly from workflow code to raise `ForbiddenApiError` instead
+of silently reading real wall-clock time, real randomness or scheduling a
+real callback. The natural implementation monkey-patches those globals
+for the duration of a decision and restores whatever they were before.
+But `runDecisionLoop` is not guaranteed to run one at a time — day 5's own
+"three consecutive replays" test already drives it with
+`Promise.all([...])`, and nothing about the type signature forbids a
+caller from doing the same in production. A naive save-then-restore
+guard breaks under that overlap: if call A patches, call B starts before A
+finishes and saves A's *patched* functions as its own "original", then
+whichever of A or B finishes first restores correctly but the other then
+restores the globals to the wrong (still-forbidding) functions, leaving
+`Date.now()` permanently broken for every test or run that follows. This
+was caught directly: adding the sandbox to `runDecisionLoop` made day 5's
+existing concurrent-replay test corrupt global state for a later,
+unrelated test in the same file, well after the original two decisions had
+returned.
+
+**Decision:** `sandbox.ts` captures the true system `Date.now`,
+`Math.random` and `setTimeout` once, as module-level constants, at import
+time (before anything has a chance to patch them). `guardAgainstForbiddenApis`
+keeps a module-level `activeGuards` counter: it patches only when the
+counter is at zero on entry, always increments on entry and decrements in
+a `finally` on exit, and only restores the captured system functions when
+the counter returns to zero. Overlapping calls share one patched/restored
+pair of transitions no matter how many are in flight or in what order they
+settle.
+
+**Consequence:** `runDecisionLoop` can be called concurrently — as it
+already is, in day 5's own test — without corrupting global state for
+whatever runs afterward. The cost is a small piece of shared mutable
+module state (the counter and the captured originals), which is safe only
+because Node is single-threaded and every mutation happens synchronously
+around an `await`, never inside one.
+
+---
+
+## ADR-0014: recorded history fixtures are plain JSON replayed through a small `workflowType` → handler map, not hand-built TypeScript values
+
+**Context:** day 6 asks for `test/fixtures/histories/*.json` and a harness
+that runs them as a batch, distinct from `decision-loop.test.ts`'s
+existing hand-built `WorkflowEvent[]` histories. The point of a separate
+fixture set is to exercise the same shape of data a real event store read
+would hand back — plain, already-serialized JSON — rather than TypeScript
+object literals that happen to satisfy `WorkflowEvent`'s types by
+construction.
+
+**Decision:** each fixture under `test/fixtures/histories/` is a JSON
+document with `workflowType`, `input`, `history` (a `WorkflowEvent[]`) and
+`expected` (the `DecisionResult` shape `runDecisionLoop` should produce
+against it). The example workflow the fixtures were recorded against
+moved out of `decision-loop.test.ts` into its own module,
+`test/fixtures/workflows/ship-order.ts`, so the harness
+(`test/replay-history-harness.test.ts`) can register it by name and look
+it up the same way a worker would look a workflow up by `workflowType`.
+The harness reads every `*.json` file in the fixtures directory at test
+collection time and generates one `it` per file.
+
+**Consequence:** adding a new recorded-history regression test is adding a
+JSON file, not writing TypeScript; a fixture that starts failing after a
+deliberate workflow change is a visible, per-file signal pointing at
+exactly which recorded scenario needs to be re-derived. The cost is one
+extra layer of indirection (the `workflowsByType` map in the harness) that
+needs a new entry whenever a fixture references a workflow type that
+was not covered by the previous day's `decision-loop.test.ts` examples.
