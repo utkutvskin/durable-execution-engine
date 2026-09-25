@@ -1,0 +1,15 @@
+{
+  "workflowType": "ship-order",
+  "input": { "orderId": "order-1", "amount": 42 },
+  "history": [
+    { "type": "run_started", "workflowType": "ship-order", "input": { "orderId": "order-1", "amount": 42 } },
+    { "type": "step_scheduled", "stepId": "step-1", "stepType": "charge-card", "input": { "amount": 42 } },
+    { "type": "step_completed", "stepId": "step-1", "result": { "charged": true } }
+  ],
+  "expected": {
+    "outcome": "suspended",
+    "commands": [
+      { "type": "start_timer", "timerId": "timer-1", "fireAt": "2026-01-01T00:01:00.000Z" }
+    ]
+  }
+}

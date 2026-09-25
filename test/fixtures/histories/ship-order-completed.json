@@ -1,0 +1,32 @@
+{
+  "workflowType": "ship-order",
+  "input": { "orderId": "order-1", "amount": 42 },
+  "history": [
+    { "type": "run_started", "workflowType": "ship-order", "input": { "orderId": "order-1", "amount": 42 } },
+    { "type": "step_scheduled", "stepId": "step-1", "stepType": "charge-card", "input": { "amount": 42 } },
+    { "type": "step_completed", "stepId": "step-1", "result": { "charged": true } },
+    { "type": "timer_started", "timerId": "timer-1", "fireAt": "2026-01-01T00:01:00.000Z" },
+    { "type": "timer_fired", "timerId": "timer-1" },
+    {
+      "type": "step_scheduled",
+      "stepId": "step-2",
+      "stepType": "reserve-inventory",
+      "input": { "orderId": "order-1" }
+    },
+    { "type": "step_completed", "stepId": "step-2", "result": { "reserved": true, "orderId": "order-1" } },
+    {
+      "type": "step_scheduled",
+      "stepId": "step-3",
+      "stepType": "ship-package",
+      "input": { "orderId": "order-1" }
+    },
+    { "type": "step_completed", "stepId": "step-3", "result": { "orderId": "order-1", "shipped": true } }
+  ],
+  "expected": {
+    "outcome": "completed",
+    "result": { "orderId": "order-1", "shipped": true },
+    "commands": [
+      { "type": "complete_run", "result": { "orderId": "order-1", "shipped": true } }
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "workflowType": "ship-order",
+  "input": { "orderId": "order-1", "amount": 42 },
+  "history": [
+    { "type": "run_started", "workflowType": "ship-order", "input": { "orderId": "order-1", "amount": 42 } },
+    { "type": "step_scheduled", "stepId": "step-1", "stepType": "charge-card", "input": { "amount": 42 } },
+    {
+      "type": "step_failed",
+      "stepId": "step-1",
+      "error": { "name": "CardDeclinedError", "message": "card declined" }
+    }
+  ],
+  "expected": {
+    "outcome": "failed",
+    "error": { "name": "CardDeclinedError", "message": "card declined" },
+    "commands": [
+      { "type": "fail_run", "error": { "name": "CardDeclinedError", "message": "card declined" } }
+    ]
+  }
+}
