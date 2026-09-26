@@ -21,3 +21,22 @@ export class ConcurrencyError extends Error {
     this.actualSeq = actualSeq;
   }
 }
+
+/**
+ * Thrown by a size-limited `Codec` when an encoded payload exceeds the
+ * limit it was configured with. Raised eagerly at encode time, before the
+ * oversized payload ever reaches postgres.
+ */
+export class PayloadTooLargeError extends Error {
+  readonly actualBytes: number;
+  readonly maxBytes: number;
+
+  constructor(actualBytes: number, maxBytes: number) {
+    super(
+      `encoded payload is ${String(actualBytes)} bytes, which exceeds the ${String(maxBytes)}-byte limit`,
+    );
+    this.name = "PayloadTooLargeError";
+    this.actualBytes = actualBytes;
+    this.maxBytes = maxBytes;
+  }
+}
