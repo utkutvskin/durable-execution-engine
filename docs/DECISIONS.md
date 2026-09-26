@@ -388,3 +388,96 @@ exactly which recorded scenario needs to be re-derived. The cost is one
 extra layer of indirection (the `workflowsByType` map in the harness) that
 needs a new entry whenever a fixture references a workflow type that
 was not covered by the previous day's `decision-loop.test.ts` examples.
+
+---
+
+## ADR-0015: `defineStep`'s input/output validation is bundled into the returned `StepHandler`, not into `StepRegistry`
+
+**Context:** day 7 asks for input/output schema validation and a timeout
+field on a step's contract. `StepRegistry.register(stepType, handler)`
+already exists (day 4) and takes a bare `StepHandler`, with two call sites
+depending on that exact shape (`run-workflow.ts` and its tests). Changing
+`StepRegistry.register` to take a richer `StepDefinition` object instead
+would ripple through both, for a validation concern that registration and
+lookup do not otherwise need to know about.
+
+**Decision:** `defineStep(stepType, options)` returns a `StepDefinition`
+whose `handler` is `options.handler` wrapped to run `options.input?.parse()`
+before it and `options.output?.parse()` after it, with `timeoutMs` (validated
+to be positive, or omitted) carried alongside as plain metadata. The
+returned `handler` is a drop-in `StepHandler`: `steps.register(definition.stepType,
+definition.handler)` works against the same `StepRegistry` from day 4,
+unchanged.
+
+**Consequence:** a step defined with `defineStep` gets input/output
+validation and a `timeoutMs` field without any other module needing to
+change. The cost is that `StepRegistry` and a worker's `steps.get()` call
+site still only ever see a `StepHandler`, not a `StepDefinition` — nothing
+downstream can read `timeoutMs` back off a registered step yet. That is
+expected: day 11 (worker process, lease and heartbeat) is what actually
+enforces a step's timeout, and it is the point where `StepRegistry` (or its
+caller) will need to start carrying `StepDefinition` objects through
+instead of bare handlers, not before.
+
+---
+
+## ADR-0016: `serializeError`/`deserializeError` are a standalone module, not wired into the existing `fail_run`/`run_failed`/`step_failed` error handling
+
+**Context:** day 7 asks for error serialization that preserves an error's
+type, message and stack. `decision-loop.ts` and `run-workflow.ts` already
+have their own ad hoc `{name, message}` construction and reconstruction for
+`fail_run` commands and `run_failed`/`step_failed` events (days 4-6),
+locked in by those days' own passing tests and fixtures
+(`test/fixtures/histories/ship-order-step-failed.json` among them). Adding
+`stack` to that existing shape would touch `events.ts`'s zod schemas,
+`commands.ts`'s `FailRunCommand`, both reconstruction sites, and every test
+or fixture that asserts an exact `error` object on those paths — none of
+which day 7 actually asks to change.
+
+**Decision:** `serializeError`/`deserializeError` (`workflow/error-serialization.ts`)
+are a self-contained pair with their own `SerializedError` type
+(`name`, `message`, an optional `stack`), used and tested on their own.
+They are the contract a worker will call when it captures a step's thrown
+error (day 9's idempotent step result recording is the first place that
+actually happens), not a replacement for the engine-level run failure
+bookkeeping days 4-6 already built and proved correct.
+
+**Consequence:** today's change carries zero risk to any previous day's
+"done when" criterion — no event schema, command shape or fixture changes.
+The cost is a short-lived duplication: `decision-loop.ts` and
+`run-workflow.ts` still build their own `{name, message}` records by hand.
+Folding them onto `serializeError`/`deserializeError` (adding `stack` to
+`run_failed`/`step_failed` too) is left for whichever future day next
+touches that path, since `stack` is an additive, optional field and does
+not need to happen today.
+
+---
+
+## ADR-0017: the payload size limit and compression are composable `Codec` decorators; sensitive-field masking is a separate, non-round-tripping function
+
+**Context:** day 7 asks for a large payload limit, a compression hook on
+`Codec`, and a sensitive-field masking hook. `Codec` (day 3) is already
+just `{encode, decode}`; the event store depends on the interface, not on
+`jsonCodec` specifically.
+
+**Decision:** `createSizeLimitedCodec(codec, maxBytes = 1_048_576)` and
+`createGzipCodec(codec)` each wrap another `Codec` and return a new one,
+so a caller composes exactly the behavior it wants (for example
+`createSizeLimitedCodec(createGzipCodec(jsonCodec))`) without `EventStore`
+or `jsonCodec` needing to change. `maskSensitiveFields(value, fields)` is
+a plain function, not a `Codec`, and is never called from an `encode`/`decode`
+round trip: it returns a redacted deep copy for logging or display,
+while the event store's own round trip always keeps the real value, since
+a replay's determinism check depends on `ctx.step()`'s recorded input
+matching exactly, not a masked approximation of it.
+
+**Consequence:** `PayloadTooLargeError` (`event-store/errors.ts`, alongside
+`ConcurrencyError`) is raised eagerly at encode time, before an oversized
+payload reaches postgres, and is measured on whatever the wrapped codec
+actually produces — so limiting a gzip-compressed codec's output measures
+the compressed size, not the original one. The cost of keeping masking
+out of the round trip is that nothing today automatically redacts a
+sensitive field before it is written to the log; that is deliberate for
+v0, and an at-rest encryption or redaction story, if the owner wants one
+later, is a bigger decision than a hook on `Codec` and belongs in its own
+day, not folded in here by default.
