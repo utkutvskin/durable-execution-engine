@@ -44,4 +44,26 @@ describe("workflowEventSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("accepts a step_failed event whose error carries a stack", () => {
+    const result = workflowEventSchema.safeParse({
+      type: "step_failed",
+      stepId: "charge-card",
+      error: {
+        name: "CardDeclinedError",
+        message: "card declined",
+        stack: "CardDeclinedError: card declined\n    at x",
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a step_failed event whose error has no stack", () => {
+    const result = workflowEventSchema.safeParse({
+      type: "step_failed",
+      stepId: "charge-card",
+      error: { name: "CardDeclinedError", message: "card declined" },
+    });
+    expect(result.success).toBe(true);
+  });
 });
