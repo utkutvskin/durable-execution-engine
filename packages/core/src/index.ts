@@ -4,11 +4,11 @@
  */
 export const packageName = "@dee/core";
 
-export type { Codec } from "./event-store/codec.js";
-export { jsonCodec } from "./event-store/codec.js";
+export type { Codec, CodecOptions } from "./event-store/codec.js";
+export { createJsonCodec, jsonCodec } from "./event-store/codec.js";
 export { createPostgresEventStore } from "./event-store/event-store.js";
 export type { EventStore, StoredEvent } from "./event-store/event-store.js";
-export { ConcurrencyError } from "./event-store/errors.js";
+export { ConcurrencyError, PayloadTooLargeError } from "./event-store/errors.js";
 export {
   runCompletedEventSchema,
   runFailedEventSchema,
@@ -32,13 +32,14 @@ export type {
 export type { WorkflowContext, WorkflowHandler } from "./workflow/context.js";
 export { runDecisionLoop } from "./workflow/decision-loop.js";
 export type { DecisionLoopOptions, DecisionResult } from "./workflow/decision-loop.js";
+export { defineStep, registerStep } from "./workflow/define-step.js";
+export type { DefineStepOptions, StepDefinition } from "./workflow/define-step.js";
 export { defineWorkflow } from "./workflow/define-workflow.js";
-export { NonDeterminismError } from "./workflow/errors.js";
+export { deserializeError, serializeError } from "./workflow/error-serialization.js";
+export type { SerializedError } from "./workflow/error-serialization.js";
+export { NonDeterminismError, StepTimeoutError } from "./workflow/errors.js";
 export { ForbiddenApiError } from "./workflow/sandbox.js";
-export {
-  runRegisteredWorkflowInMemory,
-  runWorkflowInMemory,
-} from "./workflow/run-workflow.js";
+export { runRegisteredWorkflowInMemory, runWorkflowInMemory } from "./workflow/run-workflow.js";
 export type { RunWorkflowOptions, RunWorkflowResult } from "./workflow/run-workflow.js";
 export { systemClock, systemRandomSource } from "./workflow/sources.js";
 export type { ClockSource, RandomSource } from "./workflow/sources.js";

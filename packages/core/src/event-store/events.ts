@@ -26,6 +26,7 @@ export const runFailedEventSchema = z.object({
   error: z.object({
     name: z.string(),
     message: z.string(),
+    stack: z.string().optional(),
   }),
 });
 
@@ -57,6 +58,7 @@ export const stepFailedEventSchema = z.object({
   error: z.object({
     name: z.string(),
     message: z.string(),
+    stack: z.string().optional(),
   }),
 });
 

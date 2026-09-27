@@ -30,3 +30,23 @@ export class NonDeterminismError extends Error {
     this.found = found;
   }
 }
+
+/**
+ * Thrown by a `StepDefinition` produced by `defineStep` when its handler is
+ * still pending once `timeoutMs` elapses. The step's own attempt does not
+ * stop running in the background (there is no cooperative cancellation for
+ * an arbitrary handler), but the caller sees this rejection instead of
+ * waiting on it forever, and can act on it (retry, mark the attempt dead)
+ * the same way it would react to the handler rejecting on its own.
+ */
+export class StepTimeoutError extends Error {
+  readonly stepType: string;
+  readonly timeoutMs: number;
+
+  constructor(stepType: string, timeoutMs: number) {
+    super(`step "${stepType}" did not complete within its ${String(timeoutMs)}ms timeout`);
+    this.name = "StepTimeoutError";
+    this.stepType = stepType;
+    this.timeoutMs = timeoutMs;
+  }
+}
