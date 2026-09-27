@@ -388,3 +388,111 @@ exactly which recorded scenario needs to be re-derived. The cost is one
 extra layer of indirection (the `workflowsByType` map in the harness) that
 needs a new entry whenever a fixture references a workflow type that
 was not covered by the previous day's `decision-loop.test.ts` examples.
+
+---
+
+## ADR-0015: error serialization is a standalone utility, not a change to `FailRunCommand`'s existing shape
+
+**Context:** day 7 asks for error serialization that preserves a thrown
+error's type, message and stack across a store-and-reload cycle. Day 6's
+handoff note pointed at `step_failed`'s error reconstruction in
+`decision-loop.ts` (`{ name, message }`, with no stack) as the natural
+place to extend. Extending it in place, though, means changing what
+`runDecisionLoop` actually puts on a `fail_run` command's `error` field:
+every existing hand-built history fixture and `decision-loop.test.ts`/
+`run-workflow.test.ts` assertion that does `toEqual({ name, message })` on
+that field would start failing the moment a real error's (always present)
+`stack` shows up as an extra key, for a behavior no "done when" from day 4
+through day 6 actually asked to change.
+
+**Decision:** `serializeError`/`deserializeError` (`workflow/error-serialization.ts`)
+are a self-contained pair: `serializeError` reduces an `Error` to
+`{ name, message, stack? }`, `deserializeError` rebuilds a plain `Error`
+from that shape. Neither `runDecisionLoop` nor `runWorkflowInMemory` is
+changed to call them for `fail_run`/`step_failed` construction today — that
+wiring is for whichever future day actually persists a step's thrown error
+(day 10's idempotent step result recording is the first candidate).
+`stepFailedEventSchema` and `runFailedEventSchema` do gain an optional
+`stack` field on `error` now, since that is additive: every existing
+fixture and hand-built event omits it and still validates.
+
+**Consequence:** the "done when" (a custom error class's type and message
+survive a serialize/read-back cycle, stack included) is proven directly
+against the utility's own tests, with no ripple into `commands.ts` or any
+existing decision-loop/run-workflow test. The cost is that today's engine
+does not yet actually attach a stack to any event it produces; that lands
+whenever step execution is wired into a real event write, not before.
+
+---
+
+## ADR-0016: the payload size limit, compression and masking hooks all live on `Codec`'s construction options, checked in that order
+
+**Context:** day 7 asks for a payload size limit with an explicit error, a
+compression hook, and a sensitive-field masking hook, all on the existing
+`Codec` seam from day 3. `Codec` itself (`encode`/`decode`) is used
+directly by `createPostgresEventStore`, so adding parameters to `encode`
+would touch the event store too; the seam that should change instead is
+how a `Codec` is built.
+
+**Decision:** `createJsonCodec(options?)` replaces a bare object literal
+as `jsonCodec`'s constructor, taking `maxPayloadBytes` (default 1 MiB),
+`compress`/`decompress`, and `sensitiveFields`. `encode` applies masking
+first (walking the value recursively, replacing any object key in
+`sensitiveFields` with a fixed `"[redacted]"` marker, at any depth), then
+`JSON.stringify`s the masked value, then `compress` (if given), then
+measures the *final* string's UTF-8 byte length against `maxPayloadBytes`
+and throws `PayloadTooLargeError` if it is over. Masking runs before
+compression and is applied to the value that actually gets persisted, not
+to a separate logging-only view: a masked field is gone from the stored
+payload entirely, so a later replay can never recover its original value.
+The size check runs last, against what compression actually produced,
+since that is the number of bytes the `payload` column will hold — a
+payload that is over the limit before compression but under it after
+should not be rejected.
+
+**Consequence:** `jsonCodec` (`createJsonCodec()` with every option at its
+default) keeps its exact prior behavior, so day 3's event store tests are
+untouched. `PayloadTooLargeError` carries both the actual byte length and
+the configured limit, so a caller can tell whether raising the limit or
+shrinking the payload is the fix. The masking hook is a real redaction,
+not a display filter: choosing to mask a field is choosing that no code
+path, including a future replay, ever sees that field's real value again.
+
+---
+
+## ADR-0017: `defineStep` validates and times out a step, but nothing yet makes a worker call it
+
+**Context:** day 7's "step execution contract" (`defineStep`, an
+input/output schema, a timeout field) has no worker to run inside yet —
+that is day 11. `StepRegistry.register` already existed as the seam a
+worker would use to look a step up by `stepType`, but it stored a bare
+`StepHandler` with no schema or timeout attached, matching day 4's own
+note that a step's input "is not actually checked against anything at the
+call site".
+
+**Decision:** `defineStep` returns a `StepDefinition` whose `execute`
+wraps the handler: it parses the raw input against an optional zod
+`inputSchema` before the handler ever runs, races the handler against an
+optional `timeoutMs` with `Promise.race`-style logic (rejecting with a new
+`StepTimeoutError` if the timer wins), and parses the handler's return
+value against an optional `resultSchema` before handing it back. A
+schema's own validation error (a `ZodError`) is left to propagate
+unwrapped, since it identifies itself as a schema failure without help.
+`registerStep(registry, definition)` adapts a `StepDefinition` onto the
+existing `StepRegistry.register(stepType, handler)` seam, so a worker that
+only ever calls `registry.get(stepType)` does not need to know whether the
+handler behind it came from `defineStep` or a bare function.
+`StepDefinition` is generic only in its result type, matching
+`WorkflowContext.step<TResult>`'s existing precedent (day 4): a step's
+input always arrives as `unknown` off the wire or a replayed history, so a
+compile-time-only input type parameter would type-check a call site
+without checking anything real.
+
+**Consequence:** a step's timeout does not cancel the handler's actual
+work — there is no cooperative cancellation for an arbitrary async
+function — it only stops `execute` from waiting on it, exactly the same
+limitation `StepTimeoutError`'s own doc comment states. A worker built on
+top of this in a later day still needs its own logic for what to do with
+an attempt that timed out but might still complete in the background
+(day 9's task visibility timeout and day 13's retry policy are the
+natural places that gets handled).
