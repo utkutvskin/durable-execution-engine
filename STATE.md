@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 8: run projection and state machine
+
+- **Status:** DONE
+- **Completed day:** 8
+- **Files added or changed:** `packages/core/src/run/{errors,state-machine,projection,projection-store}.ts` (new: `InvalidTransitionError`, `RUN_STATES`, `RUN_STATE_TRANSITIONS`, `assertTransition`, `assertRunAcceptsCommand`, `isTerminalState`, `applyEventToProjection`, `foldRunEvents`, `refreshProjection`, `rebuildProjection`) and their `*.test.ts` files, `packages/core/migrations/0002_run_projection.{up,down}.sql` (new), `packages/core/src/event-store/events.ts` (`run_timed_out`, `run_cancelled`, `run_terminated`) and `events.test.ts`, `packages/core/src/db/migrator.test.ts` (expects both migrations), `packages/core/src/index.ts` (re-exports), `docs/DECISIONS.md` (ADR-0018)
+- **Technical decisions:** ADR-0018 in `docs/DECISIONS.md`. No new dependency: the 200-sequence property test uses a small seeded generator rather than a property-testing library.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (30 test files, 133 tests, 22 of them new today). The `dee` role/database were recreated by hand again after the container restart. Proven by test: rebuilding the projection from the log after wiping its derived columns gives an identical row for 200 seeded random event sequences (appended in random chunks with incremental refreshes in between); any event after a terminal event, and any command on a terminal run, raises `InvalidTransitionError` and leaves the row untouched; the database itself refuses a status outside the six states. "Rebuilt from scratch" wipes derived columns and keeps the row (foreign keys), see ADR-0018. `refreshProjection` is not yet called from `EventStore.append`; day 9's task queue is the first place something needs to read it. `origin/main` already carried days 1-7 when this session started, so this session followed the scheduled prompt's instruction to push to `main` as-is.
+
+---
+
 ## Day 7: step execution contract and payload codec
 
 - **Status:** DONE
