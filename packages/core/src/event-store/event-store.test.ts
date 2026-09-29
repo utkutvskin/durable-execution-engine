@@ -61,7 +61,12 @@ describe("createPostgresEventStore", () => {
   it("reads back an appended history in ascending sequence order", async () => {
     await store.append(runId, 0, [{ type: "run_started", workflowType: "ship-order", input: {} }]);
     await store.append(runId, 1, [
-      { type: "step_scheduled", stepId: "charge-card", stepType: "charge-card", input: { amount: 42 } },
+      {
+        type: "step_scheduled",
+        stepId: "charge-card",
+        stepType: "charge-card",
+        input: { amount: 42 },
+      },
     ]);
 
     const history = await store.read(runId);
@@ -99,9 +104,7 @@ describe("createPostgresEventStore", () => {
 
   it("rejects an event that fails schema validation before writing anything", async () => {
     await expect(
-      store.append(runId, 0, [
-        { type: "run_started" } as unknown as WorkflowEvent,
-      ]),
+      store.append(runId, 0, [{ type: "run_started" } as unknown as WorkflowEvent]),
     ).rejects.toThrow();
 
     expect(await store.read(runId)).toEqual([]);
@@ -110,7 +113,12 @@ describe("createPostgresEventStore", () => {
   it("lets exactly one of 50 concurrent appends with the same expectedSeq win", async () => {
     const attempts = Array.from({ length: 50 }, (_, index) =>
       store.append(runId, 0, [
-        { type: "step_scheduled", stepId: `step-${String(index)}`, stepType: "charge-card", input: {} },
+        {
+          type: "step_scheduled",
+          stepId: `step-${String(index)}`,
+          stepType: "charge-card",
+          input: {},
+        },
       ]),
     );
     const settled = await Promise.allSettled(attempts);

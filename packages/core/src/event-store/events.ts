@@ -30,6 +30,32 @@ export const runFailedEventSchema = z.object({
 });
 
 /**
+ * The run reached its `TIMED_OUT` state because it exceeded its allowed
+ * duration.
+ */
+export const runTimedOutEventSchema = z.object({
+  type: z.literal("run_timed_out"),
+});
+
+/**
+ * The run reached its `CANCELLED` state after a cooperative cancellation
+ * request.
+ */
+export const runCancelledEventSchema = z.object({
+  type: z.literal("run_cancelled"),
+  reason: z.string().optional(),
+});
+
+/**
+ * The run reached its `TERMINATED` state after a forced termination that
+ * did not wait for the workflow to react.
+ */
+export const runTerminatedEventSchema = z.object({
+  type: z.literal("run_terminated"),
+  reason: z.string().optional(),
+});
+
+/**
  * A step was scheduled for execution with the given input.
  */
 export const stepScheduledEventSchema = z.object({
@@ -87,6 +113,9 @@ export const workflowEventSchema = z.discriminatedUnion("type", [
   runStartedEventSchema,
   runCompletedEventSchema,
   runFailedEventSchema,
+  runTimedOutEventSchema,
+  runCancelledEventSchema,
+  runTerminatedEventSchema,
   stepScheduledEventSchema,
   stepCompletedEventSchema,
   stepFailedEventSchema,

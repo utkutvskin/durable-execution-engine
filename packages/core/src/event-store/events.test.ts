@@ -44,4 +44,14 @@ describe("workflowEventSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("accepts the run_timed_out, run_cancelled and run_terminated events", () => {
+    for (const event of [
+      { type: "run_timed_out" },
+      { type: "run_cancelled", reason: "user request" },
+      { type: "run_terminated" },
+    ]) {
+      expect(workflowEventSchema.safeParse(event).success).toBe(true);
+    }
+  });
 });
