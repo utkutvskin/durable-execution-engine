@@ -17,8 +17,11 @@ export type { EventStore, StoredEvent } from "./event-store/event-store.js";
 export { ConcurrencyError, PayloadTooLargeError } from "./event-store/errors.js";
 export {
   runCompletedEventSchema,
+  runCancelledEventSchema,
   runFailedEventSchema,
   runStartedEventSchema,
+  runTerminatedEventSchema,
+  runTimedOutEventSchema,
   stepCompletedEventSchema,
   stepFailedEventSchema,
   stepScheduledEventSchema,
@@ -38,6 +41,22 @@ export type {
 export type { WorkflowContext, WorkflowHandler } from "./workflow/context.js";
 export { runDecisionLoop } from "./workflow/decision-loop.js";
 export type { DecisionLoopOptions, DecisionResult } from "./workflow/decision-loop.js";
+export { InvalidTransitionError } from "./run/errors.js";
+export {
+  assertRunAcceptsCommand,
+  assertTransition,
+  isTerminalState,
+  RUN_STATES,
+  RUN_STATE_TRANSITIONS,
+} from "./run/state-machine.js";
+export type { RunState } from "./run/state-machine.js";
+export {
+  applyEventToProjection,
+  createInitialProjection,
+  foldRunEvents,
+} from "./run/projection.js";
+export type { RunProjection } from "./run/projection.js";
+export { rebuildProjection, refreshProjection } from "./run/projection-store.js";
 export { defineStep } from "./workflow/define-step.js";
 export type { DefineStepOptions, StepDefinition } from "./workflow/define-step.js";
 export { defineWorkflow } from "./workflow/define-workflow.js";
