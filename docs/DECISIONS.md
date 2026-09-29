@@ -481,3 +481,36 @@ sensitive field before it is written to the log; that is deliberate for
 v0, and an at-rest encryption or redaction story, if the owner wants one
 later, is a bigger decision than a hook on `Codec` and belongs in its own
 day, not folded in here by default.
+
+
+---
+
+## ADR-0018: the run projection is a pure fold over the event log, persisted into the existing `workflow_runs` row
+
+**Context:** day 8 asks for a `workflow_runs` projection with six states, a
+transition table, and a `rebuildProjection` that reproduces the table from
+the event log. `workflow_runs` (day 2) already exists and is referenced by
+foreign keys from `run_events`, `tasks`, `timers` and `step_results`, and its
+`namespace_id` is not derivable from any event.
+
+**Decision:** the state logic is pure (`applyEventToProjection`,
+`foldRunEvents`) and knows nothing about postgres. `refreshProjection`
+folds only the events after the row's `last_sequence_number` onto its
+stored state; `rebuildProjection` resets the projection to its initial
+value and folds the whole log, both in one transaction holding a row lock.
+"Rebuilt from scratch" therefore means every derived column (`status`,
+`input`, `result`, `error`, `closed_at`, `last_sequence_number`) is
+recomputed from the log, while the row itself and its non-derivable
+columns (`id`, `namespace_id`, `workflow_type`) stay, since deleting the row
+would violate the foreign key from `run_events`. Migration `0002` adds
+`error` and `last_sequence_number` and a check constraint limiting `status`
+to the six states. Three terminal events (`run_timed_out`, `run_cancelled`,
+`run_terminated`) join the event catalog. The property test uses a small
+seeded generator instead of a property-testing library, so no dependency
+is added.
+
+**Consequence:** any event after a terminal one, and any command passed to
+`assertRunAcceptsCommand` for a terminal run, raises `InvalidTransitionError`
+and leaves the row unchanged. Nothing calls `refreshProjection` from
+`EventStore.append` yet; wiring the projection into the write path belongs
+with the task queue and worker days, when something first needs to read it.
