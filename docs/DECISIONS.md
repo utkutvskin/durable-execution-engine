@@ -514,3 +514,13 @@ is added.
 and leaves the row unchanged. Nothing calls `refreshProjection` from
 `EventStore.append` yet; wiring the projection into the write path belongs
 with the task queue and worker days, when something first needs to read it.
+
+---
+
+## ADR-0019: the task queue reuses the `tasks` table and identifies each delivery by a lease token
+
+**Context:** day 9 asks for a queue with skip-locked dequeue, a visibility timeout, `enqueue` / `ack` / `nack` / `extend`, two task types and namespace-based queue names. The `tasks` table from day 2 already has `queue_name`, `task_type`, `state`, `visible_at` and `attempts`, but no payload and no way to tell one delivery of a task from the next.
+
+**Decision:** migration `0003` adds `payload` and `lease_token` to `tasks` and check constraints limiting `task_type` to the two task types and `state` to `PENDING`, `LEASED` and `COMPLETED`. A dequeue picks rows that are `PENDING` or `LEASED` with `visible_at` in the past using `FOR UPDATE SKIP LOCKED`, then in the same statement marks them `LEASED`, bumps `attempts`, issues a new lease token and moves `visible_at` to now plus the visibility timeout. An expired lease therefore needs no sweeper: the task simply becomes eligible again. `ack`, `nack` and `extend` only apply when the caller's lease token is still current and report `false` otherwise; `extend` also refuses an already expired lease. "Now" comes from an injected `ClockSource`, so tests move time with a fake clock. A queue name is `namespace/queue`, built by `taskQueueName`.
+
+**Consequence:** delivery is at least once: a consumer that is slow past its visibility timeout can see its `ack` rejected because another consumer holds the task, and its side effects may run twice. Making those effects idempotent is day 10's scope.
