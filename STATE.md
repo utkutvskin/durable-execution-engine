@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 9: task queue
+
+- **Status:** DONE
+- **Completed day:** 9
+- **Files added or changed:** `packages/core/migrations/0003_task_queue.{up,down}.sql` (new), `packages/core/src/queue/task-queue.ts` (new: `createTaskQueue`, `taskQueueName`, `TASK_TYPES`, `TaskQueue`, `LeasedTask`, `EnqueueInput`, `DequeueOptions`) and `task-queue.test.ts`, `packages/core/src/db/migrator.test.ts` (expects three migrations), `packages/core/src/index.ts` (re-exports), `docs/DECISIONS.md` (ADR-0019)
+- **Technical decisions:** ADR-0019 in `docs/DECISIONS.md`. No new dependency.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (31 test files, 146 tests, 13 of them new today). The `dee` role/database were recreated by hand again after the container restart (`service postgresql start` first). Proven by test: 8 parallel consumers draining 1000 tasks receive every task exactly once and lose none; a task not acked is redelivered once the visibility timeout passes (fake clock, no sleeping), with `attempts` bumped and a new lease token; an `ack` carrying a stale lease token is rejected; `nack` (with and without delay), `extend` (refused once the lease expired), delayed enqueue, `limit`, queue isolation and the database check on `task_type` are covered. Delivery is at least once, so day 10 (idempotency and the single-write guarantee) is where duplicate side effects get handled. `ack` marks rows `COMPLETED` rather than deleting them; nothing prunes them yet. Nothing enqueues tasks from the event write path yet.
+
+---
+
 ## Day 8: run projection and state machine
 
 - **Status:** DONE
