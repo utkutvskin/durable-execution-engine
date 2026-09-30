@@ -27,7 +27,7 @@ describe("migrateUp / migrateDown", () => {
 
   it("applies every migration and records it in schema_migrations", async () => {
     const applied = await migrateUp(database.pool);
-    expect(applied).toEqual(["0001_initial_schema", "0002_run_projection"]);
+    expect(applied).toEqual(["0001_initial_schema", "0002_run_projection", "0003_task_queue"]);
 
     const result = await database.pool.query<{ id: string }>(
       "select id from schema_migrations order by id",
@@ -35,6 +35,7 @@ describe("migrateUp / migrateDown", () => {
     expect(result.rows.map((row) => row.id)).toEqual([
       "0001_initial_schema",
       "0002_run_projection",
+      "0003_task_queue",
     ]);
   });
 
@@ -47,16 +48,21 @@ describe("migrateUp / migrateDown", () => {
   it("migrateDown reverts the most recently applied migration", async () => {
     await migrateUp(database.pool);
     const reverted = await migrateDown(database.pool);
-    expect(reverted).toEqual(["0002_run_projection"]);
+    expect(reverted).toEqual(["0003_task_queue"]);
 
-    const result = await database.pool.query<{ id: string }>("select id from schema_migrations");
-    expect(result.rows.map((row) => row.id)).toEqual(["0001_initial_schema"]);
+    const result = await database.pool.query<{ id: string }>(
+      "select id from schema_migrations order by id",
+    );
+    expect(result.rows.map((row) => row.id)).toEqual([
+      "0001_initial_schema",
+      "0002_run_projection",
+    ]);
   });
 
-  it("migrateDown with steps 2 reverts every migration, most recent first", async () => {
+  it("migrateDown with steps 3 reverts every migration, most recent first", async () => {
     await migrateUp(database.pool);
-    const reverted = await migrateDown(database.pool, undefined, 2);
-    expect(reverted).toEqual(["0002_run_projection", "0001_initial_schema"]);
+    const reverted = await migrateDown(database.pool, undefined, 3);
+    expect(reverted).toEqual(["0003_task_queue", "0002_run_projection", "0001_initial_schema"]);
 
     const result = await database.pool.query<{ id: string }>("select id from schema_migrations");
     expect(result.rows).toEqual([]);
