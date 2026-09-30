@@ -72,3 +72,11 @@ export { createStepRegistry } from "./workflow/step-registry.js";
 export type { StepHandler, StepRegistry } from "./workflow/step-registry.js";
 export { createWorkflowRegistry } from "./workflow/workflow-registry.js";
 export type { WorkflowDefinition, WorkflowRegistry } from "./workflow/workflow-registry.js";
+export { TASK_TYPES, createTaskQueue, taskQueueName } from "./queue/task-queue.js";
+export type {
+  DequeueOptions,
+  EnqueueInput,
+  LeasedTask,
+  TaskQueue,
+  TaskType,
+} from "./queue/task-queue.js";
