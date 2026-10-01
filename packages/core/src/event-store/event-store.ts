@@ -64,6 +64,52 @@ async function readCurrentSequence(client: PoolClient, runId: string): Promise<n
 }
 
 /**
+ * Appends already validated `events` to `runId` on `client`, inside a
+ * transaction the caller owns. Same sequence rules as `EventStore.append`,
+ * but it never begins, commits or rolls back, so a caller can make the
+ * append atomic with writes of its own.
+ */
+export async function appendEventsOnClient(
+  client: PoolClient,
+  codec: Codec,
+  runId: string,
+  expectedSeq: number,
+  events: readonly WorkflowEvent[],
+): Promise<StoredEvent[]> {
+  const currentSeq = await readCurrentSequence(client, runId);
+  if (currentSeq !== expectedSeq) {
+    throw new ConcurrencyError(runId, expectedSeq, currentSeq);
+  }
+  const stored: StoredEvent[] = [];
+  for (const [offset, event] of events.entries()) {
+    const sequenceNumber = expectedSeq + offset + 1;
+    const result = await client.query<{ created_at: Date }>(
+      `insert into run_events (run_id, sequence_number, event_type, payload)
+       values ($1, $2, $3, $4)
+       returning created_at`,
+      [runId, sequenceNumber, event.type, codec.encode(event)],
+    );
+    const createdAt = result.rows[0]?.created_at;
+    if (createdAt === undefined) {
+      throw new Error(`append to run "${runId}" did not return created_at`);
+    }
+    stored.push({ sequenceNumber, event, createdAt });
+  }
+  return stored;
+}
+
+/**
+ * Reads the sequence number of `runId`'s last event on `client` (0 when the
+ * run has no history).
+ */
+export async function readCurrentSequenceOnClient(
+  client: PoolClient,
+  runId: string,
+): Promise<number> {
+  return readCurrentSequence(client, runId);
+}
+
+/**
  * Creates an `EventStore` backed by the `run_events` table reachable
  * through `pool`. Optimistic concurrency is enforced by checking the
  * current sequence number inside the same transaction as the insert, with
@@ -85,27 +131,13 @@ export function createPostgresEventStore(pool: Pool, codec: Codec = jsonCodec): 
       const client = await pool.connect();
       try {
         await client.query("begin");
-        const currentSeq = await readCurrentSequence(client, runId);
-        if (currentSeq !== expectedSeq) {
-          throw new ConcurrencyError(runId, expectedSeq, currentSeq);
-        }
-
-        const stored: StoredEvent[] = [];
-        for (const [offset, event] of validatedEvents.entries()) {
-          const sequenceNumber = expectedSeq + offset + 1;
-          const result = await client.query<{ created_at: Date }>(
-            `insert into run_events (run_id, sequence_number, event_type, payload)
-             values ($1, $2, $3, $4)
-             returning created_at`,
-            [runId, sequenceNumber, event.type, codec.encode(event)],
-          );
-          const createdAt = result.rows[0]?.created_at;
-          if (createdAt === undefined) {
-            throw new Error(`append to run "${runId}" did not return created_at`);
-          }
-          stored.push({ sequenceNumber, event, createdAt });
-        }
-
+        const stored = await appendEventsOnClient(
+          client,
+          codec,
+          runId,
+          expectedSeq,
+          validatedEvents,
+        );
         await client.query("commit");
         return stored;
       } catch (error) {

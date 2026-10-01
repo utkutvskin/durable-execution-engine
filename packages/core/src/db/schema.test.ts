@@ -50,7 +50,7 @@ describe("initial schema", () => {
     expect(indexdef).toMatch(/WHERE \(state = 'PENDING'::text\)/);
   });
 
-  it("creates all six tables named by day 2's scope", async () => {
+  it("creates the six tables named by day 2's scope plus the workflow task results table", async () => {
     const result = await database.pool.query<{ table_name: string }>(
       `select table_name from information_schema.tables
        where table_schema = $1 and table_name != 'schema_migrations'
@@ -64,6 +64,7 @@ describe("initial schema", () => {
       "tasks",
       "timers",
       "workflow_runs",
+      "workflow_task_results",
     ]);
   });
 });

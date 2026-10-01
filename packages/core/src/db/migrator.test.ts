@@ -27,7 +27,12 @@ describe("migrateUp / migrateDown", () => {
 
   it("applies every migration and records it in schema_migrations", async () => {
     const applied = await migrateUp(database.pool);
-    expect(applied).toEqual(["0001_initial_schema", "0002_run_projection", "0003_task_queue"]);
+    expect(applied).toEqual([
+      "0001_initial_schema",
+      "0002_run_projection",
+      "0003_task_queue",
+      "0004_idempotent_results",
+    ]);
 
     const result = await database.pool.query<{ id: string }>(
       "select id from schema_migrations order by id",
@@ -36,6 +41,7 @@ describe("migrateUp / migrateDown", () => {
       "0001_initial_schema",
       "0002_run_projection",
       "0003_task_queue",
+      "0004_idempotent_results",
     ]);
   });
 
@@ -48,7 +54,7 @@ describe("migrateUp / migrateDown", () => {
   it("migrateDown reverts the most recently applied migration", async () => {
     await migrateUp(database.pool);
     const reverted = await migrateDown(database.pool);
-    expect(reverted).toEqual(["0003_task_queue"]);
+    expect(reverted).toEqual(["0004_idempotent_results"]);
 
     const result = await database.pool.query<{ id: string }>(
       "select id from schema_migrations order by id",
@@ -56,13 +62,19 @@ describe("migrateUp / migrateDown", () => {
     expect(result.rows.map((row) => row.id)).toEqual([
       "0001_initial_schema",
       "0002_run_projection",
+      "0003_task_queue",
     ]);
   });
 
-  it("migrateDown with steps 3 reverts every migration, most recent first", async () => {
+  it("migrateDown with steps 4 reverts every migration, most recent first", async () => {
     await migrateUp(database.pool);
-    const reverted = await migrateDown(database.pool, undefined, 3);
-    expect(reverted).toEqual(["0003_task_queue", "0002_run_projection", "0001_initial_schema"]);
+    const reverted = await migrateDown(database.pool, undefined, 4);
+    expect(reverted).toEqual([
+      "0004_idempotent_results",
+      "0003_task_queue",
+      "0002_run_projection",
+      "0001_initial_schema",
+    ]);
 
     const result = await database.pool.query<{ id: string }>("select id from schema_migrations");
     expect(result.rows).toEqual([]);
@@ -91,6 +103,7 @@ describe("migrateUp / migrateDown", () => {
       "tasks",
       "timers",
       "workflow_runs",
+      "workflow_task_results",
     ]);
   });
 });
