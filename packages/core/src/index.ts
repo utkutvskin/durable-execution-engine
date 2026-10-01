@@ -80,3 +80,12 @@ export type {
   TaskQueue,
   TaskType,
 } from "./queue/task-queue.js";
+export { createResultRecorder } from "./idempotency/recorder.js";
+export type {
+  RecordStepResultInput,
+  RecordWorkflowTaskResultInput,
+  RecordedStepResult,
+  RecordedWorkflowTaskResult,
+  ResultRecorder,
+  StepOutcome,
+} from "./idempotency/recorder.js";
