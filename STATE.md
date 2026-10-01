@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 10: idempotency and the single-write guarantee
+
+- **Status:** DONE
+- **Completed day:** 10
+- **Files added or changed:** `packages/core/migrations/0004_idempotent_results.{up,down}.sql` (new), `packages/core/src/idempotency/recorder.ts` (new: `createResultRecorder`, `ResultRecorder`, `StepOutcome`, `RecordStepResultInput`, `RecordedStepResult`, `RecordWorkflowTaskResultInput`, `RecordedWorkflowTaskResult`) and `recorder.test.ts`, `packages/core/src/event-store/event-store.ts` (`appendEventsOnClient`, `readCurrentSequenceOnClient`, shared with `append`), `packages/core/src/db/migrator.test.ts` and `schema.test.ts` (expect four migrations and the new table), `packages/core/src/index.ts` (re-exports), `docs/DECISIONS.md` (ADR-0020)
+- **Technical decisions:** ADR-0020 in `docs/DECISIONS.md`. No new dependency.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (32 test files, 156 tests, 10 of them new today). The `dee` role/database were recreated by hand again after the container restart (`service postgresql start` first). Proven by test: the same step task delivered 5 times concurrently (the body runs 5 times) writes exactly one `step_results` row and one `step_completed` event, and every redelivery gets the first outcome back; a failed outcome is stored as `step_failed` and returned on redelivery; a different attempt key is a separate result; four different steps finishing at once get sequences 1 to 4 without a clash; a codec that throws mid-write leaves no `step_results` row and no event; a workflow task delivered 5 times appends its events once; a stale `expectedSeq` on a new task key raises `ConcurrencyError` and records nothing; the database itself refuses a duplicate `(run_id, step_id, attempt_key)`. The caller picks `attemptKey` (the logical attempt, not the delivery), so the day 11 worker must derive it from the step task payload. Nothing calls the recorder yet.
+
+---
+
 ## Day 9: task queue
 
 - **Status:** DONE
