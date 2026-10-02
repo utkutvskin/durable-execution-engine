@@ -3,3 +3,11 @@
  * resolution tests to confirm this package is wired up correctly.
  */
 export const packageName = "@dee/worker";
+
+export { LeaseLostError, ShutdownTimeoutError } from "./errors.js";
+export { installShutdownHandlers } from "./shutdown.js";
+export type { ProcessLike } from "./shutdown.js";
+export { systemTimers } from "./timers.js";
+export type { Timers } from "./timers.js";
+export { createWorker } from "./worker.js";
+export type { StopResult, TaskContext, TaskHandler, Worker, WorkerOptions } from "./worker.js";
