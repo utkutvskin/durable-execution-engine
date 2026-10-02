@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 11: worker process, lease and heartbeat
+
+- **Status:** DONE
+- **Completed day:** 11
+- **Files added or changed:** `packages/worker/src/worker.ts` (new: `createWorker`, `Worker`, `WorkerOptions`, `TaskHandler`, `TaskContext`, `StopResult`) and `worker.test.ts`, `packages/worker/src/shutdown.ts` (new: `installShutdownHandlers`, `ProcessLike`) and `shutdown.test.ts`, `packages/worker/src/errors.ts` (new: `LeaseLostError`, `ShutdownTimeoutError`), `packages/worker/src/timers.ts` (new: `Timers`, `systemTimers`), `packages/worker/src/test-support.ts` (virtual time, in-memory queue), `packages/worker/src/lease.integration.test.ts`, `packages/worker/src/index.ts` (exports), `packages/worker/tsconfig.json` (`paths` to core sources), `vitest.config.ts` (alias `@dee/core`), `docs/DECISIONS.md` (ADR-0021)
+- **Technical decisions:** ADR-0021 in `docs/DECISIONS.md`. No new dependency.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (35 test files, 173 tests, 17 of them new today). The `dee` role/database were recreated by hand again after the container restart (`service postgresql start` first). Proven by test: against real Postgres with a virtual clock, a step held for 60 seconds with a 10 second visibility timeout and a 3 second heartbeat is never handed to a second polling worker and is acked once it finishes, while the same lease without heartbeats is redelivered after expiry; the concurrency limit holds (peak 2 of 6 tasks); an empty queue is polled with waits 100, 200, 400, 400, 400 and the wait resets after work; a lost lease aborts the task signal with `LeaseLostError` and skips ack and nack; after SIGTERM no new task is taken, the running task finishes, and only then does the process exit with 0; a task that outlives `shutdownTimeoutMs` is aborted, nacked and makes the exit code 1. The worker does not call the day 10 recorder itself: the handler passed to `createWorker` must, deriving `attemptKey` from the task payload. The worker package no longer builds with its own `tsc -p` (see ADR-0021); typecheck, lint and tests are unaffected. The `SIGKILL` child-process harness is day 12.
+
+---
+
 ## Day 10: idempotency and the single-write guarantee
 
 - **Status:** DONE
