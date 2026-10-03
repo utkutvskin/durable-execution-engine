@@ -1,4 +1,5 @@
 import type { LeasedTask, TaskQueue } from "@dee/core";
+import type { WorkerIdentity } from "./identity.js";
 import { LeaseLostError, ShutdownTimeoutError } from "./errors.js";
 import { systemTimers, type Timers } from "./timers.js";
 
@@ -33,6 +34,8 @@ export type TaskHandler = (task: LeasedTask, context: TaskContext) => Promise<vo
  *   dropping them (default 30000).
  * - `nackDelayMs`: the redelivery delay of a task whose handler threw
  *   (default 0).
+ * - `identity`: stamped on every leased task, so a reclaimed lease names
+ *   the worker that lost it.
  * - `onError`: receives errors the worker survives, such as a failed poll.
  */
 export interface WorkerOptions {
@@ -47,6 +50,7 @@ export interface WorkerOptions {
   readonly shutdownTimeoutMs?: number;
   readonly nackDelayMs?: number;
   readonly timers?: Timers;
+  readonly identity?: WorkerIdentity;
   readonly onError?: (error: unknown) => void;
 }
 
@@ -98,6 +102,7 @@ interface ResolvedOptions {
   readonly shutdownTimeoutMs: number;
   readonly nackDelayMs: number;
   readonly timers: Timers;
+  readonly identity: WorkerIdentity | undefined;
   readonly onError: (error: unknown) => void;
 }
 
@@ -152,6 +157,7 @@ function resolveOptions(options: WorkerOptions): ResolvedOptions {
     ),
     nackDelayMs: requireNonNegativeInteger("nackDelayMs", options.nackDelayMs ?? 0),
     timers: options.timers ?? systemTimers,
+    identity: options.identity,
     onError:
       options.onError ??
       ((): void => {
@@ -304,6 +310,9 @@ export function createWorker(options: WorkerOptions): Worker {
           queueName: config.queueName,
           visibilityTimeoutMs: config.visibilityTimeoutMs,
           limit: free,
+          ...(config.identity === undefined
+            ? {}
+            : { workerId: config.identity.id, workerVersion: config.identity.version }),
         });
       } catch (error) {
         config.onError(error);

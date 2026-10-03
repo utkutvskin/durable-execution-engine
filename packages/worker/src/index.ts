@@ -11,3 +11,7 @@ export { systemTimers } from "./timers.js";
 export type { Timers } from "./timers.js";
 export { createWorker } from "./worker.js";
 export type { StopResult, TaskContext, TaskHandler, Worker, WorkerOptions } from "./worker.js";
+export { createWorkerIdentity } from "./identity.js";
+export type { WorkerIdentity, WorkerIdentityOptions } from "./identity.js";
+export { startJanitorLoop } from "./janitor-loop.js";
+export type { JanitorLoop, JanitorLoopOptions } from "./janitor-loop.js";
