@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 12: crash recovery
+
+- **Status:** DONE
+- **Completed day:** 12
+- **Files added or changed:** `packages/core/migrations/0005_crash_recovery.{up,down}.sql` (new), `packages/core/src/recovery/janitor.ts` (new: `createJanitor`, `Janitor`, `ReclaimedTask`, `StalledRun`, `SweepReport`) and `janitor.test.ts`, `packages/core/src/recovery/metrics.ts` (new: `createRecoveryMetrics`, `RecoveryMetrics`), `packages/core/src/db/pool.ts` (new: `createPool`), `packages/core/src/queue/task-queue.ts` (`DequeueOptions` gains `workerId` and `workerVersion`, stamped on the lease and cleared on ack and nack), `packages/core/src/index.ts` (exports), `packages/core/src/db/migrator.test.ts` (expects five migrations), `packages/worker/src/identity.ts` (new: `createWorkerIdentity`) and `identity.test.ts`, `packages/worker/src/janitor-loop.ts` (new: `startJanitorLoop`) and `janitor-loop.test.ts`, `packages/worker/src/worker.ts` (`WorkerOptions.identity`), `packages/worker/src/chaos/{flow,child-worker,process-harness,register,resolve-hooks}.ts` and `crash-recovery.integration.test.ts` (the `SIGKILL` harness), `docs/DECISIONS.md` (ADR-0022)
+- **Technical decisions:** ADR-0022 in `docs/DECISIONS.md`. No new dependency: the child process runs the TypeScript sources through Node 22's built-in type stripping plus a resolve hook.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (39 test files, 199 tests, 26 of them new today). The `dee` role/database were recreated by hand again after the container restart (`service postgresql start` first). Proven by test with a real child process killed by `SIGKILL`: a worker killed mid-step (before its result was recorded) has its lease reclaimed by the janitor, and a second worker with a different version finishes the run with the correct result (21 doubled to 42) from exactly four events, the task ending `COMPLETED` with 2 attempts; kills after the step result and after the run finished also leave exactly one `step_completed` and one `run_completed`; in a chaos run of 20 children killed at mixed checkpoints all 20 runs reach `COMPLETED` with the right results, no task is left open and no run is stalled. Unit and database tests cover: worker id and version stamped on a lease and cleared on ack, reclaim of an expired lease naming its holder, a live lease left alone, redelivery with a new lease token, per-worker reclaim counters, stalled run detection (grace period, open task, pending timer and terminal runs excluded), recovery enqueuing exactly one workflow task under two racing janitors, and the janitor loop (one sweep at a time, survives a failing sweep). The kill tests take about 16 seconds because they spawn 22 real Node processes; they never wait for a lease to expire because they use a clock 120 seconds ahead. Nothing calls `startJanitorLoop` in a real process yet, and a recovered stalled run gets a `WORKFLOW_TASK` that no handler replays yet: both belong to the days that build the real worker entry point and workflow task handler. The metrics are plain in-process counters; Prometheus export is a later day.
+
+---
+
 ## Day 11: worker process, lease and heartbeat
 
 - **Status:** DONE
