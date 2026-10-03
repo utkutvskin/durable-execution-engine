@@ -45,12 +45,16 @@ export interface EnqueueInput {
 /**
  * Options for `TaskQueue.dequeue`. A dequeued task stays invisible to other
  * consumers for `visibilityTimeoutMs`; if it is neither acked nor nacked by
- * then, it becomes deliverable again. `limit` defaults to 1.
+ * then, it becomes deliverable again. `limit` defaults to 1. `workerId` and
+ * `workerVersion` are stamped on every task the call leases, so a reclaim
+ * can tell which worker an orphaned lease belonged to.
  */
 export interface DequeueOptions {
   readonly queueName: string;
   readonly visibilityTimeoutMs: number;
   readonly limit?: number;
+  readonly workerId?: string;
+  readonly workerVersion?: string;
 }
 
 /**
@@ -167,20 +171,31 @@ export function createTaskQueue(
          set state = 'LEASED',
              lease_token = gen_random_uuid(),
              attempts = tasks.attempts + 1,
+             leased_by = $5,
+             leased_by_version = $6,
+             leased_at = $2,
              visible_at = $2::timestamptz + $3 * interval '1 millisecond',
              updated_at = $2
          from next
          where tasks.id = next.id
          returning tasks.id, namespace_id, run_id, queue_name, task_type, payload,
                    attempts, lease_token, visible_at`,
-        [dequeueOptions.queueName, clock.now(), dequeueOptions.visibilityTimeoutMs, limit],
+        [
+          dequeueOptions.queueName,
+          clock.now(),
+          dequeueOptions.visibilityTimeoutMs,
+          limit,
+          dequeueOptions.workerId ?? null,
+          dequeueOptions.workerVersion ?? null,
+        ],
       );
       return result.rows.map(toLeasedTask);
     },
 
     async ack(taskId: string, leaseToken: string): Promise<boolean> {
       const result = await pool.query(
-        `update tasks set state = 'COMPLETED', lease_token = null, updated_at = $3
+        `update tasks set state = 'COMPLETED', lease_token = null, leased_by = null,
+             leased_by_version = null, updated_at = $3
          where id = $1 and lease_token = $2 and state = 'LEASED'`,
         [taskId, leaseToken, clock.now()],
       );
@@ -192,7 +207,7 @@ export function createTaskQueue(
       const now = clock.now();
       const result = await pool.query(
         `update tasks
-         set state = 'PENDING', lease_token = null,
+         set state = 'PENDING', lease_token = null, leased_by = null, leased_by_version = null,
              visible_at = $3::timestamptz + $4 * interval '1 millisecond', updated_at = $3
          where id = $1 and lease_token = $2 and state = 'LEASED'`,
         [taskId, leaseToken, now, delayMs],

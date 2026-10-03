@@ -32,6 +32,7 @@ describe("migrateUp / migrateDown", () => {
       "0002_run_projection",
       "0003_task_queue",
       "0004_idempotent_results",
+      "0005_crash_recovery",
     ]);
 
     const result = await database.pool.query<{ id: string }>(
@@ -42,6 +43,7 @@ describe("migrateUp / migrateDown", () => {
       "0002_run_projection",
       "0003_task_queue",
       "0004_idempotent_results",
+      "0005_crash_recovery",
     ]);
   });
 
@@ -54,7 +56,7 @@ describe("migrateUp / migrateDown", () => {
   it("migrateDown reverts the most recently applied migration", async () => {
     await migrateUp(database.pool);
     const reverted = await migrateDown(database.pool);
-    expect(reverted).toEqual(["0004_idempotent_results"]);
+    expect(reverted).toEqual(["0005_crash_recovery"]);
 
     const result = await database.pool.query<{ id: string }>(
       "select id from schema_migrations order by id",
@@ -63,13 +65,15 @@ describe("migrateUp / migrateDown", () => {
       "0001_initial_schema",
       "0002_run_projection",
       "0003_task_queue",
+      "0004_idempotent_results",
     ]);
   });
 
-  it("migrateDown with steps 4 reverts every migration, most recent first", async () => {
+  it("migrateDown with steps 5 reverts every migration, most recent first", async () => {
     await migrateUp(database.pool);
-    const reverted = await migrateDown(database.pool, undefined, 4);
+    const reverted = await migrateDown(database.pool, undefined, 5);
     expect(reverted).toEqual([
+      "0005_crash_recovery",
       "0004_idempotent_results",
       "0003_task_queue",
       "0002_run_projection",

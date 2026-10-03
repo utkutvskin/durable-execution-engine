@@ -49,19 +49,34 @@ const historyThroughTimer: readonly WorkflowEvent[] = [
 
 const historyThroughSecondStep: readonly WorkflowEvent[] = [
   ...historyThroughTimer,
-  { type: "step_scheduled", stepId: "step-2", stepType: "reserve-inventory", input: { orderId: "order-1" } },
+  {
+    type: "step_scheduled",
+    stepId: "step-2",
+    stepType: "reserve-inventory",
+    input: { orderId: "order-1" },
+  },
   { type: "step_completed", stepId: "step-2", result: { reserved: true, orderId: "order-1" } },
 ];
 
 const historyThroughThirdStep: readonly WorkflowEvent[] = [
   ...historyThroughSecondStep,
-  { type: "step_scheduled", stepId: "step-3", stepType: "ship-package", input: { orderId: "order-1" } },
+  {
+    type: "step_scheduled",
+    stepId: "step-3",
+    stepType: "ship-package",
+    input: { orderId: "order-1" },
+  },
   { type: "step_completed", stepId: "step-3", result: { orderId: "order-1", shipped: true } },
 ];
 
 describe("runDecisionLoop", () => {
   it("stops at the first incomplete point and produces only that step's command from an empty history", async () => {
-    const outcome = await runDecisionLoop(shipOrderWorkflow().handler, shipOrderInput, [], fixedSources());
+    const outcome = await runDecisionLoop(
+      shipOrderWorkflow().handler,
+      shipOrderInput,
+      [],
+      fixedSources(),
+    );
 
     expect(outcome).toEqual({
       outcome: "suspended",
@@ -81,7 +96,14 @@ describe("runDecisionLoop", () => {
 
     expect(outcome).toEqual({
       outcome: "suspended",
-      commands: [{ type: "schedule_step", stepId: "step-3", stepType: "ship-package", input: { orderId: "order-1" } }],
+      commands: [
+        {
+          type: "schedule_step",
+          stepId: "step-3",
+          stepType: "ship-package",
+          input: { orderId: "order-1" },
+        },
+      ],
     });
   });
 
@@ -119,7 +141,12 @@ describe("runDecisionLoop", () => {
   it("three consecutive replays over the same history produce an identical command sequence", async () => {
     const runs = await Promise.all(
       Array.from({ length: 3 }, () =>
-        runDecisionLoop(shipOrderWorkflow().handler, shipOrderInput, historyThroughFirstStep, fixedSources()),
+        runDecisionLoop(
+          shipOrderWorkflow().handler,
+          shipOrderInput,
+          historyThroughFirstStep,
+          fixedSources(),
+        ),
       ),
     );
 
@@ -137,7 +164,11 @@ describe("runDecisionLoop", () => {
     const failedHistory: readonly WorkflowEvent[] = [
       { type: "run_started", workflowType: "ship-order", input: shipOrderInput },
       { type: "step_scheduled", stepId: "step-1", stepType: "charge-card", input: { amount: 42 } },
-      { type: "step_failed", stepId: "step-1", error: { name: "CardDeclinedError", message: "card declined" } },
+      {
+        type: "step_failed",
+        stepId: "step-1",
+        error: { name: "CardDeclinedError", message: "card declined" },
+      },
     ];
 
     const outcome = await runDecisionLoop(
@@ -159,7 +190,12 @@ describe("runDecisionLoop", () => {
 
   it("leaves nothing pending after it returns: no further command appears on a later tick", async () => {
     const commandsSeenAtReturn = (
-      await runDecisionLoop(shipOrderWorkflow().handler, shipOrderInput, historyThroughFirstStep, fixedSources())
+      await runDecisionLoop(
+        shipOrderWorkflow().handler,
+        shipOrderInput,
+        historyThroughFirstStep,
+        fixedSources(),
+      )
     ).commands;
 
     await new Promise<void>((resolve) => setImmediate(resolve));
@@ -196,7 +232,12 @@ describe("runDecisionLoop", () => {
     );
 
     await expect(
-      runDecisionLoop(reorderedWorkflow.handler, shipOrderInput, historyThroughFirstStep, fixedSources()),
+      runDecisionLoop(
+        reorderedWorkflow.handler,
+        shipOrderInput,
+        historyThroughFirstStep,
+        fixedSources(),
+      ),
     ).rejects.toThrow(NonDeterminismError);
   });
 
@@ -236,7 +277,12 @@ describe("runDecisionLoop", () => {
     );
 
     await expect(
-      runDecisionLoop(differentInputWorkflow.handler, shipOrderInput, historyThroughFirstStep, fixedSources()),
+      runDecisionLoop(
+        differentInputWorkflow.handler,
+        shipOrderInput,
+        historyThroughFirstStep,
+        fixedSources(),
+      ),
     ).rejects.toThrow(NonDeterminismError);
   });
 

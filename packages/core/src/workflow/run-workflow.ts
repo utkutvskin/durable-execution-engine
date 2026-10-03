@@ -21,8 +21,16 @@ export interface RunWorkflowOptions {
  * error it rejected with.
  */
 export type RunWorkflowResult<TResult = unknown> =
-  | { readonly outcome: "completed"; readonly result: TResult; readonly commands: readonly WorkflowCommand[] }
-  | { readonly outcome: "failed"; readonly error: Error; readonly commands: readonly WorkflowCommand[] };
+  | {
+      readonly outcome: "completed";
+      readonly result: TResult;
+      readonly commands: readonly WorkflowCommand[];
+    }
+  | {
+      readonly outcome: "failed";
+      readonly error: Error;
+      readonly commands: readonly WorkflowCommand[];
+    };
 
 function toError(reason: unknown): Error {
   return reason instanceof Error ? reason : new Error(String(reason));
@@ -107,5 +115,9 @@ export async function runRegisteredWorkflowInMemory<TResult = unknown>(
   if (definition === undefined) {
     throw new Error(`no workflow registered for type "${workflowType}"`);
   }
-  return runWorkflowInMemory(definition.handler as WorkflowHandler<unknown, TResult>, input, options);
+  return runWorkflowInMemory(
+    definition.handler as WorkflowHandler<unknown, TResult>,
+    input,
+    options,
+  );
 }

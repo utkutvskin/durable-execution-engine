@@ -4,7 +4,9 @@ import { createStepRegistry } from "./step-registry.js";
 describe("createStepRegistry", () => {
   it("returns the registered handler for its step type", () => {
     const registry = createStepRegistry();
-    const handler = (input: { amount: number }): { charged: boolean } => ({ charged: input.amount > 0 });
+    const handler = (input: { amount: number }): { charged: boolean } => ({
+      charged: input.amount > 0,
+    });
 
     registry.register("charge-card", handler);
 

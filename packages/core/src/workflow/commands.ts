@@ -40,7 +40,4 @@ export interface FailRunCommand {
  * `CompleteRunCommand` or `FailRunCommand`.
  */
 export type WorkflowCommand =
-  | ScheduleStepCommand
-  | StartTimerCommand
-  | CompleteRunCommand
-  | FailRunCommand;
+  ScheduleStepCommand | StartTimerCommand | CompleteRunCommand | FailRunCommand;

@@ -27,8 +27,16 @@ export interface DecisionLoopOptions {
  * anything already implied by the given history is never repeated.
  */
 export type DecisionResult<TResult = unknown> =
-  | { readonly outcome: "completed"; readonly result: TResult; readonly commands: readonly WorkflowCommand[] }
-  | { readonly outcome: "failed"; readonly error: Error; readonly commands: readonly WorkflowCommand[] }
+  | {
+      readonly outcome: "completed";
+      readonly result: TResult;
+      readonly commands: readonly WorkflowCommand[];
+    }
+  | {
+      readonly outcome: "failed";
+      readonly error: Error;
+      readonly commands: readonly WorkflowCommand[];
+    }
   | { readonly outcome: "suspended"; readonly commands: readonly WorkflowCommand[] };
 
 function toError(reason: unknown): Error {
@@ -125,7 +133,9 @@ function createReplayContext(
       timerSequence += 1;
       const timerId = `timer-${String(timerSequence)}`;
 
-      const fired = history.some((event) => event.type === "timer_fired" && event.timerId === timerId);
+      const fired = history.some(
+        (event) => event.type === "timer_fired" && event.timerId === timerId,
+      );
       if (fired) {
         return Promise.resolve();
       }
@@ -217,6 +227,9 @@ export async function runDecisionLoop<TInput, TResult>(
     commands.push({ type: "complete_run", result: settled.result });
     return { outcome: "completed", result: settled.result, commands };
   }
-  commands.push({ type: "fail_run", error: { name: settled.error.name, message: settled.error.message } });
+  commands.push({
+    type: "fail_run",
+    error: { name: settled.error.name, message: settled.error.message },
+  });
   return { outcome: "failed", error: settled.error, commands };
 }

@@ -12,7 +12,9 @@ export class ForbiddenApiError extends Error {
   readonly api: string;
 
   constructor(api: string) {
-    super(`workflow code called "${api}" directly; use the matching WorkflowContext method instead`);
+    super(
+      `workflow code called "${api}" directly; use the matching WorkflowContext method instead`,
+    );
     this.name = "ForbiddenApiError";
     this.api = api;
   }
@@ -57,7 +59,9 @@ function restoreGlobals(): void {
  * outer call's patched version, and restoring it would leave the globals
  * permanently forbidden after both calls return.
  */
-export async function guardAgainstForbiddenApis<TResult>(execute: () => Promise<TResult>): Promise<TResult> {
+export async function guardAgainstForbiddenApis<TResult>(
+  execute: () => Promise<TResult>,
+): Promise<TResult> {
   if (activeGuards === 0) {
     patchGlobals();
   }

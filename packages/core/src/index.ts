@@ -89,3 +89,18 @@ export type {
   ResultRecorder,
   StepOutcome,
 } from "./idempotency/recorder.js";
+export { createPool } from "./db/pool.js";
+export type { CreatePoolOptions } from "./db/pool.js";
+export { createJanitor } from "./recovery/janitor.js";
+export type {
+  Janitor,
+  JanitorOptions,
+  ReclaimedTask,
+  RecoverStalledRunsOptions,
+  StalledRun,
+  StalledRunOptions,
+  SweepReport,
+} from "./recovery/janitor.js";
+export { createRecoveryMetrics } from "./recovery/metrics.js";
+export type { RecoveryMetrics, RecoveryMetricsSnapshot } from "./recovery/metrics.js";
+export type { DatabaseUrlEnv } from "./db/env.js";

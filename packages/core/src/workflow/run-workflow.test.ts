@@ -41,10 +41,10 @@ describe("runWorkflowInMemory", () => {
       reserved: true,
       orderId: input.orderId,
     }));
-    steps.register(
-      "ship-package",
-      (input: { orderId: string }): ShipOrderResult => ({ orderId: input.orderId, shipped: true }),
-    );
+    steps.register("ship-package", (input: { orderId: string }): ShipOrderResult => ({
+      orderId: input.orderId,
+      shipped: true,
+    }));
 
     const outcome = await runWorkflowInMemory(
       shipOrderWorkflow().handler,
@@ -61,7 +61,12 @@ describe("runWorkflowInMemory", () => {
         stepType: "reserve-inventory",
         input: { orderId: "order-1" },
       },
-      { type: "schedule_step", stepId: "step-3", stepType: "ship-package", input: { orderId: "order-1" } },
+      {
+        type: "schedule_step",
+        stepId: "step-3",
+        stepType: "ship-package",
+        input: { orderId: "order-1" },
+      },
       { type: "complete_run", result: { orderId: "order-1", shipped: true } },
     ];
 
@@ -105,9 +110,12 @@ describe("runWorkflowInMemory", () => {
   });
 
   it("produces a fail_run command and no complete_run command when the handler throws", async () => {
-    const workflow = defineWorkflow<undefined, undefined>("always-fails", (): Promise<undefined> => {
-      throw new Error("card declined");
-    });
+    const workflow = defineWorkflow<undefined, undefined>(
+      "always-fails",
+      (): Promise<undefined> => {
+        throw new Error("card declined");
+      },
+    );
 
     const outcome = await runWorkflowInMemory(workflow.handler, undefined, {
       ...fixedSources(),
@@ -155,10 +163,10 @@ describe("runRegisteredWorkflowInMemory", () => {
       reserved: true,
       orderId: input.orderId,
     }));
-    steps.register(
-      "ship-package",
-      (input: { orderId: string }): ShipOrderResult => ({ orderId: input.orderId, shipped: true }),
-    );
+    steps.register("ship-package", (input: { orderId: string }): ShipOrderResult => ({
+      orderId: input.orderId,
+      shipped: true,
+    }));
 
     const outcome = await runRegisteredWorkflowInMemory<ShipOrderResult>(
       "ship-order",
