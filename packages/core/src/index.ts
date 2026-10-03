@@ -104,3 +104,4 @@ export type {
 export { createRecoveryMetrics } from "./recovery/metrics.js";
 export type { RecoveryMetrics, RecoveryMetricsSnapshot } from "./recovery/metrics.js";
 export type { DatabaseUrlEnv } from "./db/env.js";
+export type { Pool } from "pg";
