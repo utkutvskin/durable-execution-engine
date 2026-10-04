@@ -121,3 +121,20 @@ export {
   workflowDeadline,
 } from "./retry/timeout.js";
 export type { TimeoutTimers, WorkflowTimeoutOutcome } from "./retry/timeout.js";
+export { createAttemptLog } from "./retry/attempt-log.js";
+export type { AttemptLog, RecordAttemptFailureInput } from "./retry/attempt-log.js";
+export { createDeadLetterQueue } from "./retry/dead-letters.js";
+export type {
+  AddDeadLetterInput,
+  DeadLetter,
+  DeadLetterQueue,
+  DeadLetterReason,
+  ListDeadLettersOptions,
+} from "./retry/dead-letters.js";
+export { createStepTaskProcessor } from "./retry/step-task-processor.js";
+export type {
+  StepTaskOutcome,
+  StepTaskPayload,
+  StepTaskProcessor,
+  StepTaskProcessorOptions,
+} from "./retry/step-task-processor.js";
