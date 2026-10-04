@@ -105,3 +105,19 @@ export { createRecoveryMetrics } from "./recovery/metrics.js";
 export type { RecoveryMetrics, RecoveryMetricsSnapshot } from "./recovery/metrics.js";
 export type { DatabaseUrlEnv } from "./db/env.js";
 export type { Pool } from "pg";
+export {
+  DEFAULT_RETRY_POLICY,
+  NonRetryableError,
+  computeBackoffMs,
+  decideRetry,
+  isNonRetryable,
+  resolveRetryPolicy,
+} from "./retry/retry-policy.js";
+export type { GiveUpReason, RetryDecision, RetryPolicy } from "./retry/retry-policy.js";
+export {
+  StepTimeoutError,
+  enforceWorkflowTimeout,
+  runWithTimeout,
+  workflowDeadline,
+} from "./retry/timeout.js";
+export type { TimeoutTimers, WorkflowTimeoutOutcome } from "./retry/timeout.js";

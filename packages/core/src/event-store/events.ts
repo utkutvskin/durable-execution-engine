@@ -87,6 +87,22 @@ export const stepFailedEventSchema = z.object({
 });
 
 /**
+ * One attempt of a step failed. `attempt` counts from 1 across the step's
+ * whole life. `retryAt` (an ISO-8601 string) is when the next attempt is due,
+ * or `null` when the failure ended the retrying.
+ */
+export const stepAttemptFailedEventSchema = z.object({
+  type: z.literal("step_attempt_failed"),
+  stepId: z.string().min(1),
+  attempt: z.number().int().positive(),
+  error: z.object({
+    name: z.string(),
+    message: z.string(),
+  }),
+  retryAt: z.string().min(1).nullable(),
+});
+
+/**
  * A durable timer was started, due to fire at `fireAt` (an ISO-8601 string).
  */
 export const timerStartedEventSchema = z.object({
@@ -119,6 +135,7 @@ export const workflowEventSchema = z.discriminatedUnion("type", [
   stepScheduledEventSchema,
   stepCompletedEventSchema,
   stepFailedEventSchema,
+  stepAttemptFailedEventSchema,
   timerStartedEventSchema,
   timerFiredEventSchema,
 ]);

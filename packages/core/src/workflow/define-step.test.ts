@@ -74,4 +74,15 @@ describe("defineStep", () => {
     expect(handler).toBeDefined();
     await expect(handler?.({ amount: 42 })).resolves.toEqual({ charged: true });
   });
+
+  it("carries a resolved retry policy onto the definition", () => {
+    const definition = defineStep("charge", { handler: () => 1, retry: { maxAttempts: 7 } });
+    expect(definition.retry).toMatchObject({ maxAttempts: 7, backoffCoefficient: 2 });
+  });
+
+  it("rejects an invalid retry policy", () => {
+    expect(() => defineStep("charge", { handler: () => 1, retry: { maxAttempts: 0 } })).toThrow(
+      RangeError,
+    );
+  });
 });

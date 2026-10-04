@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { resolveRetryPolicy, type RetryPolicy } from "../retry/retry-policy.js";
 import type { StepHandler } from "./step-registry.js";
 
 /**
@@ -12,6 +13,7 @@ export interface StepDefinition<TInput = unknown, TResult = unknown> {
   readonly stepType: string;
   readonly handler: StepHandler<TInput, TResult>;
   readonly timeoutMs?: number;
+  readonly retry?: RetryPolicy;
 }
 
 /**
@@ -23,6 +25,7 @@ export interface DefineStepOptions<TInput, TResult> {
   readonly input?: z.ZodType<TInput>;
   readonly output?: z.ZodType<TResult>;
   readonly timeoutMs?: number;
+  readonly retry?: Partial<RetryPolicy>;
 }
 
 /**
@@ -31,7 +34,8 @@ export interface DefineStepOptions<TInput, TResult> {
  * when given (throwing a `ZodError` on a mismatch, before or after the
  * handler runs). `timeoutMs`, when given, must be positive; it is carried
  * on the returned `StepDefinition` for a worker to enforce, `defineStep`
- * itself does not run anything on a timer.
+ * itself does not run anything on a timer. `retry`, when given, is filled
+ * in from the default policy and validated with `resolveRetryPolicy`.
  */
 export function defineStep<TInput = unknown, TResult = unknown>(
   stepType: string,
@@ -49,7 +53,11 @@ export function defineStep<TInput = unknown, TResult = unknown>(
     return options.output === undefined ? result : options.output.parse(result);
   };
 
-  return options.timeoutMs === undefined
-    ? { stepType, handler }
-    : { stepType, handler, timeoutMs: options.timeoutMs };
+  const retry = options.retry === undefined ? undefined : resolveRetryPolicy(options.retry);
+  return {
+    stepType,
+    handler,
+    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    ...(retry === undefined ? {} : { retry }),
+  };
 }

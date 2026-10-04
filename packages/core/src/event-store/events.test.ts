@@ -54,4 +54,28 @@ describe("workflowEventSchema", () => {
       expect(workflowEventSchema.safeParse(event).success).toBe(true);
     }
   });
+
+  it("accepts a step_attempt_failed event with and without a retry time", () => {
+    const base = {
+      type: "step_attempt_failed",
+      stepId: "s",
+      attempt: 2,
+      error: { name: "Error", message: "boom" },
+    };
+    expect(
+      workflowEventSchema.safeParse({ ...base, retryAt: "2026-01-01T00:00:01.000Z" }).success,
+    ).toBe(true);
+    expect(workflowEventSchema.safeParse({ ...base, retryAt: null }).success).toBe(true);
+  });
+
+  it("rejects a step_attempt_failed event with attempt zero", () => {
+    const result = workflowEventSchema.safeParse({
+      type: "step_attempt_failed",
+      stepId: "s",
+      attempt: 0,
+      error: { name: "Error", message: "boom" },
+      retryAt: null,
+    });
+    expect(result.success).toBe(false);
+  });
 });
