@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 13: retry policies and dead letter
+
+- **Status:** DONE
+- **Completed day:** 13
+- **Files added or changed:** `packages/core/migrations/0006_retry_and_dead_letters.{up,down}.sql` (new: `step_attempts`, `dead_letters`), `packages/core/src/retry/retry-policy.ts` (new: `RetryPolicy`, `DEFAULT_RETRY_POLICY`, `NonRetryableError`, `resolveRetryPolicy`, `computeBackoffMs`, `decideRetry`, `isNonRetryable`) and `retry-policy.test.ts`, `packages/core/src/retry/timeout.ts` (new: `runWithTimeout`, `StepTimeoutError`, `workflowDeadline`, `enforceWorkflowTimeout`) and `timeout.test.ts`, `packages/core/src/retry/attempt-log.ts` (new: `createAttemptLog`), `packages/core/src/retry/dead-letters.ts` (new: `createDeadLetterQueue`) and `dead-letters.test.ts`, `packages/core/src/retry/step-task-processor.ts` (new: `createStepTaskProcessor`) and `step-task-processor.test.ts`, `packages/core/src/event-store/events.ts` (`step_attempt_failed`) and `events.test.ts`, `packages/core/src/workflow/define-step.ts` (`retry` option) and `define-step.test.ts`, `packages/core/src/db/{migrator,schema}.test.ts` (six migrations, two new tables), `packages/core/src/index.ts` (exports), `docs/DECISIONS.md` (ADR-0023)
+- **Technical decisions:** ADR-0023 in `docs/DECISIONS.md`. No new dependency.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (43 test files, 250 tests, 51 of them new today). The `dee` role/database were recreated by hand again after the container restart (`service postgresql start` first). Proven by test with a fake clock: backoff waits 1000, 2000, 4000, 8000, 10000 for a coefficient of 2 capped at 10000, jitter spreads by the exact fraction and never exceeds the maximum, and against real Postgres a failing step is redelivered exactly at 1000 ms and then 2000 ms later (not one millisecond earlier) before succeeding on attempt 3; a `NonRetryableError` is tried once, ends in `step_failed` and is never redelivered; a step that exhausts its attempts lands in `dead_letters` with its error and attempt count, writes only `step_attempt_failed` events and leaves the run waiting; `requeue` puts it back as a `STEP_TASK` with a fresh budget (`attemptOffset`), after which it can complete, and can only be requeued once. Every failed attempt is in the event log as `step_attempt_failed` with its retry time. A crash redelivery does not use up a retry, because attempt numbers come from `step_attempts` and not the queue. Nothing calls `createStepTaskProcessor` or `enforceWorkflowTimeout` in a running process yet, and no run declares a workflow timeout: the real worker entry point and workflow task handler are later days. Exhausted steps do not emit `step_failed` on purpose (see ADR-0023); discarding a dead letter is not built. The decision loop ignores `step_attempt_failed`.
+
+---
+
 ## Day 12: crash recovery
 
 - **Status:** DONE
