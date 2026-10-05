@@ -15,3 +15,5 @@ export { createWorkerIdentity } from "./identity.js";
 export type { WorkerIdentity, WorkerIdentityOptions } from "./identity.js";
 export { startJanitorLoop } from "./janitor-loop.js";
 export type { JanitorLoop, JanitorLoopOptions } from "./janitor-loop.js";
+export { startTimerLoop } from "./timer-loop.js";
+export type { TimerLoop, TimerLoopOptions } from "./timer-loop.js";
