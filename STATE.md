@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 14: durable timers
+
+- **Status:** DONE
+- **Completed day:** 14
+- **Files added or changed:** `packages/core/migrations/0007_durable_timers.{up,down}.sql` (new: timer states, unique `(run_id, timer_id)`, `fired_at`, due index), `packages/core/src/timers/monotonic-clock.ts` (new: `createMonotonicClock`, `MonotonicClock`) and `monotonic-clock.test.ts`, `packages/core/src/timers/timer-scheduler.ts` (new: `createTimerScheduler`, `insertTimerOnClient`, `TimerScheduler`, `FiredTimer`, `TickReport`, `CatchUpReport`) and `timer-scheduler.test.ts`, `packages/core/src/idempotency/recorder.ts` (`recordWorkflowTaskResult` creates the timer row for each `timer_started` event), `packages/core/src/db/migrator.test.ts` (seven migrations), `packages/core/src/index.ts` (exports), `packages/worker/src/timer-loop.ts` (new: `startTimerLoop`) and `timer-loop.test.ts`, `packages/worker/src/index.ts` (exports), `docs/DECISIONS.md` (ADR-0024)
+- **Technical decisions:** ADR-0024 in `docs/DECISIONS.md`. No new dependency.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (46 test files, 272 tests, 22 of them new today). The `dee` role/database were recreated by hand again after the container restart (`service postgresql start` first). Proven by test against real Postgres with a fake clock: a run with a 10 minute `ctx.sleep` is suspended by the decision loop, its `timer_started` event creates the timer row, a scheduler one millisecond short of the due time fires nothing, and a brand new scheduler instance at exactly +10 minutes fires it at once so the next decision completes the run; a scheduler started an hour late fires with `lateMs` 3600000; 500 overdue timers (shuffled across 500 runs) are fired in `fire_at` order over 8 ticks of 64 and their workflow tasks are dequeued in the same order, because the task's `visible_at` is the timer's `fire_at`; two schedulers racing over 40 timers fire each exactly once; a timer of a finished run is closed as `CANCELLED` with no event and no task; a wall clock stepped back never fires a timer early or twice and is counted in `clockRegressions`. The timer row is written in the same transaction as `timer_started`, and a redelivered or rolled-back workflow task leaves no extra row. Nothing calls `startTimerLoop` in a running process yet and no handler consumes the `WORKFLOW_TASK` (reason `timer_fired`) it enqueues: the real worker entry point and workflow task handler are later days. The monotonic high water mark is in memory only (see ADR-0024).
+
+---
+
 ## Day 13: retry policies and dead letter
 
 - **Status:** DONE
