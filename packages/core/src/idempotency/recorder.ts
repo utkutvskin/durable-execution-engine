@@ -5,6 +5,7 @@ import {
   readCurrentSequenceOnClient,
   type StoredEvent,
 } from "../event-store/event-store.js";
+import { insertTimerOnClient } from "../timers/timer-scheduler.js";
 import { workflowEventSchema, type WorkflowEvent } from "../event-store/events.js";
 import type { SerializedError } from "../workflow/error-serialization.js";
 
@@ -79,7 +80,9 @@ export interface ResultRecorder {
   /**
    * Appends a workflow task's decision events and marks the task key as
    * recorded in one transaction. A repeat of the same `(runId, taskKey)`
-   * appends nothing. A new key whose `expectedSeq` is stale is rejected
+   * appends nothing. A `timer_started` event also creates its durable
+   * timer row in the same transaction, so a timer exists exactly when its
+   * event does. A new key whose `expectedSeq` is stale is rejected
    * with a `ConcurrencyError` and records nothing.
    */
   recordWorkflowTaskResult(
@@ -200,6 +203,15 @@ export function createResultRecorder(pool: Pool, codec: Codec = jsonCodec): Resu
           input.expectedSeq,
           events,
         );
+        for (const event of events) {
+          if (event.type === "timer_started") {
+            await insertTimerOnClient(client, {
+              runId: input.runId,
+              timerId: event.timerId,
+              fireAt: new Date(event.fireAt),
+            });
+          }
+        }
         const firstSequenceNumber = input.expectedSeq + 1;
         const lastSequenceNumber = input.expectedSeq + stored.length;
         await client.query(

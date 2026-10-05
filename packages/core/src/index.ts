@@ -138,3 +138,14 @@ export type {
   StepTaskProcessor,
   StepTaskProcessorOptions,
 } from "./retry/step-task-processor.js";
+export { createMonotonicClock } from "./timers/monotonic-clock.js";
+export type { MonotonicClock } from "./timers/monotonic-clock.js";
+export { createTimerScheduler, insertTimerOnClient } from "./timers/timer-scheduler.js";
+export type {
+  CatchUpReport,
+  FiredTimer,
+  ScheduleTimerInput,
+  TickReport,
+  TimerScheduler,
+  TimerSchedulerOptions,
+} from "./timers/timer-scheduler.js";
