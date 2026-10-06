@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 15: scheduled and recurring workflows
+
+- **Status:** DONE
+- **Completed day:** 15
+- **Files added or changed:** `packages/core/migrations/0008_schedules.{up,down}.sql` (new: `schedules`, `schedule_triggers`, `workflow_runs.schedule_id`), `packages/core/src/schedules/cron.ts` (new: `parseCron`, `nextCronTime`, `cronTimesBetween`, `CronSchedule`, `InvalidScheduleError`) and `cron.test.ts`, `packages/core/src/schedules/schedule-manager.ts` (new: `createScheduleManager`, `ScheduleManager`, `ScheduleRecord`, `ScheduleTrigger`, `OverlapPolicy`, `ScheduleAlreadyExistsError`, `ScheduleNotFoundError`) and `schedule-manager.test.ts`, `packages/core/src/db/{migrator,schema}.test.ts` (eight migrations, two new tables), `packages/core/src/index.ts` (exports), `packages/worker/src/schedule-loop.ts` (new: `startScheduleLoop`) and `schedule-loop.test.ts`, `packages/worker/src/index.ts` (exports), `docs/DECISIONS.md` (ADR-0025)
+- **Technical decisions:** ADR-0025 in `docs/DECISIONS.md`. No new dependency: the cron parser is hand written and time zones use the built-in `Intl.DateTimeFormat`.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (49 test files, 313 tests, 41 of them new today). The `dee` role/database were recreated by hand again after the container restart (`service postgresql start` first). Proven by test against real Postgres with a fake clock: a `*/5 * * * *` schedule created at 10:00 starts exactly 12 runs (10:05 to 11:00) when the clock moves one hour; with `skip` a trigger that fires while the previous run is open is recorded `SKIPPED` and the next run only starts after that run is closed; a paused schedule starts nothing after six hours, and `resume` continues from the next match without making up the pause; `buffer_one` keeps only the latest overlapping trigger and starts it on the first tick after the run ends; `allow_all` starts every trigger; a new manager instance after three hours of downtime starts all 36 missed triggers in order (batch size 7); three managers ticking at once start each of 12 triggers exactly once; `backfill` over a past range starts its triggers once and a repeat starts nothing; fields are read in the schedule time zone (America/New_York, Europe/Berlin across the spring forward day, Asia/Kolkata). A started run is a `workflow_runs` row, a `run_started` event and a `WORKFLOW_TASK` (reason `schedule`) in one transaction. Nothing calls `startScheduleLoop` in a running process yet and no handler consumes that `WORKFLOW_TASK`: the real worker entry point and workflow task handler are later days. A repeated local hour on a fall back day fires twice, deleting a schedule is not built (see ADR-0025). Day 16 (signals and queries) is next.
+
+---
+
 ## Day 14: durable timers
 
 - **Status:** DONE
