@@ -149,3 +149,25 @@ export type {
   TimerScheduler,
   TimerSchedulerOptions,
 } from "./timers/timer-scheduler.js";
+export {
+  InvalidScheduleError,
+  cronTimesBetween,
+  nextCronTime,
+  parseCron,
+} from "./schedules/cron.js";
+export type { CronSchedule } from "./schedules/cron.js";
+export {
+  ScheduleAlreadyExistsError,
+  ScheduleNotFoundError,
+  createScheduleManager,
+} from "./schedules/schedule-manager.js";
+export type {
+  CreateScheduleInput,
+  OverlapPolicy,
+  ScheduleManager,
+  ScheduleManagerOptions,
+  ScheduleRecord,
+  ScheduleTickReport,
+  ScheduleTrigger,
+  TriggerOutcome,
+} from "./schedules/schedule-manager.js";
