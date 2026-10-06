@@ -17,3 +17,5 @@ export { startJanitorLoop } from "./janitor-loop.js";
 export type { JanitorLoop, JanitorLoopOptions } from "./janitor-loop.js";
 export { startTimerLoop } from "./timer-loop.js";
 export type { TimerLoop, TimerLoopOptions } from "./timer-loop.js";
+export { startScheduleLoop } from "./schedule-loop.js";
+export type { ScheduleLoop, ScheduleLoopOptions } from "./schedule-loop.js";
