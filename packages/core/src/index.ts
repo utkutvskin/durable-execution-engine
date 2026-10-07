@@ -175,3 +175,13 @@ export { UnknownQueryError, runQuery } from "./workflow/query.js";
 export { replayHistory } from "./workflow/decision-loop.js";
 export type { ReplayOutcome } from "./workflow/decision-loop.js";
 export type { QueryHandler, SelectResult } from "./workflow/context.js";
+export {
+  RunNotFoundError,
+  RunNotOpenError,
+  createRunInteractions,
+} from "./signals/signal-service.js";
+export type {
+  RunInteractions,
+  RunInteractionsOptions,
+  SignalReceipt,
+} from "./signals/signal-service.js";
