@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import type { WorkflowEvent } from "../event-store/events.js";
 import type { WorkflowCommand } from "./commands.js";
-import type { WorkflowContext, WorkflowHandler } from "./context.js";
+import type { QueryHandler, SelectResult, WorkflowContext, WorkflowHandler } from "./context.js";
 import { NonDeterminismError } from "./errors.js";
 import { ForbiddenApiError, guardAgainstForbiddenApis } from "./sandbox.js";
 import type { ClockSource, RandomSource } from "./sources.js";
@@ -80,9 +80,17 @@ function createReplayContext(
   history: readonly WorkflowEvent[],
   options: DecisionLoopOptions,
   newCommands: WorkflowCommand[],
+  queryHandlers: Map<string, QueryHandler>,
 ): WorkflowContext {
   let stepSequence = 0;
   let timerSequence = 0;
+  const signalSequences = new Map<string, number>();
+  const completionPositions = new WeakMap<Promise<unknown>, number>();
+
+  function completedAt<TValue>(promise: Promise<TValue>, historyIndex: number): Promise<TValue> {
+    completionPositions.set(promise, historyIndex);
+    return promise;
+  }
 
   return {
     step<TResult>(stepType: string, input: unknown): Promise<TResult> {
@@ -105,22 +113,17 @@ function createReplayContext(
         );
       }
 
-      const completed = findEvent(
-        history,
-        (event): event is Extract<WorkflowEvent, { type: "step_completed" }> =>
-          event.type === "step_completed" && event.stepId === stepId,
+      const finishedIndex = history.findIndex(
+        (event) =>
+          (event.type === "step_completed" || event.type === "step_failed") &&
+          event.stepId === stepId,
       );
-      if (completed !== undefined) {
-        return Promise.resolve(completed.result as TResult);
+      const finished = history[finishedIndex];
+      if (finished?.type === "step_completed") {
+        return completedAt(Promise.resolve(finished.result as TResult), finishedIndex);
       }
-
-      const failed = findEvent(
-        history,
-        (event): event is Extract<WorkflowEvent, { type: "step_failed" }> =>
-          event.type === "step_failed" && event.stepId === stepId,
-      );
-      if (failed !== undefined) {
-        return Promise.reject(reconstructError(failed.error));
+      if (finished?.type === "step_failed") {
+        return completedAt(Promise.reject(reconstructError(finished.error)), finishedIndex);
       }
 
       if (scheduled === undefined) {
@@ -133,11 +136,11 @@ function createReplayContext(
       timerSequence += 1;
       const timerId = `timer-${String(timerSequence)}`;
 
-      const fired = history.some(
+      const firedIndex = history.findIndex(
         (event) => event.type === "timer_fired" && event.timerId === timerId,
       );
-      if (fired) {
-        return Promise.resolve();
+      if (firedIndex >= 0) {
+        return completedAt(Promise.resolve(), firedIndex);
       }
 
       const alreadyStarted = history.some(
@@ -150,6 +153,50 @@ function createReplayContext(
 
       return neverSettles();
     },
+    waitForSignal<TPayload>(signalName: string): Promise<TPayload> {
+      const consumed = signalSequences.get(signalName) ?? 0;
+      signalSequences.set(signalName, consumed + 1);
+
+      let seen = 0;
+      const deliveredIndex = history.findIndex((event) => {
+        if (event.type !== "signal_received" || event.signalName !== signalName) {
+          return false;
+        }
+        seen += 1;
+        return seen === consumed + 1;
+      });
+      const delivered = history[deliveredIndex];
+      if (delivered?.type === "signal_received") {
+        return completedAt(Promise.resolve(delivered.payload as TPayload), deliveredIndex);
+      }
+      return neverSettles<TPayload>();
+    },
+    select<TBranches extends readonly Promise<unknown>[]>(
+      branches: TBranches,
+    ): Promise<SelectResult<Awaited<TBranches[number]>>> {
+      for (const branch of branches) {
+        branch.catch(() => undefined);
+      }
+      let winner = -1;
+      let winnerPosition = Number.POSITIVE_INFINITY;
+      for (const [index, branch] of branches.entries()) {
+        const position = completionPositions.get(branch);
+        if (position !== undefined && position < winnerPosition) {
+          winner = index;
+          winnerPosition = position;
+        }
+      }
+      const chosen = branches[winner];
+      if (chosen === undefined) {
+        return neverSettles();
+      }
+      return chosen.then(
+        (value) => ({ index: winner, value }) as SelectResult<Awaited<TBranches[number]>>,
+      );
+    },
+    setQueryHandler(queryName: string, handler: QueryHandler): void {
+      queryHandlers.set(queryName, handler);
+    },
     now(): Date {
       return options.clock.now();
     },
@@ -160,6 +207,52 @@ function createReplayContext(
       return options.random.uuid();
     },
   };
+}
+
+/**
+ * The state a replay stopped in: how the handler settled (`undefined` when
+ * it is still waiting), the commands it newly discovered, and the query
+ * handlers it had registered by then.
+ */
+export interface ReplayOutcome<TResult> {
+  readonly settled:
+    | { readonly outcome: "completed"; readonly result: TResult }
+    | { readonly outcome: "failed"; readonly error: Error }
+    | undefined;
+  readonly commands: WorkflowCommand[];
+  readonly queryHandlers: ReadonlyMap<string, QueryHandler>;
+}
+
+/**
+ * Replays `handler` over `history` under the forbidden API guard and
+ * reports where it stopped, without turning the stop into a decision. Both
+ * `runDecisionLoop` and `runQuery` are built on it.
+ */
+export async function replayHistory<TInput, TResult>(
+  handler: WorkflowHandler<TInput, TResult>,
+  input: TInput,
+  history: readonly WorkflowEvent[],
+  options: DecisionLoopOptions,
+): Promise<ReplayOutcome<TResult>> {
+  const commands: WorkflowCommand[] = [];
+  const queryHandlers = new Map<string, QueryHandler>();
+  const ctx = createReplayContext(history, options, commands, queryHandlers);
+  let settled: ReplayOutcome<TResult>["settled"];
+
+  await guardAgainstForbiddenApis(async () => {
+    handler(ctx, input).then(
+      (result) => {
+        settled = { outcome: "completed", result };
+      },
+      (reason: unknown) => {
+        settled = { outcome: "failed", error: toError(reason) };
+      },
+    );
+
+    await drainToQuiescence();
+  });
+
+  return { settled, commands, queryHandlers };
 }
 
 /**
@@ -193,27 +286,7 @@ export async function runDecisionLoop<TInput, TResult>(
   history: readonly WorkflowEvent[],
   options: DecisionLoopOptions,
 ): Promise<DecisionResult<TResult>> {
-  const commands: WorkflowCommand[] = [];
-  const ctx = createReplayContext(history, options, commands);
-
-  let settled:
-    | { readonly outcome: "completed"; readonly result: TResult }
-    | { readonly outcome: "failed"; readonly error: Error }
-    | undefined;
-
-  await guardAgainstForbiddenApis(async () => {
-    handler(ctx, input).then(
-      (result) => {
-        settled = { outcome: "completed", result };
-      },
-      (reason: unknown) => {
-        settled = { outcome: "failed", error: toError(reason) };
-      },
-    );
-
-    await drainToQuiescence();
-  });
-
+  const { settled, commands } = await replayHistory(handler, input, history, options);
   if (settled === undefined) {
     return { outcome: "suspended", commands };
   }

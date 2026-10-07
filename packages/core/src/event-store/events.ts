@@ -120,6 +120,17 @@ export const timerFiredEventSchema = z.object({
 });
 
 /**
+ * An external signal named `signalName` was delivered to the run with the
+ * given payload. It stays in the history until a `ctx.waitForSignal()` call
+ * consumes it, so a signal that arrives before the wait is not lost.
+ */
+export const signalReceivedEventSchema = z.object({
+  type: z.literal("signal_received"),
+  signalName: z.string().min(1),
+  payload: z.unknown(),
+});
+
+/**
  * Every event kind that can be appended to a run's event log, discriminated
  * on `type`. This is the closed set `EventStore.append` validates against:
  * a payload that does not match one of these shapes is rejected before it
@@ -138,6 +149,7 @@ export const workflowEventSchema = z.discriminatedUnion("type", [
   stepAttemptFailedEventSchema,
   timerStartedEventSchema,
   timerFiredEventSchema,
+  signalReceivedEventSchema,
 ]);
 
 /**

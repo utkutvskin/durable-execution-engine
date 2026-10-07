@@ -1,5 +1,5 @@
 import type { WorkflowCommand } from "./commands.js";
-import type { WorkflowContext, WorkflowHandler } from "./context.js";
+import type { SelectResult, WorkflowContext, WorkflowHandler } from "./context.js";
 import type { ClockSource, RandomSource } from "./sources.js";
 import type { StepRegistry } from "./step-registry.js";
 import type { WorkflowRegistry } from "./workflow-registry.js";
@@ -59,6 +59,22 @@ function createInMemoryContext(
       const fireAt = new Date(options.clock.now().getTime() + durationMs).toISOString();
       commands.push({ type: "start_timer", timerId, fireAt });
       return Promise.resolve();
+    },
+    waitForSignal<TPayload>(signalName: string): Promise<TPayload> {
+      return Promise.reject(
+        new Error(`signal "${signalName}" cannot be awaited by the in-memory runner`),
+      );
+    },
+    async select<TBranches extends readonly Promise<unknown>[]>(
+      branches: TBranches,
+    ): Promise<SelectResult<Awaited<TBranches[number]>>> {
+      const settled = await Promise.race(
+        branches.map(async (branch, index) => ({ index, value: await branch })),
+      );
+      return settled as SelectResult<Awaited<TBranches[number]>>;
+    },
+    setQueryHandler(): void {
+      return undefined;
     },
     now(): Date {
       return options.clock.now();

@@ -171,3 +171,7 @@ export type {
   ScheduleTrigger,
   TriggerOutcome,
 } from "./schedules/schedule-manager.js";
+export { UnknownQueryError, runQuery } from "./workflow/query.js";
+export { replayHistory } from "./workflow/decision-loop.js";
+export type { ReplayOutcome } from "./workflow/decision-loop.js";
+export type { QueryHandler, SelectResult } from "./workflow/context.js";
