@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 16: signals and queries
+
+- **Status:** DONE
+- **Completed day:** 16
+- **Files added or changed:** `packages/core/src/event-store/events.ts` (`signal_received`), `packages/core/src/workflow/context.ts` (`waitForSignal`, `select`, `setQueryHandler`, `SelectResult`, `QueryHandler`), `packages/core/src/workflow/decision-loop.ts` (completion positions, `replayHistory`), `packages/core/src/workflow/run-workflow.ts` (in-memory context members), `packages/core/src/workflow/query.ts` (new: `runQuery`, `UnknownQueryError`), `packages/core/src/workflow/signals-decision.test.ts`, `packages/core/src/signals/signal-service.ts` (new: `createRunInteractions`, `RunInteractions`, `RunNotFoundError`, `RunNotOpenError`) and `signal-service.test.ts`, `packages/core/src/index.ts` (exports), `docs/DECISIONS.md` (ADR-0026)
+- **Technical decisions:** ADR-0026 in `docs/DECISIONS.md`. No new dependency.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (51 test files, 333 tests, 20 of them new today). The `dee` role/database were recreated by hand again after the container restart (`service postgresql start` first). Proven by test: a signal recorded before the run reaches its wait is delivered at once; signals of one name are consumed in arrival order, one per wait, and other names are left alone; `select` picks the signal when it precedes the timer in history and the timer when it precedes the signal, the same on 10 concurrent replays, and also works over a step; 10 concurrent `signalRun` calls against Postgres give 10 events with consecutive sequence numbers; a signal to a closed or missing run is rejected and writes nothing; `queryRun` answers from the replayed state and leaves `run_events`, `tasks` and the run row unchanged. `signalRun` writes the event and a `WORKFLOW_TASK` (reason `signal`) in one transaction. Nothing serves these over HTTP and no handler consumes that `WORKFLOW_TASK` yet: the API and the real worker entry point are later days. No signal dedup key and a losing `select` branch still consumes its signal (see ADR-0026). Day 17 (cancellation and compensation) is next.
+
+---
+
 ## Day 15: scheduled and recurring workflows
 
 - **Status:** DONE
