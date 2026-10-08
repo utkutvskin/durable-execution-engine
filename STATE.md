@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 17: cancellation and compensation
+
+- **Status:** DONE
+- **Completed day:** 17
+- **Files added or changed:** `packages/core/src/event-store/events.ts` (`cancel_requested`), `packages/core/src/event-store/event-store.ts` (`readEventsOnClient`), `packages/core/src/workflow/commands.ts` (`cancel_run`), `packages/core/src/workflow/context.ts` (`onCancel`, `CompensationHandler`), `packages/core/src/workflow/errors.ts` (`CancelledError`), `packages/core/src/workflow/decision-loop.ts` (cancellation, compensations, `cancelled` outcome), `packages/core/src/workflow/run-workflow.ts` (`onCancel` no-op), `packages/core/src/workflow/cancellation-decision.test.ts` (new), `packages/core/src/run/projection-store.ts` (`refreshProjectionOnClient`), `packages/core/src/cancellation/close-run.ts` (new: `closeRunIfTerminal`), `packages/core/src/cancellation/run-control.ts` (new: `createRunControl`, `RunControl`, `RunAlreadyClosedError`) and `run-control.test.ts`, `packages/core/src/idempotency/recorder.ts` (closed runs discard results, closing events update the projection), `packages/core/src/index.ts` (exports), `docs/DECISIONS.md` (ADR-0027)
+- **Technical decisions:** ADR-0027 in `docs/DECISIONS.md`. No new dependency.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (53 test files, 351 tests, 18 of them new today). The `dee` role/database were recreated by hand again after the container restart (`service postgresql start` first). Proven by test: a saga that booked a flight and a hotel and is then cancelled schedules `cancel-hotel` before `refund-flight` (reverse registration order) and closes as `CANCELLED` with `run_cancelled` carrying the reason, end to end against Postgres through the recorder; `terminateRun` moves the run to `TERMINATED` at once with no compensation step scheduled, also while a cancellation is pending; after cancellation a never scheduled step is not scheduled (the loop ends with only `cancel_run`), a step already running is waited for (decision `suspended`, no commands), and a late workflow task decision or step result for a closed run is discarded (`recorded: false`, history unchanged); an unfinished wait rejects with `CancelledError` which the workflow may catch; a compensation that throws does not stop the others; 10 concurrent `cancelRun` calls record one `cancel_requested`; cancel and terminate on a closed or missing run are rejected; 10 concurrent replays of a cancelled history give one identical decision. `closeRunIfTerminal` now also runs when the recorder appends `run_completed` or `run_failed`, so those runs get their projection updated in the same transaction. Nothing serves `cancelRun` or `terminateRun` over HTTP and no handler consumes the `WORKFLOW_TASK` (reason `cancel`) yet. Day 18 (child workflows and fan-out/fan-in) is next and owns `parentClosePolicy`, i.e. cancelling children when a parent is cancelled.
+
+---
+
 ## Day 16: signals and queries
 
 - **Status:** DONE
