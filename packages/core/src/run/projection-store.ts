@@ -1,5 +1,6 @@
 import type { Pool, PoolClient } from "pg";
-import type { EventStore } from "../event-store/event-store.js";
+import type { Codec } from "../event-store/codec.js";
+import { readEventsOnClient, type EventStore } from "../event-store/event-store.js";
 import { RUN_STATES, type RunState } from "./state-machine.js";
 import { createInitialProjection, foldRunEvents, type RunProjection } from "./projection.js";
 
@@ -116,4 +117,22 @@ export function rebuildProjection(
   runId: string,
 ): Promise<RunProjection> {
   return foldInto(pool, store, runId, createInitialProjection);
+}
+
+/**
+ * Like `refreshProjection`, but on an existing client inside the caller's
+ * transaction, so the projection also folds events the caller appended and
+ * has not committed. The caller must already hold the run row lock.
+ */
+export async function refreshProjectionOnClient(
+  client: PoolClient,
+  codec: Codec,
+  runId: string,
+): Promise<RunProjection> {
+  const row = await lockRunRow(client, runId);
+  const start = projectionFromRow(row);
+  const events = await readEventsOnClient(client, codec, runId, start.lastSequenceNumber);
+  const next = foldRunEvents(events, start);
+  await writeProjection(client, runId, next);
+  return next;
 }

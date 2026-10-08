@@ -34,10 +34,19 @@ export interface FailRunCommand {
 }
 
 /**
+ * The run was cancelled: a cancellation was requested and every registered
+ * compensation has finished.
+ */
+export interface CancelRunCommand {
+  readonly type: "cancel_run";
+  readonly reason?: string;
+}
+
+/**
  * Every command kind a workflow decision can produce, discriminated on
  * `type`. A decision produces zero or more `ScheduleStepCommand` and
- * `StartTimerCommand` entries, followed by exactly one of
- * `CompleteRunCommand` or `FailRunCommand`.
+ * `StartTimerCommand` entries, followed by at most one of
+ * `CompleteRunCommand`, `FailRunCommand` or `CancelRunCommand`.
  */
 export type WorkflowCommand =
-  ScheduleStepCommand | StartTimerCommand | CompleteRunCommand | FailRunCommand;
+  ScheduleStepCommand | StartTimerCommand | CompleteRunCommand | FailRunCommand | CancelRunCommand;

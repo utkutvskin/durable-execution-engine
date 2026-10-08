@@ -47,6 +47,16 @@ export const runCancelledEventSchema = z.object({
 });
 
 /**
+ * A graceful cancellation was requested. The run is not closed yet: its
+ * workflow sees `CancelledError` at its next wait, the registered
+ * compensations run, and only then does `run_cancelled` close the run.
+ */
+export const cancelRequestedEventSchema = z.object({
+  type: z.literal("cancel_requested"),
+  reason: z.string().optional(),
+});
+
+/**
  * The run reached its `TERMINATED` state after a forced termination that
  * did not wait for the workflow to react.
  */
@@ -143,6 +153,7 @@ export const workflowEventSchema = z.discriminatedUnion("type", [
   runTimedOutEventSchema,
   runCancelledEventSchema,
   runTerminatedEventSchema,
+  cancelRequestedEventSchema,
   stepScheduledEventSchema,
   stepCompletedEventSchema,
   stepFailedEventSchema,

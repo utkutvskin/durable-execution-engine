@@ -30,3 +30,17 @@ export class NonDeterminismError extends Error {
     this.found = found;
   }
 }
+
+/**
+ * What a workflow's waits reject with once cancellation was requested: a
+ * `ctx.step()` that was never scheduled, a `ctx.sleep()` or a
+ * `ctx.waitForSignal()` that has not completed. A step that is already
+ * running is waited for instead and resolves normally. A workflow may catch
+ * it to clean up, but the run is cancelled either way.
+ */
+export class CancelledError extends Error {
+  constructor() {
+    super("the workflow run was cancelled");
+    this.name = "CancelledError";
+  }
+}

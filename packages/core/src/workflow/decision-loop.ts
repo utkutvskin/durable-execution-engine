@@ -1,8 +1,14 @@
 import { isDeepStrictEqual } from "node:util";
 import type { WorkflowEvent } from "../event-store/events.js";
 import type { WorkflowCommand } from "./commands.js";
-import type { QueryHandler, SelectResult, WorkflowContext, WorkflowHandler } from "./context.js";
-import { NonDeterminismError } from "./errors.js";
+import type {
+  CompensationHandler,
+  QueryHandler,
+  SelectResult,
+  WorkflowContext,
+  WorkflowHandler,
+} from "./context.js";
+import { CancelledError, NonDeterminismError } from "./errors.js";
 import { ForbiddenApiError, guardAgainstForbiddenApis } from "./sandbox.js";
 import type { ClockSource, RandomSource } from "./sources.js";
 
@@ -24,7 +30,9 @@ export interface DecisionLoopOptions {
  * `runWorkflowInMemory` reports it), or the replay reaches a step or timer
  * the history has no result for yet and stops there (`suspended`). In every
  * case `commands` holds only the commands this decision newly discovered —
- * anything already implied by the given history is never repeated.
+ * anything already implied by the given history is never repeated. Once the
+ * history holds a `cancel_requested` event the decision is `cancelled` after
+ * every compensation has finished and `suspended` until then.
  */
 export type DecisionResult<TResult = unknown> =
   | {
@@ -37,7 +45,8 @@ export type DecisionResult<TResult = unknown> =
       readonly error: Error;
       readonly commands: readonly WorkflowCommand[];
     }
-  | { readonly outcome: "suspended"; readonly commands: readonly WorkflowCommand[] };
+  | { readonly outcome: "suspended"; readonly commands: readonly WorkflowCommand[] }
+  | { readonly outcome: "cancelled"; readonly commands: readonly WorkflowCommand[] };
 
 function toError(reason: unknown): Error {
   return reason instanceof Error ? reason : new Error(String(reason));
@@ -65,6 +74,10 @@ function drainToQuiescence(): Promise<void> {
   });
 }
 
+function isIntegrityError(error: unknown): error is Error {
+  return error instanceof NonDeterminismError || error instanceof ForbiddenApiError;
+}
+
 function neverSettles<TValue>(): Promise<TValue> {
   return new Promise<TValue>(() => undefined);
 }
@@ -81,7 +94,10 @@ function createReplayContext(
   options: DecisionLoopOptions,
   newCommands: WorkflowCommand[],
   queryHandlers: Map<string, QueryHandler>,
-): WorkflowContext {
+  compensations: CompensationHandler[],
+  inFlightSteps: Set<string>,
+): { readonly workflowContext: WorkflowContext; readonly compensationContext: WorkflowContext } {
+  const cancelRequested = history.some((event) => event.type === "cancel_requested");
   let stepSequence = 0;
   let timerSequence = 0;
   const signalSequences = new Map<string, number>();
@@ -92,121 +108,142 @@ function createReplayContext(
     return promise;
   }
 
-  return {
-    step<TResult>(stepType: string, input: unknown): Promise<TResult> {
-      stepSequence += 1;
-      const stepId = `step-${String(stepSequence)}`;
+  function buildContext(rejectAfterCancel: boolean): WorkflowContext {
+    const cancelled = rejectAfterCancel && cancelRequested;
+    return {
+      step<TResult>(stepType: string, input: unknown): Promise<TResult> {
+        stepSequence += 1;
+        const stepId = `step-${String(stepSequence)}`;
 
-      const scheduled = findEvent(
-        history,
-        (event): event is Extract<WorkflowEvent, { type: "step_scheduled" }> =>
-          event.type === "step_scheduled" && event.stepId === stepId,
-      );
-      if (
-        scheduled !== undefined &&
-        (scheduled.stepType !== stepType || !isDeepStrictEqual(scheduled.input, input))
-      ) {
-        throw new NonDeterminismError(
-          stepId,
-          { stepType: scheduled.stepType, input: scheduled.input },
-          { stepType, input },
+        const scheduled = findEvent(
+          history,
+          (event): event is Extract<WorkflowEvent, { type: "step_scheduled" }> =>
+            event.type === "step_scheduled" && event.stepId === stepId,
         );
-      }
-
-      const finishedIndex = history.findIndex(
-        (event) =>
-          (event.type === "step_completed" || event.type === "step_failed") &&
-          event.stepId === stepId,
-      );
-      const finished = history[finishedIndex];
-      if (finished?.type === "step_completed") {
-        return completedAt(Promise.resolve(finished.result as TResult), finishedIndex);
-      }
-      if (finished?.type === "step_failed") {
-        return completedAt(Promise.reject(reconstructError(finished.error)), finishedIndex);
-      }
-
-      if (scheduled === undefined) {
-        newCommands.push({ type: "schedule_step", stepId, stepType, input });
-      }
-
-      return neverSettles<TResult>();
-    },
-    sleep(durationMs: number): Promise<void> {
-      timerSequence += 1;
-      const timerId = `timer-${String(timerSequence)}`;
-
-      const firedIndex = history.findIndex(
-        (event) => event.type === "timer_fired" && event.timerId === timerId,
-      );
-      if (firedIndex >= 0) {
-        return completedAt(Promise.resolve(), firedIndex);
-      }
-
-      const alreadyStarted = history.some(
-        (event) => event.type === "timer_started" && event.timerId === timerId,
-      );
-      if (!alreadyStarted) {
-        const fireAt = new Date(options.clock.now().getTime() + durationMs).toISOString();
-        newCommands.push({ type: "start_timer", timerId, fireAt });
-      }
-
-      return neverSettles();
-    },
-    waitForSignal<TPayload>(signalName: string): Promise<TPayload> {
-      const consumed = signalSequences.get(signalName) ?? 0;
-      signalSequences.set(signalName, consumed + 1);
-
-      let seen = 0;
-      const deliveredIndex = history.findIndex((event) => {
-        if (event.type !== "signal_received" || event.signalName !== signalName) {
-          return false;
+        if (
+          scheduled !== undefined &&
+          (scheduled.stepType !== stepType || !isDeepStrictEqual(scheduled.input, input))
+        ) {
+          throw new NonDeterminismError(
+            stepId,
+            { stepType: scheduled.stepType, input: scheduled.input },
+            { stepType, input },
+          );
         }
-        seen += 1;
-        return seen === consumed + 1;
-      });
-      const delivered = history[deliveredIndex];
-      if (delivered?.type === "signal_received") {
-        return completedAt(Promise.resolve(delivered.payload as TPayload), deliveredIndex);
-      }
-      return neverSettles<TPayload>();
-    },
-    select<TBranches extends readonly Promise<unknown>[]>(
-      branches: TBranches,
-    ): Promise<SelectResult<Awaited<TBranches[number]>>> {
-      for (const branch of branches) {
-        branch.catch(() => undefined);
-      }
-      let winner = -1;
-      let winnerPosition = Number.POSITIVE_INFINITY;
-      for (const [index, branch] of branches.entries()) {
-        const position = completionPositions.get(branch);
-        if (position !== undefined && position < winnerPosition) {
-          winner = index;
-          winnerPosition = position;
+
+        const finishedIndex = history.findIndex(
+          (event) =>
+            (event.type === "step_completed" || event.type === "step_failed") &&
+            event.stepId === stepId,
+        );
+        const finished = history[finishedIndex];
+        if (finished?.type === "step_completed") {
+          return completedAt(Promise.resolve(finished.result as TResult), finishedIndex);
         }
-      }
-      const chosen = branches[winner];
-      if (chosen === undefined) {
+        if (finished?.type === "step_failed") {
+          return completedAt(Promise.reject(reconstructError(finished.error)), finishedIndex);
+        }
+
+        if (scheduled === undefined) {
+          if (cancelled) {
+            return Promise.reject(new CancelledError());
+          }
+          newCommands.push({ type: "schedule_step", stepId, stepType, input });
+        }
+
+        if (cancelled) {
+          inFlightSteps.add(stepId);
+        }
+        return neverSettles<TResult>();
+      },
+      sleep(durationMs: number): Promise<void> {
+        timerSequence += 1;
+        const timerId = `timer-${String(timerSequence)}`;
+
+        const firedIndex = history.findIndex(
+          (event) => event.type === "timer_fired" && event.timerId === timerId,
+        );
+        if (firedIndex >= 0) {
+          return completedAt(Promise.resolve(), firedIndex);
+        }
+
+        if (cancelled) {
+          return Promise.reject(new CancelledError());
+        }
+
+        const alreadyStarted = history.some(
+          (event) => event.type === "timer_started" && event.timerId === timerId,
+        );
+        if (!alreadyStarted) {
+          const fireAt = new Date(options.clock.now().getTime() + durationMs).toISOString();
+          newCommands.push({ type: "start_timer", timerId, fireAt });
+        }
+
         return neverSettles();
-      }
-      return chosen.then(
-        (value) => ({ index: winner, value }) as SelectResult<Awaited<TBranches[number]>>,
-      );
-    },
-    setQueryHandler(queryName: string, handler: QueryHandler): void {
-      queryHandlers.set(queryName, handler);
-    },
-    now(): Date {
-      return options.clock.now();
-    },
-    random(): number {
-      return options.random.random();
-    },
-    uuid(): string {
-      return options.random.uuid();
-    },
-  };
+      },
+      waitForSignal<TPayload>(signalName: string): Promise<TPayload> {
+        const consumed = signalSequences.get(signalName) ?? 0;
+        signalSequences.set(signalName, consumed + 1);
+
+        let seen = 0;
+        const deliveredIndex = history.findIndex((event) => {
+          if (event.type !== "signal_received" || event.signalName !== signalName) {
+            return false;
+          }
+          seen += 1;
+          return seen === consumed + 1;
+        });
+        const delivered = history[deliveredIndex];
+        if (delivered?.type === "signal_received") {
+          return completedAt(Promise.resolve(delivered.payload as TPayload), deliveredIndex);
+        }
+        if (cancelled) {
+          return Promise.reject(new CancelledError());
+        }
+        return neverSettles<TPayload>();
+      },
+      select<TBranches extends readonly Promise<unknown>[]>(
+        branches: TBranches,
+      ): Promise<SelectResult<Awaited<TBranches[number]>>> {
+        for (const branch of branches) {
+          branch.catch(() => undefined);
+        }
+        let winner = -1;
+        let winnerPosition = Number.POSITIVE_INFINITY;
+        for (const [index, branch] of branches.entries()) {
+          const position = completionPositions.get(branch);
+          if (position !== undefined && position < winnerPosition) {
+            winner = index;
+            winnerPosition = position;
+          }
+        }
+        const chosen = branches[winner];
+        if (chosen === undefined) {
+          return neverSettles();
+        }
+        return chosen.then(
+          (value) => ({ index: winner, value }) as SelectResult<Awaited<TBranches[number]>>,
+        );
+      },
+      setQueryHandler(queryName: string, handler: QueryHandler): void {
+        queryHandlers.set(queryName, handler);
+      },
+      onCancel(handler: CompensationHandler): void {
+        compensations.push(handler);
+      },
+      now(): Date {
+        return options.clock.now();
+      },
+      random(): number {
+        return options.random.random();
+      },
+      uuid(): string {
+        return options.random.uuid();
+      },
+    };
+  }
+
+  return { workflowContext: buildContext(true), compensationContext: buildContext(false) };
 }
 
 /**
@@ -221,6 +258,9 @@ export interface ReplayOutcome<TResult> {
     | undefined;
   readonly commands: WorkflowCommand[];
   readonly queryHandlers: ReadonlyMap<string, QueryHandler>;
+  readonly cancellation:
+    | { readonly requested: false }
+    | { readonly requested: true; readonly reason?: string; readonly compensated: boolean };
 }
 
 /**
@@ -236,23 +276,72 @@ export async function replayHistory<TInput, TResult>(
 ): Promise<ReplayOutcome<TResult>> {
   const commands: WorkflowCommand[] = [];
   const queryHandlers = new Map<string, QueryHandler>();
-  const ctx = createReplayContext(history, options, commands, queryHandlers);
+  const compensations: CompensationHandler[] = [];
+  const inFlightSteps = new Set<string>();
+  const { workflowContext, compensationContext } = createReplayContext(
+    history,
+    options,
+    commands,
+    queryHandlers,
+    compensations,
+    inFlightSteps,
+  );
+  const cancelEvent = history.find(
+    (event): event is Extract<WorkflowEvent, { type: "cancel_requested" }> =>
+      event.type === "cancel_requested",
+  );
   let settled: ReplayOutcome<TResult>["settled"];
+  let handlerDone = false;
+  let compensated = false;
+
+  async function runCompensations(): Promise<void> {
+    for (const compensation of [...compensations].reverse()) {
+      try {
+        await compensation(compensationContext);
+      } catch (reason: unknown) {
+        if (isIntegrityError(reason)) {
+          settled = { outcome: "failed", error: reason };
+        }
+      }
+    }
+    compensated = true;
+  }
 
   await guardAgainstForbiddenApis(async () => {
-    handler(ctx, input).then(
-      (result) => {
-        settled = { outcome: "completed", result };
-      },
-      (reason: unknown) => {
-        settled = { outcome: "failed", error: toError(reason) };
-      },
-    );
+    void handler(workflowContext, input)
+      .then(
+        (result) => {
+          settled = { outcome: "completed", result };
+        },
+        (reason: unknown) => {
+          settled = { outcome: "failed", error: toError(reason) };
+        },
+      )
+      .then(() => {
+        handlerDone = true;
+      });
 
     await drainToQuiescence();
+
+    if (cancelEvent !== undefined && (handlerDone || inFlightSteps.size === 0)) {
+      void runCompensations();
+      await drainToQuiescence();
+    }
   });
 
-  return { settled, commands, queryHandlers };
+  if (cancelEvent === undefined) {
+    return { settled, commands, queryHandlers, cancellation: { requested: false } };
+  }
+  return {
+    settled,
+    commands,
+    queryHandlers,
+    cancellation: {
+      requested: true,
+      ...(cancelEvent.reason === undefined ? {} : { reason: cancelEvent.reason }),
+      compensated,
+    },
+  };
 }
 
 /**
@@ -286,15 +375,23 @@ export async function runDecisionLoop<TInput, TResult>(
   history: readonly WorkflowEvent[],
   options: DecisionLoopOptions,
 ): Promise<DecisionResult<TResult>> {
-  const { settled, commands } = await replayHistory(handler, input, history, options);
+  const { settled, commands, cancellation } = await replayHistory(handler, input, history, options);
+  if (settled?.outcome === "failed" && isIntegrityError(settled.error)) {
+    throw settled.error;
+  }
+  if (cancellation.requested) {
+    if (!cancellation.compensated) {
+      return { outcome: "suspended", commands };
+    }
+    commands.push(
+      cancellation.reason === undefined
+        ? { type: "cancel_run" }
+        : { type: "cancel_run", reason: cancellation.reason },
+    );
+    return { outcome: "cancelled", commands };
+  }
   if (settled === undefined) {
     return { outcome: "suspended", commands };
-  }
-  if (
-    settled.outcome === "failed" &&
-    (settled.error instanceof NonDeterminismError || settled.error instanceof ForbiddenApiError)
-  ) {
-    throw settled.error;
   }
   if (settled.outcome === "completed") {
     commands.push({ type: "complete_run", result: settled.result });

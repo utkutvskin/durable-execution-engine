@@ -1,10 +1,12 @@
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { jsonCodec, type Codec } from "../event-store/codec.js";
 import {
   appendEventsOnClient,
   readCurrentSequenceOnClient,
   type StoredEvent,
 } from "../event-store/event-store.js";
+import { closeRunIfTerminal } from "../cancellation/close-run.js";
+import { isTerminalState, type RunState } from "../run/state-machine.js";
 import { insertTimerOnClient } from "../timers/timer-scheduler.js";
 import { workflowEventSchema, type WorkflowEvent } from "../event-store/events.js";
 import type { SerializedError } from "../workflow/error-serialization.js";
@@ -72,8 +74,9 @@ export interface ResultRecorder {
    * Writes the step's result row and the matching `step_completed` or
    * `step_failed` event in one transaction. A repeat of the same
    * `(runId, stepId, attemptKey)` writes nothing and returns the first
-   * delivery's stored outcome. A failure anywhere in the transaction leaves
-   * neither the row nor the event behind.
+   * delivery's stored outcome. A result for a run that is already closed is
+   * discarded: nothing is written and `recorded` is false. A failure anywhere
+   * in the transaction leaves neither the row nor the event behind.
    */
   recordStepResult(input: RecordStepResultInput): Promise<RecordedStepResult>;
 
@@ -83,7 +86,11 @@ export interface ResultRecorder {
    * appends nothing. A `timer_started` event also creates its durable
    * timer row in the same transaction, so a timer exists exactly when its
    * event does. A new key whose `expectedSeq` is stale is rejected
-   * with a `ConcurrencyError` and records nothing.
+   * with a `ConcurrencyError` and records nothing. A decision for a run that
+   * is already closed is discarded: nothing is appended and `recorded` is
+   * false, so no step can be scheduled after a cancellation or termination.
+   * An event that closes the run also brings its projection up to date and
+   * withdraws the run's waiting tasks, in the same transaction.
    */
   recordWorkflowTaskResult(
     input: RecordWorkflowTaskResultInput,
@@ -93,6 +100,22 @@ export interface ResultRecorder {
 interface StepResultRow {
   result: unknown;
   error: SerializedError | null;
+}
+
+const CLOSING_EVENT_TYPES: ReadonlySet<WorkflowEvent["type"]> = new Set([
+  "run_completed",
+  "run_failed",
+  "run_timed_out",
+  "run_cancelled",
+  "run_terminated",
+]);
+
+async function lockRunStatus(client: PoolClient, runId: string): Promise<RunState | undefined> {
+  const result = await client.query<{ status: RunState }>(
+    "select status from workflow_runs where id = $1 for update",
+    [runId],
+  );
+  return result.rows[0]?.status;
 }
 
 function toStepEvent(input: RecordStepResultInput): WorkflowEvent {
@@ -134,7 +157,11 @@ export function createResultRecorder(pool: Pool, codec: Codec = jsonCodec): Resu
       const client = await pool.connect();
       try {
         await client.query("begin");
-        await client.query("select 1 from workflow_runs where id = $1 for update", [input.runId]);
+        const status = await lockRunStatus(client, input.runId);
+        if (status !== undefined && isTerminalState(status)) {
+          await client.query("commit");
+          return { recorded: false, outcome: input.outcome };
+        }
         const inserted = await client.query(
           `insert into step_results (run_id, step_id, attempt_key, result, error)
            values ($1, $2, $3, $4::jsonb, $5::jsonb)
@@ -181,7 +208,7 @@ export function createResultRecorder(pool: Pool, codec: Codec = jsonCodec): Resu
       const client = await pool.connect();
       try {
         await client.query("begin");
-        await client.query("select 1 from workflow_runs where id = $1 for update", [input.runId]);
+        const status = await lockRunStatus(client, input.runId);
         const existing = await client.query<{ first: string; last: string }>(
           `select first_sequence_number as first, last_sequence_number as last
            from workflow_task_results where run_id = $1 and task_key = $2`,
@@ -194,6 +221,14 @@ export function createResultRecorder(pool: Pool, codec: Codec = jsonCodec): Resu
             recorded: false,
             firstSequenceNumber: Number(previous.first),
             lastSequenceNumber: Number(previous.last),
+          };
+        }
+        if (status !== undefined && isTerminalState(status)) {
+          await client.query("commit");
+          return {
+            recorded: false,
+            firstSequenceNumber: input.expectedSeq + 1,
+            lastSequenceNumber: input.expectedSeq,
           };
         }
         const stored: StoredEvent[] = await appendEventsOnClient(
@@ -211,6 +246,9 @@ export function createResultRecorder(pool: Pool, codec: Codec = jsonCodec): Resu
               fireAt: new Date(event.fireAt),
             });
           }
+        }
+        if (events.some((event) => CLOSING_EVENT_TYPES.has(event.type))) {
+          await closeRunIfTerminal(client, codec, input.runId);
         }
         const firstSequenceNumber = input.expectedSeq + 1;
         const lastSequenceNumber = input.expectedSeq + stored.length;

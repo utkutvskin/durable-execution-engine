@@ -14,6 +14,13 @@ export interface SelectResult<TValue = unknown> {
 export type QueryHandler = (argument: unknown) => unknown;
 
 /**
+ * A compensation registered with `ctx.onCancel()`. It receives a context
+ * that keeps scheduling steps, timers and signal waits after cancellation
+ * was requested.
+ */
+export type CompensationHandler = (ctx: WorkflowContext) => Promise<void>;
+
+/**
  * The API a workflow function is written against: scheduling steps and
  * timers, and reading time and randomness. Every member is backed by a
  * source a worker can substitute at replay time, so the same workflow body
@@ -43,6 +50,14 @@ export interface WorkflowContext {
    * registration of a name wins. A handler must only read workflow state.
    */
   setQueryHandler(queryName: string, handler: QueryHandler): void;
+  /**
+   * Registers a compensation for work done so far. When the run is
+   * cancelled, the compensations run one at a time in reverse registration
+   * order, after the step that was running when cancellation was requested
+   * has finished. A compensation that throws does not stop the others.
+   * Compensations do not run when the run completes, fails or is terminated.
+   */
+  onCancel(handler: CompensationHandler): void;
   now(): Date;
   random(): number;
   uuid(): string;

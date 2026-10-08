@@ -110,6 +110,34 @@ export async function readCurrentSequenceOnClient(
 }
 
 /**
+ * Reads `runId`'s events after `fromSeq`, in order, on an existing client so
+ * the read joins the caller's transaction and sees its uncommitted appends.
+ */
+export async function readEventsOnClient(
+  client: PoolClient,
+  codec: Codec,
+  runId: string,
+  fromSeq = 0,
+): Promise<StoredEvent[]> {
+  const result = await client.query<{
+    sequence_number: string;
+    payload: string;
+    created_at: Date;
+  }>(
+    `select sequence_number, payload::text as payload, created_at
+     from run_events
+     where run_id = $1 and sequence_number > $2
+     order by sequence_number asc`,
+    [runId, fromSeq],
+  );
+  return result.rows.map((row) => ({
+    sequenceNumber: Number(row.sequence_number),
+    event: workflowEventSchema.parse(codec.decode(row.payload)),
+    createdAt: row.created_at,
+  }));
+}
+
+/**
  * Creates an `EventStore` backed by the `run_events` table reachable
  * through `pool`. Optimistic concurrency is enforced by checking the
  * current sequence number inside the same transaction as the insert, with

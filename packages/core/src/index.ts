@@ -62,7 +62,7 @@ export type { DefineStepOptions, StepDefinition } from "./workflow/define-step.j
 export { defineWorkflow } from "./workflow/define-workflow.js";
 export { deserializeError, serializeError } from "./workflow/error-serialization.js";
 export type { SerializedError } from "./workflow/error-serialization.js";
-export { NonDeterminismError } from "./workflow/errors.js";
+export { CancelledError, NonDeterminismError } from "./workflow/errors.js";
 export { ForbiddenApiError } from "./workflow/sandbox.js";
 export { runRegisteredWorkflowInMemory, runWorkflowInMemory } from "./workflow/run-workflow.js";
 export type { RunWorkflowOptions, RunWorkflowResult } from "./workflow/run-workflow.js";
@@ -174,7 +174,7 @@ export type {
 export { UnknownQueryError, runQuery } from "./workflow/query.js";
 export { replayHistory } from "./workflow/decision-loop.js";
 export type { ReplayOutcome } from "./workflow/decision-loop.js";
-export type { QueryHandler, SelectResult } from "./workflow/context.js";
+export type { CompensationHandler, QueryHandler, SelectResult } from "./workflow/context.js";
 export {
   RunNotFoundError,
   RunNotOpenError,
@@ -185,3 +185,11 @@ export type {
   RunInteractionsOptions,
   SignalReceipt,
 } from "./signals/signal-service.js";
+export { RunAlreadyClosedError, createRunControl } from "./cancellation/run-control.js";
+export type {
+  CancelReceipt,
+  RunControl,
+  RunControlOptions,
+  TerminateReceipt,
+} from "./cancellation/run-control.js";
+export { closeRunIfTerminal } from "./cancellation/close-run.js";

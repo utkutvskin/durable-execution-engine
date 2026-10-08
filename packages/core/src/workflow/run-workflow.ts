@@ -76,6 +76,9 @@ function createInMemoryContext(
     setQueryHandler(): void {
       return undefined;
     },
+    onCancel(): void {
+      return undefined;
+    },
     now(): Date {
       return options.clock.now();
     },
