@@ -165,7 +165,7 @@ automatically, which would make a codec that operates on JS values a no-op
 wrapper around behavior the driver already provides for free.
 
 **Decision:** `Codec.encode`/`decode` convert between an event value and
-its JSON *string* form (`JSON.stringify`/`JSON.parse` for `jsonCodec`).
+its JSON _string_ form (`JSON.stringify`/`JSON.parse` for `jsonCodec`).
 `EventStore.append` inserts that string directly (Postgres resolves a text
 parameter against a `jsonb` column the same way it resolves an untyped
 string literal); `EventStore.read` selects `payload::text` explicitly so
@@ -294,7 +294,7 @@ found `{ stepType, input }`. Sleep/timer calls are not compared the same
 way: an in-flight or already-fired timer's `fireAt` is never recomputed
 during replay (see `decision-loop.ts`), so there is nothing on that path
 for a later call to disagree with; catching a workflow that changes
-*whether* it sleeps at a given point at all is left to day 8's projection
+_whether_ it sleeps at a given point at all is left to day 8's projection
 and future work, not solved here.
 
 `NonDeterminismError` and the forbidden-API sandbox's `ForbiddenApiError`
@@ -332,7 +332,7 @@ But `runDecisionLoop` is not guaranteed to run one at a time — day 5's own
 `Promise.all([...])`, and nothing about the type signature forbids a
 caller from doing the same in production. A naive save-then-restore
 guard breaks under that overlap: if call A patches, call B starts before A
-finishes and saves A's *patched* functions as its own "original", then
+finishes and saves A's _patched_ functions as its own "original", then
 whichever of A or B finishes first restores correctly but the other then
 restores the globals to the wrong (still-forbidding) functions, leaving
 `Date.now()` permanently broken for every test or run that follows. This
@@ -482,7 +482,6 @@ v0, and an at-rest encryption or redaction story, if the owner wants one
 later, is a bigger decision than a hook on `Codec` and belongs in its own
 day, not folded in here by default.
 
-
 ---
 
 ## ADR-0018: the run projection is a pure fold over the event log, persisted into the existing `workflow_runs` row
@@ -604,3 +603,13 @@ with the task queue and worker days, when something first needs to read it.
 **Decision:** `cancelRun` appends `cancel_requested` and a `WORKFLOW_TASK` in one transaction under the run row lock; the run stays `RUNNING`. Asking twice writes nothing. During replay, once the history holds `cancel_requested`, a `ctx.step()` that was never scheduled, a `ctx.sleep()` and a `ctx.waitForSignal()` that have not completed reject with `CancelledError`, and a step that is already scheduled is waited for and resolves normally. `ctx.onCancel(handler)` registers a compensation; the handler receives a second context that keeps scheduling steps, timers and signal waits (sharing the step and timer counters, so ids stay deterministic). When the main handler has settled, or has nothing in flight, the compensations run one at a time in reverse registration order inside the same replay, so a compensation is an ordinary replayed code path with ordinary step ids. A compensation that throws is skipped; a `NonDeterminismError` or `ForbiddenApiError` from one still fails the decision. The decision is `suspended` until every compensation has finished, then `cancelled` with a `cancel_run` command, which is recorded as `run_cancelled`. `terminateRun` appends `run_terminated` directly, with no workflow involvement, and is allowed while a cancellation is pending. Both closing events go through `closeRunIfTerminal`, which brings the projection up to date in the same transaction and marks the run's `PENDING` tasks `COMPLETED`. `recordWorkflowTaskResult` and `recordStepResult` discard their input for a run that is already closed (`recorded: false`), which is what keeps a step from being scheduled or recorded after cancellation or termination.
 
 **Consequence:** a cancellation takes effect at the workflow's next wait, not in the middle of a step; a step that never finishes holds the cancellation until its retries end, so `terminateRun` is the escape hatch. A workflow that catches `CancelledError` and keeps going is still cancelled, and its further calls reject. Once cancellation is requested the run cannot complete, even if the last step finished after the request. Tasks already leased by a worker are not withdrawn; their results are discarded. Pending timers of a closed run are closed by the scheduler when they come due (ADR-0024). Cancellation of child workflows is day 18. Nothing serves `cancelRun` or `terminateRun` over HTTP yet and no handler turns the `WORKFLOW_TASK` into a decision: the API and the real worker entry point are later days.
+
+---
+
+## ADR-0028: children are runs linked by `parent_run_id`, closed in the same transaction that settles the parent, with parent-first locking
+
+**Context:** day 18 asks for child workflows, a parent close policy, deterministic parallel execution, and an upper bound with backpressure. A child must start exactly once, report back to its parent without a separate process, and be cancelled or left alone when the parent closes.
+
+**Decision:** `ctx.startChild()` assigns `child-N` from call order and yields a `start_child` command, recorded as a `child_started` event. `recordWorkflowTaskResult` creates the child in the same transaction: a `workflow_runs` row (`parent_run_id`, `parent_child_id`, `parent_close_policy`, unique per parent and child id), its `run_started` event and a `WORKFLOW_TASK`, so a redelivered task creates it once. The recorder needs a `queueName` option for that. When a child run closes, `closeRunIfTerminal` appends `child_completed` or `child_failed` to the parent (timed out, cancelled and terminated children become a `child_failed` with a named error) and enqueues a parent `WORKFLOW_TASK`, unless the parent is already closed. When a run closes, the same function applies each open child's policy: `cancel` records `cancel_requested` on the child, `terminate` closes it at once and recurses, `abandon` does nothing. The default is `cancel`. Every path that closes a run locks the parent row before the run row (`lockRunWithParent`), and a cascade only goes parent to child, so a child closing while its parent closes cannot deadlock. `ctx.all(tasks, { concurrency })` and `ctx.allSettled` take functions that return the promise of a step or child as it is. Waiting uses the position of each completion in the history, as `ctx.select` does, so with a concurrency limit the next task starts when the earliest-recorded one finished, and replay starts the same tasks the original run did. Past the limit of 1000 children per run (`maxChildren`) `startChild` throws `ChildLimitExceededError` and the run fails; `concurrency` is the backpressure. Once cancellation is requested, a child that has not started is not started and an unfinished child wait rejects with `CancelledError`.
+
+**Consequence:** a task that wraps its promise in an `async` function loses the history position, so `ctx.all` would wait forever; the contract is documented on `ParallelTask`. Children are cancelled when the parent closes (after its compensations), not when the cancellation is requested. A `terminate` child whose own children use `cancel` only gets `cancel_requested` on them, since cancellation needs a workflow task. Nothing consumes the child's first `WORKFLOW_TASK` or the parent's `child_closed` task yet: the worker entry point is a later day. There is no per-parent limit on open children besides `concurrency`, and no limit on depth.
