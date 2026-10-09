@@ -6,6 +6,8 @@ import {
   type StoredEvent,
 } from "../event-store/event-store.js";
 import { closeRunIfTerminal } from "../cancellation/close-run.js";
+import { createChildRunOnClient } from "../children/child-runs.js";
+import { lockRunWithParent } from "../children/run-locks.js";
 import { isTerminalState, type RunState } from "../run/state-machine.js";
 import { insertTimerOnClient } from "../timers/timer-scheduler.js";
 import { workflowEventSchema, type WorkflowEvent } from "../event-store/events.js";
@@ -89,8 +91,11 @@ export interface ResultRecorder {
    * with a `ConcurrencyError` and records nothing. A decision for a run that
    * is already closed is discarded: nothing is appended and `recorded` is
    * false, so no step can be scheduled after a cancellation or termination.
-   * An event that closes the run also brings its projection up to date and
-   * withdraws the run's waiting tasks, in the same transaction.
+   * An event that closes the run also brings its projection up to date,
+   * withdraws the run's waiting tasks and settles its parent and children
+   * (see `closeRunIfTerminal`), in the same transaction. A `child_started`
+   * event also creates the child run, its `run_started` event and its first
+   * workflow task, once per `childId`.
    */
   recordWorkflowTaskResult(
     input: RecordWorkflowTaskResultInput,
@@ -111,6 +116,11 @@ const CLOSING_EVENT_TYPES: ReadonlySet<WorkflowEvent["type"]> = new Set([
 ]);
 
 async function lockRunStatus(client: PoolClient, runId: string): Promise<RunState | undefined> {
+  const locked = await lockRunWithParent(client, runId);
+  return locked?.status as RunState | undefined;
+}
+
+async function lockRunStatusOnly(client: PoolClient, runId: string): Promise<RunState | undefined> {
   const result = await client.query<{ status: RunState }>(
     "select status from workflow_runs where id = $1 for update",
     [runId],
@@ -141,6 +151,15 @@ function toOutcome(row: StepResultRow): StepOutcome {
 }
 
 /**
+ * Options for `createResultRecorder`. `queueName` is the queue the first
+ * workflow task of each child run goes to; recording a `child_started` event
+ * without it is an error.
+ */
+export interface ResultRecorderOptions {
+  readonly queueName?: string;
+}
+
+/**
  * Creates a `ResultRecorder` over `pool`. Events are encoded with `codec`,
  * the same codec the `EventStore` reading them uses.
  *
@@ -150,14 +169,18 @@ function toOutcome(row: StepResultRow): StepOutcome {
  * a row lock on `workflow_runs`, so two different steps finishing at once
  * both append cleanly.
  */
-export function createResultRecorder(pool: Pool, codec: Codec = jsonCodec): ResultRecorder {
+export function createResultRecorder(
+  pool: Pool,
+  codec: Codec = jsonCodec,
+  recorderOptions: ResultRecorderOptions = {},
+): ResultRecorder {
   return {
     async recordStepResult(input: RecordStepResultInput): Promise<RecordedStepResult> {
       const event = toStepEvent(input);
       const client = await pool.connect();
       try {
         await client.query("begin");
-        const status = await lockRunStatus(client, input.runId);
+        const status = await lockRunStatusOnly(client, input.runId);
         if (status !== undefined && isTerminalState(status)) {
           await client.query("commit");
           return { recorded: false, outcome: input.outcome };
@@ -239,6 +262,25 @@ export function createResultRecorder(pool: Pool, codec: Codec = jsonCodec): Resu
           events,
         );
         for (const event of events) {
+          if (event.type === "child_started") {
+            const namespace = await client.query<{ namespace_id: string }>(
+              "select namespace_id from workflow_runs where id = $1",
+              [input.runId],
+            );
+            if (recorderOptions.queueName === undefined) {
+              throw new Error("recording a child workflow needs a queueName");
+            }
+            await createChildRunOnClient(
+              client,
+              codec,
+              {
+                runId: input.runId,
+                namespaceId: namespace.rows[0]?.namespace_id ?? "",
+                queueName: recorderOptions.queueName,
+              },
+              event,
+            );
+          }
           if (event.type === "timer_started") {
             await insertTimerOnClient(client, {
               runId: input.runId,

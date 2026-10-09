@@ -1,3 +1,5 @@
+import type { ParentClosePolicy } from "../event-store/events.js";
+
 /**
  * A step was scheduled for execution as part of a run's decision.
  */
@@ -15,6 +17,17 @@ export interface StartTimerCommand {
   readonly type: "start_timer";
   readonly timerId: string;
   readonly fireAt: string;
+}
+
+/**
+ * A child workflow was started. `childId` is unique within the parent run.
+ */
+export interface StartChildCommand {
+  readonly type: "start_child";
+  readonly childId: string;
+  readonly workflowType: string;
+  readonly input: unknown;
+  readonly parentClosePolicy: ParentClosePolicy;
 }
 
 /**
@@ -44,9 +57,14 @@ export interface CancelRunCommand {
 
 /**
  * Every command kind a workflow decision can produce, discriminated on
- * `type`. A decision produces zero or more `ScheduleStepCommand` and
- * `StartTimerCommand` entries, followed by at most one of
+ * `type`. A decision produces zero or more `ScheduleStepCommand`,
+ * `StartTimerCommand` and `StartChildCommand` entries, followed by at most one of
  * `CompleteRunCommand`, `FailRunCommand` or `CancelRunCommand`.
  */
 export type WorkflowCommand =
-  ScheduleStepCommand | StartTimerCommand | CompleteRunCommand | FailRunCommand | CancelRunCommand;
+  | ScheduleStepCommand
+  | StartTimerCommand
+  | StartChildCommand
+  | CompleteRunCommand
+  | FailRunCommand
+  | CancelRunCommand;

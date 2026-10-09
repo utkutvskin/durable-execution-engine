@@ -1,5 +1,15 @@
 import type { WorkflowCommand } from "./commands.js";
-import type { SelectResult, WorkflowContext, WorkflowHandler } from "./context.js";
+import type {
+  ChildHandle,
+  ChildOptions,
+  ParallelOptions,
+  ParallelTask,
+  SelectResult,
+  WorkflowContext,
+  WorkflowHandler,
+} from "./context.js";
+import { ChildLimitExceededError } from "./errors.js";
+import { fulfilledValues, runParallel } from "./parallel.js";
 import type { ClockSource, RandomSource } from "./sources.js";
 import type { StepRegistry } from "./step-registry.js";
 import type { WorkflowRegistry } from "./workflow-registry.js";
@@ -13,7 +23,11 @@ export interface RunWorkflowOptions {
   readonly clock: ClockSource;
   readonly random: RandomSource;
   readonly steps: StepRegistry;
+  readonly workflows?: WorkflowRegistry;
+  readonly maxChildren?: number;
 }
+
+const DEFAULT_MAX_IN_MEMORY_CHILDREN = 1000;
 
 /**
  * The outcome of running a workflow to completion: the full command
@@ -42,7 +56,78 @@ function createInMemoryContext(
 ): WorkflowContext {
   let stepSequence = 0;
   let timerSequence = 0;
+  let childSequence = 0;
+  const maxChildren = options.maxChildren ?? DEFAULT_MAX_IN_MEMORY_CHILDREN;
+
+  function startChild<TResult>(
+    workflowType: string,
+    input: unknown,
+    childOptions?: ChildOptions,
+  ): ChildHandle<TResult> {
+    childSequence += 1;
+    if (childSequence > maxChildren) {
+      throw new ChildLimitExceededError(maxChildren);
+    }
+    const childId = `child-${String(childSequence)}`;
+    commands.push({
+      type: "start_child",
+      childId,
+      workflowType,
+      input,
+      parentClosePolicy: childOptions?.parentClosePolicy ?? "cancel",
+    });
+    const definition = options.workflows?.get(workflowType);
+    const result =
+      definition === undefined
+        ? Promise.reject<TResult>(new Error(`no workflow registered for type "${workflowType}"`))
+        : runWorkflowInMemory(definition.handler, input, options).then((outcome) => {
+            if (outcome.outcome === "failed") {
+              throw outcome.error;
+            }
+            return outcome.result as TResult;
+          });
+    result.catch(() => undefined);
+    return { childId, result };
+  }
+
+  function parallel<TResult>(
+    tasks: readonly ParallelTask<TResult>[],
+    parallelOptions: ParallelOptions | undefined,
+    mode: "all" | "allSettled",
+  ): Promise<PromiseSettledResult<TResult>[]> {
+    return runParallel(tasks, parallelOptions, mode, (running) =>
+      Promise.race(
+        [...running].map(([index, promise]) =>
+          promise.then(
+            () => index,
+            () => index,
+          ),
+        ),
+      ),
+    );
+  }
+
   return {
+    startChild,
+    executeChild<TResult>(
+      workflowType: string,
+      input: unknown,
+      childOptions?: ChildOptions,
+    ): Promise<TResult> {
+      return startChild<TResult>(workflowType, input, childOptions).result;
+    },
+    async all<TResult>(
+      tasks: readonly ParallelTask<TResult>[],
+      parallelOptions?: ParallelOptions,
+    ): Promise<TResult[]> {
+      return fulfilledValues(await parallel(tasks, parallelOptions, "all"));
+    },
+    allSettled<TResult>(
+      tasks: readonly ParallelTask<TResult>[],
+      parallelOptions?: ParallelOptions,
+    ): Promise<PromiseSettledResult<TResult>[]> {
+      return parallel(tasks, parallelOptions, "allSettled");
+    },
     async step<TResult>(stepType: string, input: unknown): Promise<TResult> {
       stepSequence += 1;
       const stepId = `step-${String(stepSequence)}`;

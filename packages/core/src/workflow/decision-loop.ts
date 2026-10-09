@@ -2,13 +2,18 @@ import { isDeepStrictEqual } from "node:util";
 import type { WorkflowEvent } from "../event-store/events.js";
 import type { WorkflowCommand } from "./commands.js";
 import type {
+  ChildHandle,
+  ChildOptions,
   CompensationHandler,
+  ParallelOptions,
+  ParallelTask,
   QueryHandler,
   SelectResult,
   WorkflowContext,
   WorkflowHandler,
 } from "./context.js";
-import { CancelledError, NonDeterminismError } from "./errors.js";
+import { CancelledError, ChildLimitExceededError, NonDeterminismError } from "./errors.js";
+import { fulfilledValues, runParallel } from "./parallel.js";
 import { ForbiddenApiError, guardAgainstForbiddenApis } from "./sandbox.js";
 import type { ClockSource, RandomSource } from "./sources.js";
 
@@ -22,7 +27,14 @@ import type { ClockSource, RandomSource } from "./sources.js";
 export interface DecisionLoopOptions {
   readonly clock: ClockSource;
   readonly random: RandomSource;
+  readonly maxChildren?: number;
 }
+
+/**
+ * How many child workflows one run may start when `DecisionLoopOptions`
+ * does not say otherwise.
+ */
+export const DEFAULT_MAX_CHILDREN = 1000;
 
 /**
  * The outcome of one decision: replaying `handler` against a history either
@@ -100,6 +112,9 @@ function createReplayContext(
   const cancelRequested = history.some((event) => event.type === "cancel_requested");
   let stepSequence = 0;
   let timerSequence = 0;
+  let childSequence = 0;
+  const maxChildren = options.maxChildren ?? DEFAULT_MAX_CHILDREN;
+  const cancelledPromises = new WeakSet<Promise<unknown>>();
   const signalSequences = new Map<string, number>();
   const completionPositions = new WeakMap<Promise<unknown>, number>();
 
@@ -108,9 +123,120 @@ function createReplayContext(
     return promise;
   }
 
+  function rejectedByCancellation<TValue>(): Promise<TValue> {
+    const rejected = Promise.reject<TValue>(new CancelledError());
+    rejected.catch(() => undefined);
+    cancelledPromises.add(rejected);
+    return rejected;
+  }
+
+  function chooseNext(running: ReadonlyMap<number, Promise<unknown>>): number | undefined {
+    let winner: number | undefined;
+    let winnerPosition = Number.POSITIVE_INFINITY;
+    for (const [index, promise] of running) {
+      const position = completionPositions.get(promise);
+      if (position !== undefined && position < winnerPosition) {
+        winner = index;
+        winnerPosition = position;
+      }
+    }
+    if (winner !== undefined) {
+      return winner;
+    }
+    for (const [index, promise] of running) {
+      if (cancelledPromises.has(promise)) {
+        return index;
+      }
+    }
+    return undefined;
+  }
+
   function buildContext(rejectAfterCancel: boolean): WorkflowContext {
     const cancelled = rejectAfterCancel && cancelRequested;
+
+    function startChild<TResult>(
+      workflowType: string,
+      input: unknown,
+      childOptions?: ChildOptions,
+    ): ChildHandle<TResult> {
+      childSequence += 1;
+      if (childSequence > maxChildren) {
+        throw new ChildLimitExceededError(maxChildren);
+      }
+      const childId = `child-${String(childSequence)}`;
+      const parentClosePolicy = childOptions?.parentClosePolicy ?? "cancel";
+
+      const started = findEvent(
+        history,
+        (event): event is Extract<WorkflowEvent, { type: "child_started" }> =>
+          event.type === "child_started" && event.childId === childId,
+      );
+      if (
+        started !== undefined &&
+        (started.workflowType !== workflowType || !isDeepStrictEqual(started.input, input))
+      ) {
+        throw new NonDeterminismError(
+          childId,
+          { stepType: started.workflowType, input: started.input },
+          { stepType: workflowType, input },
+        );
+      }
+      if (started === undefined) {
+        if (cancelled) {
+          throw new CancelledError();
+        }
+        newCommands.push({ type: "start_child", childId, workflowType, input, parentClosePolicy });
+      }
+
+      const finishedIndex = history.findIndex(
+        (event) =>
+          (event.type === "child_completed" || event.type === "child_failed") &&
+          event.childId === childId,
+      );
+      const finished = history[finishedIndex];
+      let result: Promise<TResult>;
+      if (finished?.type === "child_completed") {
+        result = completedAt(Promise.resolve(finished.result as TResult), finishedIndex);
+      } else if (finished?.type === "child_failed") {
+        result = completedAt(Promise.reject(reconstructError(finished.error)), finishedIndex);
+        result.catch(() => undefined);
+      } else if (cancelled) {
+        result = rejectedByCancellation<TResult>();
+      } else {
+        result = neverSettles<TResult>();
+      }
+      return { childId, result };
+    }
+
+    function parallel<TResult>(
+      tasks: readonly ParallelTask<TResult>[],
+      parallelOptions: ParallelOptions | undefined,
+      mode: "all" | "allSettled",
+    ): Promise<PromiseSettledResult<TResult>[]> {
+      return runParallel(tasks, parallelOptions, mode, chooseNext);
+    }
+
     return {
+      startChild,
+      executeChild<TResult>(
+        workflowType: string,
+        input: unknown,
+        childOptions?: ChildOptions,
+      ): Promise<TResult> {
+        return startChild<TResult>(workflowType, input, childOptions).result;
+      },
+      async all<TResult>(
+        tasks: readonly ParallelTask<TResult>[],
+        parallelOptions?: ParallelOptions,
+      ): Promise<TResult[]> {
+        return fulfilledValues(await parallel(tasks, parallelOptions, "all"));
+      },
+      allSettled<TResult>(
+        tasks: readonly ParallelTask<TResult>[],
+        parallelOptions?: ParallelOptions,
+      ): Promise<PromiseSettledResult<TResult>[]> {
+        return parallel(tasks, parallelOptions, "allSettled");
+      },
       step<TResult>(stepType: string, input: unknown): Promise<TResult> {
         stepSequence += 1;
         const stepId = `step-${String(stepSequence)}`;

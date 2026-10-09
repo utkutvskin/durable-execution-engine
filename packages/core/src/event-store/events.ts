@@ -141,6 +141,52 @@ export const signalReceivedEventSchema = z.object({
 });
 
 /**
+ * What happens to a child workflow when its parent closes: `cancel` asks it
+ * to cancel gracefully, `terminate` closes it at once and `abandon` leaves it
+ * running on its own.
+ */
+export const parentClosePolicySchema = z.enum(["cancel", "terminate", "abandon"]);
+
+/**
+ * The close policy of a child workflow.
+ */
+export type ParentClosePolicy = z.infer<typeof parentClosePolicySchema>;
+
+/**
+ * A child workflow was started by the run. `childId` is assigned from call
+ * order within the parent, like step and timer ids.
+ */
+export const childStartedEventSchema = z.object({
+  type: z.literal("child_started"),
+  childId: z.string().min(1),
+  workflowType: z.string().min(1),
+  input: z.unknown(),
+  parentClosePolicy: parentClosePolicySchema,
+});
+
+/**
+ * A child workflow completed with the given result.
+ */
+export const childCompletedEventSchema = z.object({
+  type: z.literal("child_completed"),
+  childId: z.string().min(1),
+  result: z.unknown(),
+});
+
+/**
+ * A child workflow closed without completing: it failed, timed out, was
+ * cancelled or was terminated.
+ */
+export const childFailedEventSchema = z.object({
+  type: z.literal("child_failed"),
+  childId: z.string().min(1),
+  error: z.object({
+    name: z.string(),
+    message: z.string(),
+  }),
+});
+
+/**
  * Every event kind that can be appended to a run's event log, discriminated
  * on `type`. This is the closed set `EventStore.append` validates against:
  * a payload that does not match one of these shapes is rejected before it
@@ -161,6 +207,9 @@ export const workflowEventSchema = z.discriminatedUnion("type", [
   timerStartedEventSchema,
   timerFiredEventSchema,
   signalReceivedEventSchema,
+  childStartedEventSchema,
+  childCompletedEventSchema,
+  childFailedEventSchema,
 ]);
 
 /**

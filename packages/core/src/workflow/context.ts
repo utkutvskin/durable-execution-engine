@@ -1,3 +1,5 @@
+import type { ParentClosePolicy } from "../event-store/events.js";
+
 /**
  * What `ctx.select()` resolves with: the position in the branch list of the
  * branch that completed first, and the value it completed with.
@@ -19,6 +21,39 @@ export type QueryHandler = (argument: unknown) => unknown;
  * was requested.
  */
 export type CompensationHandler = (ctx: WorkflowContext) => Promise<void>;
+
+/**
+ * Options for `ctx.startChild()` and `ctx.executeChild()`. `parentClosePolicy`
+ * decides what happens to the child when the parent closes and defaults to
+ * `cancel`.
+ */
+export interface ChildOptions {
+  readonly parentClosePolicy?: ParentClosePolicy;
+}
+
+/**
+ * A started child workflow. `result` settles with the child's result, or
+ * rejects when the child fails, times out, is cancelled or is terminated.
+ */
+export interface ChildHandle<TResult = unknown> {
+  readonly childId: string;
+  readonly result: Promise<TResult>;
+}
+
+/**
+ * Options for `ctx.all()` and `ctx.allSettled()`. `concurrency` bounds how
+ * many of the tasks are in flight at once and defaults to all of them.
+ */
+export interface ParallelOptions {
+  readonly concurrency?: number;
+}
+
+/**
+ * A unit of parallel work: a function returning the promise of a
+ * `ctx.step()`, `ctx.executeChild()` or `ctx.startChild().result` call,
+ * returned as it is and not wrapped in another promise.
+ */
+export type ParallelTask<TResult = unknown> = () => Promise<TResult>;
 
 /**
  * The API a workflow function is written against: scheduling steps and
@@ -58,6 +93,43 @@ export interface WorkflowContext {
    * Compensations do not run when the run completes, fails or is terminated.
    */
   onCancel(handler: CompensationHandler): void;
+  /**
+   * Starts the child workflow `workflowType` and returns at once. The call
+   * order assigns the child its id, so the same code starts the same
+   * children on every replay. A run may start a bounded number of children
+   * and fails with `ChildLimitExceededError` past it.
+   */
+  startChild<TResult = unknown>(
+    workflowType: string,
+    input: unknown,
+    options?: ChildOptions,
+  ): ChildHandle<TResult>;
+  /**
+   * Starts a child workflow and waits for its result.
+   */
+  executeChild<TResult = unknown>(
+    workflowType: string,
+    input: unknown,
+    options?: ChildOptions,
+  ): Promise<TResult>;
+  /**
+   * Runs `tasks` in parallel and resolves with their results in task order.
+   * Rejects with the error of the task that failed first in the run's
+   * history. With `concurrency` set, the next task starts when an earlier one
+   * finishes, in history order, so replay starts the same tasks.
+   */
+  all<TResult>(
+    tasks: readonly ParallelTask<TResult>[],
+    options?: ParallelOptions,
+  ): Promise<TResult[]>;
+  /**
+   * Like `all`, but never rejects: resolves with the settled outcome of every
+   * task, in task order.
+   */
+  allSettled<TResult>(
+    tasks: readonly ParallelTask<TResult>[],
+    options?: ParallelOptions,
+  ): Promise<PromiseSettledResult<TResult>[]>;
   now(): Date;
   random(): number;
   uuid(): string;

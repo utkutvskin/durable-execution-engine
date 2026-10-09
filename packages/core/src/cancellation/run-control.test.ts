@@ -8,7 +8,7 @@ import {
   RunNotFoundError,
   RunNotOpenError,
 } from "../signals/signal-service.js";
-import type { WorkflowCommand } from "../workflow/commands.js";
+import { commandToEvent } from "../workflow/command-events.js";
 import { runDecisionLoop } from "../workflow/decision-loop.js";
 import { defineWorkflow } from "../workflow/define-workflow.js";
 import type { ClockSource, RandomSource } from "../workflow/sources.js";
@@ -32,28 +32,6 @@ const saga = defineWorkflow("trip", async (ctx) => {
   await ctx.waitForSignal("confirm");
   return "booked";
 });
-
-function toEvent(command: WorkflowCommand): WorkflowEvent {
-  switch (command.type) {
-    case "schedule_step":
-      return {
-        type: "step_scheduled",
-        stepId: command.stepId,
-        stepType: command.stepType,
-        input: command.input,
-      };
-    case "start_timer":
-      return { type: "timer_started", timerId: command.timerId, fireAt: command.fireAt };
-    case "complete_run":
-      return { type: "run_completed", result: command.result };
-    case "fail_run":
-      return { type: "run_failed", error: command.error };
-    case "cancel_run":
-      return command.reason === undefined
-        ? { type: "run_cancelled" }
-        : { type: "run_cancelled", reason: command.reason };
-  }
-}
 
 describe("run control", () => {
   let database: IsolatedSchema;
@@ -113,7 +91,7 @@ describe("run control", () => {
       runId,
       taskKey: `task-${String(taskCounter)}`,
       expectedSeq: events.length,
-      events: decision.commands.map(toEvent),
+      events: decision.commands.map(commandToEvent),
     });
     return { decision, recorded };
   }

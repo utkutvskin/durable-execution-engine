@@ -1,12 +1,10 @@
 import type { Pool, PoolClient } from "pg";
 import { jsonCodec, type Codec } from "../event-store/codec.js";
-import {
-  appendEventsOnClient,
-  readCurrentSequenceOnClient,
-  readEventsOnClient,
-} from "../event-store/event-store.js";
+import { lockRunWithParent, type LockedRun } from "../children/run-locks.js";
+import { appendEventsOnClient, readCurrentSequenceOnClient } from "../event-store/event-store.js";
 import { RunNotFoundError } from "../signals/signal-service.js";
 import { closeRunIfTerminal } from "./close-run.js";
+import { requestCancellationOnClient } from "./request-cancellation.js";
 
 /**
  * Raised when a run that already reached a terminal state is cancelled or
@@ -73,11 +71,6 @@ export interface RunControlOptions {
   readonly codec?: Codec;
 }
 
-interface RunRow {
-  namespace_id: string;
-  status: string;
-}
-
 /**
  * Creates `RunControl` over `pool`.
  */
@@ -86,16 +79,12 @@ export function createRunControl(pool: Pool, options: RunControlOptions): RunCon
 
   async function inTransaction<TResult>(
     runId: string,
-    body: (row: RunRow, client: PoolClient) => Promise<TResult>,
+    body: (row: LockedRun, client: PoolClient) => Promise<TResult>,
   ): Promise<TResult> {
     const client = await pool.connect();
     try {
       await client.query("begin");
-      const run = await client.query<RunRow>(
-        "select namespace_id, status from workflow_runs where id = $1 for update",
-        [runId],
-      );
-      const row = run.rows[0];
+      const row = await lockRunWithParent(client, runId);
       if (row === undefined) {
         throw new RunNotFoundError(runId);
       }
@@ -116,23 +105,12 @@ export function createRunControl(pool: Pool, options: RunControlOptions): RunCon
   return {
     cancelRun(runId: string, reason?: string): Promise<CancelReceipt> {
       return inTransaction(runId, async (row, client) => {
-        const history = await readEventsOnClient(client, codec, runId);
-        const pending = history.find((stored) => stored.event.type === "cancel_requested");
-        if (pending !== undefined) {
-          return { requested: false, sequenceNumber: pending.sequenceNumber };
-        }
-        const currentSeq = await readCurrentSequenceOnClient(client, runId);
-        const [stored] = await appendEventsOnClient(client, codec, runId, currentSeq, [
-          reason === undefined
-            ? { type: "cancel_requested" }
-            : { type: "cancel_requested", reason },
-        ]);
-        await client.query(
-          `insert into tasks (namespace_id, run_id, queue_name, task_type, payload)
-           values ($1, $2, $3, 'WORKFLOW_TASK', $4::jsonb)`,
-          [row.namespace_id, runId, options.queueName, JSON.stringify({ reason: "cancel" })],
+        return requestCancellationOnClient(
+          client,
+          codec,
+          { runId, namespaceId: row.namespaceId, queueName: options.queueName },
+          reason,
         );
-        return { requested: true, sequenceNumber: stored?.sequenceNumber ?? currentSeq + 1 };
       });
     },
 

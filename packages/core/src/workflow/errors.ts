@@ -44,3 +44,18 @@ export class CancelledError extends Error {
     this.name = "CancelledError";
   }
 }
+
+/**
+ * Thrown by `ctx.startChild()` and `ctx.executeChild()` when a run tries to
+ * start more child workflows than its limit allows. It fails the parent run
+ * like any other error thrown by the workflow.
+ */
+export class ChildLimitExceededError extends Error {
+  readonly limit: number;
+
+  constructor(limit: number) {
+    super(`a workflow run may start at most ${String(limit)} child workflows`);
+    this.name = "ChildLimitExceededError";
+    this.limit = limit;
+  }
+}

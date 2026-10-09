@@ -193,3 +193,25 @@ export type {
   TerminateReceipt,
 } from "./cancellation/run-control.js";
 export { closeRunIfTerminal } from "./cancellation/close-run.js";
+export { commandToEvent } from "./workflow/command-events.js";
+export { DEFAULT_MAX_CHILDREN } from "./workflow/decision-loop.js";
+export { ChildLimitExceededError } from "./workflow/errors.js";
+export type {
+  ChildHandle,
+  ChildOptions,
+  ParallelOptions,
+  ParallelTask,
+} from "./workflow/context.js";
+export type { StartChildCommand } from "./workflow/commands.js";
+export {
+  childCompletedEventSchema,
+  childFailedEventSchema,
+  childStartedEventSchema,
+  parentClosePolicySchema,
+} from "./event-store/events.js";
+export type { ParentClosePolicy } from "./event-store/events.js";
+export type { ResultRecorderOptions } from "./idempotency/recorder.js";
+export { createChildRunOnClient } from "./children/child-runs.js";
+export { lockRunWithParent } from "./children/run-locks.js";
+export type { LockedRun } from "./children/run-locks.js";
+export { requestCancellationOnClient } from "./cancellation/request-cancellation.js";
