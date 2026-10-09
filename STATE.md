@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 18: child workflows and parallel execution
+
+- **Status:** DONE
+- **Completed day:** 18
+- **Files added or changed:** `packages/core/migrations/0009_child_workflows.{up,down}.sql` (new: `parent_child_id`, `parent_close_policy`, unique and parent indexes), `packages/core/src/event-store/events.ts` (`child_started`, `child_completed`, `child_failed`, `parentClosePolicySchema`), `packages/core/src/workflow/commands.ts` (`start_child`), `packages/core/src/workflow/command-events.ts` (new: `commandToEvent`), `packages/core/src/workflow/context.ts` (`startChild`, `executeChild`, `all`, `allSettled`), `packages/core/src/workflow/parallel.ts` (new: `runParallel`), `packages/core/src/workflow/decision-loop.ts` (children, `maxChildren`, position based wait choice), `packages/core/src/workflow/run-workflow.ts` (in-memory children), `packages/core/src/workflow/errors.ts` (`ChildLimitExceededError`), `packages/core/src/children/child-runs.ts` and `run-locks.ts` (new), `packages/core/src/cancellation/request-cancellation.ts` (new, extracted from `run-control.ts`), `packages/core/src/cancellation/close-run.ts` (parent notification, close policies), `packages/core/src/idempotency/recorder.ts` (`queueName` option, child creation, parent first locking), tests `children-decision.test.ts`, `children-in-memory.test.ts`, `children/child-runs.test.ts`, `db/migrator.test.ts`, `docs/DECISIONS.md` (ADR-0028)
+- **Technical decisions:** ADR-0028 in `docs/DECISIONS.md`. No new dependency.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (56 test files, 379 tests, 28 of them new today). The `dee` role/database were recreated by hand again after the container restart (`service postgresql start` first, then create the superuser role `dee` with password `dee` and database `dee`). Proven by test against real Postgres: a fan-out of 100 children created by one parent decision completes in shuffled order with the aggregate 338350 and the parent `COMPLETED`; a redelivered or concurrent workflow task creates each child once; a child closing writes `child_completed` or `child_failed` into the parent and enqueues a `child_closed` task; when a parent is cancelled (after its compensation) `cancel` children get `cancel_requested`, `terminate` children are `TERMINATED` and `abandon` children keep running, and an abandoned child finishing later writes nothing into the closed parent; terminate cascades through two levels; 8 parents and their children closing concurrently do not deadlock. In the decision loop: `concurrency` holds back tasks and replay starts the same ones (10 concurrent replays identical), `ctx.all` fails with the earliest recorded failure, `allSettled` never rejects, `maxChildren` fails the run with `ChildLimitExceededError`, a changed child type or input is a `NonDeterminismError`, and a pending child wait rejects with `CancelledError` after a cancellation request. Parallel tasks must return the ctx promise itself, not an `async` wrapper (see ADR-0028). Nothing consumes the child's first `WORKFLOW_TASK` or the parent's `child_closed` task yet. Day 19 (continue-as-new and history compaction) is next.
+
+---
+
 ## Day 17: cancellation and compensation
 
 - **Status:** DONE
