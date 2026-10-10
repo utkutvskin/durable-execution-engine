@@ -215,3 +215,18 @@ export { createChildRunOnClient } from "./children/child-runs.js";
 export { lockRunWithParent } from "./children/run-locks.js";
 export type { LockedRun } from "./children/run-locks.js";
 export { requestCancellationOnClient } from "./cancellation/request-cancellation.js";
+
+export { createContinuedRunOnClient } from "./continuation/continued-run.js";
+export { findCurrentRun, readRunChain } from "./continuation/run-chain.js";
+export type { ChainRun } from "./continuation/run-chain.js";
+export { createHistoryCompactor } from "./compaction/history-compactor.js";
+export type {
+  CompactionReport,
+  CompactionResult,
+  HistoryCompactor,
+  HistoryCompactorOptions,
+  RetentionPolicy,
+} from "./compaction/history-compactor.js";
+export { readSnapshotOnClient } from "./compaction/snapshot.js";
+export type { RunSnapshot } from "./compaction/snapshot.js";
+export type { HistoryWarning } from "./workflow/decision-loop.js";
