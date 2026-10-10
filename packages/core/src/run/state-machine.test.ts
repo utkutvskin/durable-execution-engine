@@ -27,7 +27,7 @@ describe("run state machine", () => {
 
   it("rejects every transition out of every terminal state", () => {
     const terminalStates = RUN_STATES.filter(isTerminalState);
-    expect(terminalStates).toHaveLength(5);
+    expect(terminalStates).toHaveLength(6);
     for (const from of terminalStates) {
       for (const to of RUN_STATES) {
         expect(() => {

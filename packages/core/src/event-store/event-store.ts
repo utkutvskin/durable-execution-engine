@@ -57,7 +57,10 @@ function isUniqueViolation(error: unknown): boolean {
 
 async function readCurrentSequence(client: PoolClient, runId: string): Promise<number> {
   const result = await client.query<{ seq: string }>(
-    "select coalesce(max(sequence_number), 0) as seq from run_events where run_id = $1",
+    `select greatest(
+       coalesce((select max(sequence_number) from run_events where run_id = $1), 0),
+       coalesce((select last_sequence_number from run_snapshots where run_id = $1), 0)
+     ) as seq`,
     [runId],
   );
   return Number(result.rows[0]?.seq ?? "0");

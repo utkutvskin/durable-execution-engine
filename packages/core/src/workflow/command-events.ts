@@ -28,6 +28,8 @@ export function commandToEvent(command: WorkflowCommand): WorkflowEvent {
       return { type: "run_completed", result: command.result };
     case "fail_run":
       return { type: "run_failed", error: command.error };
+    case "continue_as_new":
+      return { type: "run_continued_as_new", input: command.input };
     case "cancel_run":
       return command.reason === undefined
         ? { type: "run_cancelled" }

@@ -56,10 +56,20 @@ export interface CancelRunCommand {
 }
 
 /**
+ * The run hands over to a new run of the same workflow type that starts with
+ * `input`, closing this one.
+ */
+export interface ContinueAsNewCommand {
+  readonly type: "continue_as_new";
+  readonly input: unknown;
+}
+
+/**
  * Every command kind a workflow decision can produce, discriminated on
  * `type`. A decision produces zero or more `ScheduleStepCommand`,
  * `StartTimerCommand` and `StartChildCommand` entries, followed by at most one of
- * `CompleteRunCommand`, `FailRunCommand` or `CancelRunCommand`.
+ * `CompleteRunCommand`, `FailRunCommand`, `CancelRunCommand` or
+ * `ContinueAsNewCommand`.
  */
 export type WorkflowCommand =
   | ScheduleStepCommand
@@ -67,4 +77,5 @@ export type WorkflowCommand =
   | StartChildCommand
   | CompleteRunCommand
   | FailRunCommand
-  | CancelRunCommand;
+  | CancelRunCommand
+  | ContinueAsNewCommand;

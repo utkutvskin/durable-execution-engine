@@ -28,6 +28,17 @@ export interface DecisionLoopOptions {
   readonly clock: ClockSource;
   readonly random: RandomSource;
   readonly maxChildren?: number;
+  readonly historyWarningThreshold?: number;
+}
+
+/**
+ * Attached to a decision whose history has reached the configured
+ * `historyWarningThreshold`: a signal that the run should continue as new
+ * before its history grows further.
+ */
+export interface HistoryWarning {
+  readonly eventCount: number;
+  readonly threshold: number;
 }
 
 /**
@@ -44,9 +55,12 @@ export const DEFAULT_MAX_CHILDREN = 1000;
  * case `commands` holds only the commands this decision newly discovered —
  * anything already implied by the given history is never repeated. Once the
  * history holds a `cancel_requested` event the decision is `cancelled` after
- * every compensation has finished and `suspended` until then.
+ * every compensation has finished and `suspended` until then. A workflow that
+ * called `ctx.continueAsNew()` ends as `continued_as_new` with a single
+ * `continue_as_new` command. `historyWarning` is present once the history
+ * holds at least `historyWarningThreshold` events.
  */
-export type DecisionResult<TResult = unknown> =
+export type DecisionResult<TResult = unknown> = (
   | {
       readonly outcome: "completed";
       readonly result: TResult;
@@ -58,7 +72,13 @@ export type DecisionResult<TResult = unknown> =
       readonly commands: readonly WorkflowCommand[];
     }
   | { readonly outcome: "suspended"; readonly commands: readonly WorkflowCommand[] }
-  | { readonly outcome: "cancelled"; readonly commands: readonly WorkflowCommand[] };
+  | { readonly outcome: "cancelled"; readonly commands: readonly WorkflowCommand[] }
+  | {
+      readonly outcome: "continued_as_new";
+      readonly input: unknown;
+      readonly commands: readonly WorkflowCommand[];
+    }
+) & { readonly historyWarning?: HistoryWarning };
 
 function toError(reason: unknown): Error {
   return reason instanceof Error ? reason : new Error(String(reason));
@@ -108,6 +128,7 @@ function createReplayContext(
   queryHandlers: Map<string, QueryHandler>,
   compensations: CompensationHandler[],
   inFlightSteps: Set<string>,
+  continuation: { requested?: { readonly input: unknown } },
 ): { readonly workflowContext: WorkflowContext; readonly compensationContext: WorkflowContext } {
   const cancelRequested = history.some((event) => event.type === "cancel_requested");
   let stepSequence = 0;
@@ -357,6 +378,13 @@ function createReplayContext(
       onCancel(handler: CompensationHandler): void {
         compensations.push(handler);
       },
+      continueAsNew(input: unknown): Promise<never> {
+        if (cancelRequested) {
+          return Promise.reject(new CancelledError());
+        }
+        continuation.requested ??= { input };
+        return neverSettles<never>();
+      },
       now(): Date {
         return options.clock.now();
       },
@@ -384,6 +412,7 @@ export interface ReplayOutcome<TResult> {
     | undefined;
   readonly commands: WorkflowCommand[];
   readonly queryHandlers: ReadonlyMap<string, QueryHandler>;
+  readonly continuation: { readonly input: unknown } | undefined;
   readonly cancellation:
     | { readonly requested: false }
     | { readonly requested: true; readonly reason?: string; readonly compensated: boolean };
@@ -404,6 +433,7 @@ export async function replayHistory<TInput, TResult>(
   const queryHandlers = new Map<string, QueryHandler>();
   const compensations: CompensationHandler[] = [];
   const inFlightSteps = new Set<string>();
+  const continuation: { requested?: { readonly input: unknown } } = {};
   const { workflowContext, compensationContext } = createReplayContext(
     history,
     options,
@@ -411,6 +441,7 @@ export async function replayHistory<TInput, TResult>(
     queryHandlers,
     compensations,
     inFlightSteps,
+    continuation,
   );
   const cancelEvent = history.find(
     (event): event is Extract<WorkflowEvent, { type: "cancel_requested" }> =>
@@ -456,18 +487,72 @@ export async function replayHistory<TInput, TResult>(
   });
 
   if (cancelEvent === undefined) {
-    return { settled, commands, queryHandlers, cancellation: { requested: false } };
+    return {
+      settled,
+      commands,
+      queryHandlers,
+      continuation: continuation.requested,
+      cancellation: { requested: false },
+    };
   }
   return {
     settled,
     commands,
     queryHandlers,
+    continuation: continuation.requested,
     cancellation: {
       requested: true,
       ...(cancelEvent.reason === undefined ? {} : { reason: cancelEvent.reason }),
       compensated,
     },
   };
+}
+
+async function decide<TInput, TResult>(
+  handler: WorkflowHandler<TInput, TResult>,
+  input: TInput,
+  history: readonly WorkflowEvent[],
+  options: DecisionLoopOptions,
+): Promise<DecisionResult<TResult>> {
+  const { settled, commands, cancellation, continuation } = await replayHistory(
+    handler,
+    input,
+    history,
+    options,
+  );
+  if (settled?.outcome === "failed" && isIntegrityError(settled.error)) {
+    throw settled.error;
+  }
+  if (cancellation.requested) {
+    if (!cancellation.compensated) {
+      return { outcome: "suspended", commands };
+    }
+    commands.push(
+      cancellation.reason === undefined
+        ? { type: "cancel_run" }
+        : { type: "cancel_run", reason: cancellation.reason },
+    );
+    return { outcome: "cancelled", commands };
+  }
+  if (continuation !== undefined) {
+    return {
+      outcome: "continued_as_new",
+      input: continuation.input,
+      commands: [{ type: "continue_as_new", input: continuation.input }],
+    };
+  }
+  if (settled === undefined) {
+    return { outcome: "suspended", commands };
+  }
+  if (settled.outcome === "completed") {
+    commands.push({ type: "complete_run", result: settled.result });
+    return { outcome: "completed", result: settled.result, commands };
+  }
+  commands.push({
+    type: "fail_run",
+    error: { name: settled.error.name, message: settled.error.message },
+  });
+  return { outcome: "failed", error: settled.error, commands };
 }
 
 /**
@@ -501,31 +586,10 @@ export async function runDecisionLoop<TInput, TResult>(
   history: readonly WorkflowEvent[],
   options: DecisionLoopOptions,
 ): Promise<DecisionResult<TResult>> {
-  const { settled, commands, cancellation } = await replayHistory(handler, input, history, options);
-  if (settled?.outcome === "failed" && isIntegrityError(settled.error)) {
-    throw settled.error;
+  const decision = await decide(handler, input, history, options);
+  const threshold = options.historyWarningThreshold;
+  if (threshold === undefined || history.length < threshold) {
+    return decision;
   }
-  if (cancellation.requested) {
-    if (!cancellation.compensated) {
-      return { outcome: "suspended", commands };
-    }
-    commands.push(
-      cancellation.reason === undefined
-        ? { type: "cancel_run" }
-        : { type: "cancel_run", reason: cancellation.reason },
-    );
-    return { outcome: "cancelled", commands };
-  }
-  if (settled === undefined) {
-    return { outcome: "suspended", commands };
-  }
-  if (settled.outcome === "completed") {
-    commands.push({ type: "complete_run", result: settled.result });
-    return { outcome: "completed", result: settled.result, commands };
-  }
-  commands.push({
-    type: "fail_run",
-    error: { name: settled.error.name, message: settled.error.message },
-  });
-  return { outcome: "failed", error: settled.error, commands };
+  return { ...decision, historyWarning: { eventCount: history.length, threshold } };
 }

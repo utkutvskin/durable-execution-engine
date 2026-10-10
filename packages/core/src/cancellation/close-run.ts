@@ -65,8 +65,13 @@ async function notifyParent(
   runId: string,
   projection: RunProjection,
 ): Promise<void> {
+  if (projection.state === "CONTINUED_AS_NEW") {
+    return;
+  }
   const link = await client.query<ChildLink>(
-    "select parent_run_id, parent_child_id from workflow_runs where id = $1",
+    `select run.parent_run_id, coalesce(run.parent_child_id, head.parent_child_id) as parent_child_id
+     from workflow_runs run join workflow_runs head on head.id = run.first_run_id
+     where run.id = $1`,
     [runId],
   );
   const parentRunId = link.rows[0]?.parent_run_id;

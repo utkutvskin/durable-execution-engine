@@ -44,15 +44,36 @@ export type RunWorkflowResult<TResult = unknown> =
       readonly outcome: "failed";
       readonly error: Error;
       readonly commands: readonly WorkflowCommand[];
+    }
+  | {
+      readonly outcome: "continued_as_new";
+      readonly input: unknown;
+      readonly commands: readonly WorkflowCommand[];
     };
 
 function toError(reason: unknown): Error {
   return reason instanceof Error ? reason : new Error(String(reason));
 }
 
+async function runChildChain(
+  handler: WorkflowHandler<never>,
+  input: unknown,
+  options: RunWorkflowOptions,
+): Promise<Exclude<RunWorkflowResult, { outcome: "continued_as_new" }>> {
+  let nextInput = input;
+  for (;;) {
+    const outcome = await runWorkflowInMemory(handler, nextInput as never, options);
+    if (outcome.outcome !== "continued_as_new") {
+      return outcome;
+    }
+    nextInput = outcome.input;
+  }
+}
+
 function createInMemoryContext(
   options: RunWorkflowOptions,
   commands: WorkflowCommand[],
+  onContinueAsNew: (input: unknown) => void,
 ): WorkflowContext {
   let stepSequence = 0;
   let timerSequence = 0;
@@ -80,7 +101,7 @@ function createInMemoryContext(
     const result =
       definition === undefined
         ? Promise.reject<TResult>(new Error(`no workflow registered for type "${workflowType}"`))
-        : runWorkflowInMemory(definition.handler, input, options).then((outcome) => {
+        : runChildChain(definition.handler, input, options).then((outcome) => {
             if (outcome.outcome === "failed") {
               throw outcome.error;
             }
@@ -164,6 +185,10 @@ function createInMemoryContext(
     onCancel(): void {
       return undefined;
     },
+    continueAsNew(input: unknown): Promise<never> {
+      onContinueAsNew(input);
+      return new Promise<never>(() => undefined);
+    },
     now(): Date {
       return options.clock.now();
     },
@@ -182,7 +207,9 @@ function createInMemoryContext(
  * `ctx.sleep()` call resolves immediately, recording a command for each as
  * it goes. Ends with exactly one `complete_run` command (the handler
  * resolved) or `fail_run` command (the handler rejected, or called
- * `ctx.step()` with an unregistered step type) appended to the sequence.
+ * `ctx.step()` with an unregistered step type) appended to the sequence,
+ * or, when the handler called `ctx.continueAsNew()`, with the single
+ * `continue_as_new` command and the `continued_as_new` outcome.
  * There is no suspension or replay yet: that is the decision loop this
  * runner is a foundation for.
  */
@@ -192,11 +219,30 @@ export async function runWorkflowInMemory<TInput, TResult>(
   options: RunWorkflowOptions,
 ): Promise<RunWorkflowResult<TResult>> {
   const commands: WorkflowCommand[] = [];
-  const ctx = createInMemoryContext(options, commands);
+  let continuation: { readonly input: unknown } | undefined;
+  let signalContinuation: () => void = () => undefined;
+  const continued = new Promise<void>((resolve) => {
+    signalContinuation = resolve;
+  });
+  const ctx = createInMemoryContext(options, commands, (nextInput) => {
+    continuation ??= { input: nextInput };
+    signalContinuation();
+  });
   try {
-    const result = await handler(ctx, input);
+    const result = await Promise.race([handler(ctx, input), continued.then(() => undefined)]);
+    if (continuation !== undefined) {
+      const continueCommand: WorkflowCommand = {
+        type: "continue_as_new",
+        input: continuation.input,
+      };
+      return {
+        outcome: "continued_as_new",
+        input: continuation.input,
+        commands: [continueCommand],
+      };
+    }
     commands.push({ type: "complete_run", result });
-    return { outcome: "completed", result, commands };
+    return { outcome: "completed", result: result as TResult, commands };
   } catch (reason) {
     const error = toError(reason);
     commands.push({ type: "fail_run", error: { name: error.name, message: error.message } });

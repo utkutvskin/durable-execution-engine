@@ -61,6 +61,7 @@ describe("initial schema", () => {
       "dead_letters",
       "namespaces",
       "run_events",
+      "run_snapshots",
       "schedule_triggers",
       "schedules",
       "step_attempts",

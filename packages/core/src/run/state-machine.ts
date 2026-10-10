@@ -11,6 +11,7 @@ export const RUN_STATES = [
   "TIMED_OUT",
   "CANCELLED",
   "TERMINATED",
+  "CONTINUED_AS_NEW",
 ] as const;
 
 /**
@@ -23,12 +24,13 @@ export type RunState = (typeof RUN_STATES)[number];
  * state, and a terminal state has no way out.
  */
 export const RUN_STATE_TRANSITIONS: Readonly<Record<RunState, readonly RunState[]>> = {
-  RUNNING: ["COMPLETED", "FAILED", "TIMED_OUT", "CANCELLED", "TERMINATED"],
+  RUNNING: ["COMPLETED", "FAILED", "TIMED_OUT", "CANCELLED", "TERMINATED", "CONTINUED_AS_NEW"],
   COMPLETED: [],
   FAILED: [],
   TIMED_OUT: [],
   CANCELLED: [],
   TERMINATED: [],
+  CONTINUED_AS_NEW: [],
 };
 
 /**

@@ -6,6 +6,7 @@ import {
   type StoredEvent,
 } from "../event-store/event-store.js";
 import { closeRunIfTerminal } from "../cancellation/close-run.js";
+import { createContinuedRunOnClient } from "../continuation/continued-run.js";
 import { createChildRunOnClient } from "../children/child-runs.js";
 import { lockRunWithParent } from "../children/run-locks.js";
 import { isTerminalState, type RunState } from "../run/state-machine.js";
@@ -95,7 +96,9 @@ export interface ResultRecorder {
    * withdraws the run's waiting tasks and settles its parent and children
    * (see `closeRunIfTerminal`), in the same transaction. A `child_started`
    * event also creates the child run, its `run_started` event and its first
-   * workflow task, once per `childId`.
+   * workflow task, once per `childId`. A `run_continued_as_new` event closes
+   * the run as `CONTINUED_AS_NEW` and creates the next run of its chain with
+   * its first workflow task, in the same transaction.
    */
   recordWorkflowTaskResult(
     input: RecordWorkflowTaskResultInput,
@@ -113,6 +116,7 @@ const CLOSING_EVENT_TYPES: ReadonlySet<WorkflowEvent["type"]> = new Set([
   "run_timed_out",
   "run_cancelled",
   "run_terminated",
+  "run_continued_as_new",
 ]);
 
 async function lockRunStatus(client: PoolClient, runId: string): Promise<RunState | undefined> {
@@ -280,6 +284,9 @@ export function createResultRecorder(
               },
               event,
             );
+          }
+          if (event.type === "run_continued_as_new") {
+            await createContinuedRunOnClient(client, codec, input.runId, event);
           }
           if (event.type === "timer_started") {
             await insertTimerOnClient(client, {

@@ -130,6 +130,15 @@ export interface WorkflowContext {
     tasks: readonly ParallelTask<TResult>[],
     options?: ParallelOptions,
   ): Promise<PromiseSettledResult<TResult>[]>;
+  /**
+   * Ends this run and starts a new run of the same workflow type with
+   * `input`, in the same chain, so a long-lived workflow keeps its history
+   * short. Write `return ctx.continueAsNew(input)`: the returned promise
+   * never settles, so nothing after it runs. Steps, timers and children
+   * this decision would have started are dropped. Rejects with
+   * `CancelledError` once cancellation was requested.
+   */
+  continueAsNew(input: unknown): Promise<never>;
   now(): Date;
   random(): number;
   uuid(): string;

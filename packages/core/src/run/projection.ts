@@ -41,6 +41,8 @@ function terminalStateFor(event: WorkflowEvent): RunState | undefined {
       return "CANCELLED";
     case "run_terminated":
       return "TERMINATED";
+    case "run_continued_as_new":
+      return "CONTINUED_AS_NEW";
     default:
       return undefined;
   }

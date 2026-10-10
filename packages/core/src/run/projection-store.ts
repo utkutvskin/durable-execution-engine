@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from "pg";
 import type { Codec } from "../event-store/codec.js";
 import { readEventsOnClient, type EventStore } from "../event-store/event-store.js";
+import { readSnapshotOnClient } from "../compaction/snapshot.js";
 import { RUN_STATES, type RunState } from "./state-machine.js";
 import { createInitialProjection, foldRunEvents, type RunProjection } from "./projection.js";
 
@@ -71,13 +72,13 @@ async function foldInto(
   pool: Pool,
   store: EventStore,
   runId: string,
-  startFrom: (row: RunRow) => RunProjection,
+  startFrom: (row: RunRow, client: PoolClient) => RunProjection | Promise<RunProjection>,
 ): Promise<RunProjection> {
   const client = await pool.connect();
   try {
     await client.query("begin");
     const row = await lockRunRow(client, runId);
-    const start = startFrom(row);
+    const start = await startFrom(row, client);
     const events = await store.read(runId, start.lastSequenceNumber);
     const next = foldRunEvents(events, start);
     await writeProjection(client, runId, next);
@@ -108,15 +109,19 @@ export function refreshProjection(
 
 /**
  * Discards everything the projection derived for `runId` and rebuilds it
- * from the run's whole event log. The result is identical to what
- * incremental `refreshProjection` calls produced.
+ * from the run's event log, starting from its snapshot when its history was
+ * pruned. The result is identical to what incremental `refreshProjection`
+ * calls produced.
  */
 export function rebuildProjection(
   pool: Pool,
   store: EventStore,
   runId: string,
 ): Promise<RunProjection> {
-  return foldInto(pool, store, runId, createInitialProjection);
+  return foldInto(pool, store, runId, async (_row, client) => {
+    const snapshot = await readSnapshotOnClient(client, runId);
+    return snapshot?.projection ?? createInitialProjection();
+  });
 }
 
 /**

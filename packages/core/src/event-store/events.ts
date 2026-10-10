@@ -66,6 +66,15 @@ export const runTerminatedEventSchema = z.object({
 });
 
 /**
+ * The run closed by handing over to a new run of the same workflow type that
+ * starts with `input`. The new run joins the same chain (`first_run_id`).
+ */
+export const runContinuedAsNewEventSchema = z.object({
+  type: z.literal("run_continued_as_new"),
+  input: z.unknown(),
+});
+
+/**
  * A step was scheduled for execution with the given input.
  */
 export const stepScheduledEventSchema = z.object({
@@ -200,6 +209,7 @@ export const workflowEventSchema = z.discriminatedUnion("type", [
   runCancelledEventSchema,
   runTerminatedEventSchema,
   cancelRequestedEventSchema,
+  runContinuedAsNewEventSchema,
   stepScheduledEventSchema,
   stepCompletedEventSchema,
   stepFailedEventSchema,
