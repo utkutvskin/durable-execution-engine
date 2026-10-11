@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 20: sticky execution and replay cache
+
+- **Status:** DONE
+- **Completed day:** 20
+- **Files added or changed:** `packages/core/migrations/0011_sticky_execution.{up,down}.sql` (new: `run_stickiness`), `packages/core/src/workflow/live-session.ts` (new: `createLiveSession`, `LiveSession`, `LiveAdvance`), `packages/core/src/workflow/decision-loop.ts` (`drainToQuiescence`, `toError`, `reconstructError`, `isIntegrityError` exported for the session), `packages/core/src/sticky/run-cache.ts` (new: `createRunCache`, `RunCache`), `packages/core/src/sticky/sticky-decider.ts` (new: `createStickyDecider`, `StickyDecider`, `StickyDeciderStats`), `packages/core/src/sticky/sticky-router.ts` (new: `createStickyRouter`, `StickyRouter`, `StickyClaim`), `packages/core/src/queue/task-queue.ts` (`DequeueOptions.stickyFor`), `packages/core/src/index.ts` (exports), tests `sticky/run-cache.test.ts`, `sticky/sticky-decider.test.ts`, `sticky/sticky-router.test.ts`, `db/migrator.test.ts`, `db/schema.test.ts`, `docs/DECISIONS.md` (ADR-0030)
+- **Technical decisions:** ADR-0030 in `docs/DECISIONS.md`. No new dependency. The commit message of the day backlog (`feat(worker): sticky execution cache`) was not used because the code lives in `packages/core`.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (62 test files, 435 tests, 29 of them new today). The `dee` role/database were recreated by hand again after the container restart (`service postgresql start` first, then create the superuser role `dee` with password `dee` and database `dee`). Proven by test: a 500 step workflow decided with the sticky cache replays once (benchmark: 501 full replays without it, at most 20 percent of that with it) and ends with the same decision; every decision of a 40 step run equals `runDecisionLoop` on the same history; flushing the cache on every third task of a 60 step run leaves every decision identical; a cache miss, an expired entry (fake clock), a history that no longer continues the session and commands that were never recorded all fall back to a full replay; `ctx.all` workflows are never cached and still decide correctly; timers and signals are served incrementally; a non-determinism error or a forbidden API call from a cached session is raised and drops it. Against real Postgres: a live claim keeps a run's workflow tasks from another worker, an expired claim does not, step tasks are never held back, a consumer that does not pass `stickyFor` is unaffected, and with two polling workers a 6 step run is handled by one worker with 1 full replay and 6 cache hits; when the owner disappears, the other worker waits for the sticky timeout, then finishes the run with the right result (15) after one full replay. Nothing calls the decider, `claim` or `releaseWorker` in a running process and no handler consumes the `WORKFLOW_TASK` yet: the real worker entry point is a later day. Workflows using children, `ctx.all`, `ctx.allSettled`, `ctx.select`, `ctx.onCancel` or `ctx.continueAsNew` replay on every task as before (see ADR-0030). Day 21 (workflow versioning) must flush or re-key the cache by build id.
+
+---
+
 ## Day 19: continue-as-new and history compaction
 
 - **Status:** DONE
