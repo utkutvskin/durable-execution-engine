@@ -80,11 +80,20 @@ export type DecisionResult<TResult = unknown> = (
     }
 ) & { readonly historyWarning?: HistoryWarning };
 
-function toError(reason: unknown): Error {
+/**
+ * Normalizes anything a handler rejected with into an `Error`.
+ */
+export function toError(reason: unknown): Error {
   return reason instanceof Error ? reason : new Error(String(reason));
 }
 
-function reconstructError(error: { readonly name: string; readonly message: string }): Error {
+/**
+ * Rebuilds the `Error` a recorded `step_failed` or `child_failed` event stands for.
+ */
+export function reconstructError(error: {
+  readonly name: string;
+  readonly message: string;
+}): Error {
   const reconstructed = new Error(error.message);
   reconstructed.name = error.name;
   return reconstructed;
@@ -100,13 +109,17 @@ function reconstructError(error: { readonly name: string; readonly message: stri
  * a promise that is never resolved or rejected, so it schedules nothing:
  * there is no callback left behind for a later tick to leak.
  */
-function drainToQuiescence(): Promise<void> {
+export function drainToQuiescence(): Promise<void> {
   return new Promise((resolve) => {
     setImmediate(resolve);
   });
 }
 
-function isIntegrityError(error: unknown): error is Error {
+/**
+ * Whether `error` means the decision itself cannot be trusted
+ * (`NonDeterminismError`, `ForbiddenApiError`) rather than the workflow failing.
+ */
+export function isIntegrityError(error: unknown): error is Error {
   return error instanceof NonDeterminismError || error instanceof ForbiddenApiError;
 }
 

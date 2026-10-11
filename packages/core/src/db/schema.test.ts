@@ -62,6 +62,7 @@ describe("initial schema", () => {
       "namespaces",
       "run_events",
       "run_snapshots",
+      "run_stickiness",
       "schedule_triggers",
       "schedules",
       "step_attempts",

@@ -38,7 +38,37 @@ describe("migrateUp / migrateDown", () => {
       "0008_schedules",
       "0009_child_workflows",
       "0010_continue_as_new",
+      "0011_sticky_execution",
     ]);
+
+    const result = await database.pool.query<{ id: string }>(
+      "select id from schema_migrations order by id",
+    );
+    expect(result.rows.map((row) => row.id)).toEqual([
+      "0001_initial_schema",
+      "0002_run_projection",
+      "0003_task_queue",
+      "0004_idempotent_results",
+      "0005_crash_recovery",
+      "0006_retry_and_dead_letters",
+      "0007_durable_timers",
+      "0008_schedules",
+      "0009_child_workflows",
+      "0010_continue_as_new",
+      "0011_sticky_execution",
+    ]);
+  });
+
+  it("is idempotent: running migrateUp again applies nothing", async () => {
+    await migrateUp(database.pool);
+    const secondRun = await migrateUp(database.pool);
+    expect(secondRun).toEqual([]);
+  });
+
+  it("migrateDown reverts the most recently applied migration", async () => {
+    await migrateUp(database.pool);
+    const reverted = await migrateDown(database.pool);
+    expect(reverted).toEqual(["0011_sticky_execution"]);
 
     const result = await database.pool.query<{ id: string }>(
       "select id from schema_migrations order by id",
@@ -57,37 +87,11 @@ describe("migrateUp / migrateDown", () => {
     ]);
   });
 
-  it("is idempotent: running migrateUp again applies nothing", async () => {
+  it("migrateDown with steps 11 reverts every migration, most recent first", async () => {
     await migrateUp(database.pool);
-    const secondRun = await migrateUp(database.pool);
-    expect(secondRun).toEqual([]);
-  });
-
-  it("migrateDown reverts the most recently applied migration", async () => {
-    await migrateUp(database.pool);
-    const reverted = await migrateDown(database.pool);
-    expect(reverted).toEqual(["0010_continue_as_new"]);
-
-    const result = await database.pool.query<{ id: string }>(
-      "select id from schema_migrations order by id",
-    );
-    expect(result.rows.map((row) => row.id)).toEqual([
-      "0001_initial_schema",
-      "0002_run_projection",
-      "0003_task_queue",
-      "0004_idempotent_results",
-      "0005_crash_recovery",
-      "0006_retry_and_dead_letters",
-      "0007_durable_timers",
-      "0008_schedules",
-      "0009_child_workflows",
-    ]);
-  });
-
-  it("migrateDown with steps 10 reverts every migration, most recent first", async () => {
-    await migrateUp(database.pool);
-    const reverted = await migrateDown(database.pool, undefined, 10);
+    const reverted = await migrateDown(database.pool, undefined, 11);
     expect(reverted).toEqual([
+      "0011_sticky_execution",
       "0010_continue_as_new",
       "0009_child_workflows",
       "0008_schedules",
@@ -125,6 +129,7 @@ describe("migrateUp / migrateDown", () => {
       "namespaces",
       "run_events",
       "run_snapshots",
+      "run_stickiness",
       "schedule_triggers",
       "schedules",
       "step_attempts",

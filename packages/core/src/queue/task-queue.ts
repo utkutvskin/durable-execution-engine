@@ -47,7 +47,9 @@ export interface EnqueueInput {
  * consumers for `visibilityTimeoutMs`; if it is neither acked nor nacked by
  * then, it becomes deliverable again. `limit` defaults to 1. `workerId` and
  * `workerVersion` are stamped on every task the call leases, so a reclaim
- * can tell which worker an orphaned lease belonged to.
+ * can tell which worker an orphaned lease belonged to. When `stickyFor` is
+ * set, workflow tasks of runs that another worker holds a live sticky claim on
+ * (see `createStickyRouter`) are skipped; an expired claim no longer blocks.
  */
 export interface DequeueOptions {
   readonly queueName: string;
@@ -55,6 +57,7 @@ export interface DequeueOptions {
   readonly limit?: number;
   readonly workerId?: string;
   readonly workerVersion?: string;
+  readonly stickyFor?: string;
 }
 
 /**
@@ -163,6 +166,12 @@ export function createTaskQueue(
         `with next as (
            select id from tasks
            where queue_name = $1 and state in ('PENDING', 'LEASED') and visible_at <= $2
+             and ($7::text is null or task_type <> 'WORKFLOW_TASK' or not exists (
+               select 1 from run_stickiness sticky
+               where sticky.run_id = tasks.run_id
+                 and sticky.worker_id <> $7
+                 and sticky.expires_at > $2
+             ))
            order by visible_at, created_at, id
            limit $4
            for update skip locked
@@ -187,6 +196,7 @@ export function createTaskQueue(
           limit,
           dequeueOptions.workerId ?? null,
           dequeueOptions.workerVersion ?? null,
+          dequeueOptions.stickyFor ?? null,
         ],
       );
       return result.rows.map(toLeasedTask);
