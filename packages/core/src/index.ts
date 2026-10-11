@@ -230,3 +230,17 @@ export type {
 export { readSnapshotOnClient } from "./compaction/snapshot.js";
 export type { RunSnapshot } from "./compaction/snapshot.js";
 export type { HistoryWarning } from "./workflow/decision-loop.js";
+export { createLiveSession } from "./workflow/live-session.js";
+export type { LiveAdvance, LiveSession } from "./workflow/live-session.js";
+export { createRunCache } from "./sticky/run-cache.js";
+export type { RunCache, RunCacheOptions, RunCacheStats } from "./sticky/run-cache.js";
+export { createStickyDecider } from "./sticky/sticky-decider.js";
+export type {
+  DecisionSource,
+  StickyDecider,
+  StickyDeciderOptions,
+  StickyDeciderStats,
+  StickyDecision,
+} from "./sticky/sticky-decider.js";
+export { createStickyRouter } from "./sticky/sticky-router.js";
+export type { StickyClaim, StickyRouter } from "./sticky/sticky-router.js";
