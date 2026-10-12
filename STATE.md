@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 21: workflow versioning
+
+- **Status:** DONE
+- **Completed day:** 21
+- **Files added or changed:** `packages/core/src/event-store/events.ts` (`patch_recorded`), `packages/core/src/workflow/commands.ts` (`record_patch`), `command-events.ts`, `context.ts` (`patched`, `deprecatePatch`), `errors.ts` (`VersionMismatchError`), `decision-loop.ts` (patch decisions, `buildId`, `unconsultedPatches`, `throwOnVersionMismatch`), `query.ts`, `live-session.ts` (patch calls are unsupported there), `run-workflow.ts` (in-memory patch calls), `packages/core/src/index.ts` (export), tests `workflow/versioning-decision.test.ts`, `versioning/versioning.test.ts`, `test/replay-history-harness.test.ts`, `test/fixtures/workflows/ship-order-v2.ts`, five new `test/fixtures/histories/ship-order-v*.json`, `docs/VERSIONING.md` (new guide), `docs/DECISIONS.md` (ADR-0031), `README.md` (link)
+- **Technical decisions:** ADR-0031 in `docs/DECISIONS.md`. No new dependency, no migration. The commit message of the day backlog was kept.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (64 test files, 455 tests, 20 of them new today). The `dee` role/database were recreated by hand again after the container restart (`service postgresql start` first, then create the superuser role `dee` with password `dee` and database `dee`). Proven by test: five recorded v1 histories (waiting on reserve, waiting on ship, completed after the upgrade) replay on v2 code without a `NonDeterminismError` and keep the v1 branch; a v1 history suspended at the timer takes the new branch (`record_patch` then `fraud-check`) once the timer fires; a fresh v2 history replays the patch as `true` on 10 concurrent replays. Against real Postgres a run started on v1 and left half finished completes on v2 with no `patch_recorded` event and no extra step, a new run records `patch_recorded` with the build id and schedules the new step, a stale v1 build refuses the patched history with `VersionMismatchError` and writes nothing, and a workflow task delivered twice at once writes the patch once. A patched workflow decided through the sticky decider equals `runDecisionLoop` (it falls back to full replays). Nothing nacks a task that raised `VersionMismatchError` yet and the build id is stamped only on `patch_recorded` events, not on the run row: the real worker entry point is a later day. Removing a `deprecatePatch` call while an open run holds its marker makes every build refuse that run (see `docs/VERSIONING.md`). Day 22 (product surface) is next.
+
+---
+
 ## Day 20: sticky execution and replay cache
 
 - **Status:** DONE
