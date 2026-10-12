@@ -62,7 +62,7 @@ export type { DefineStepOptions, StepDefinition } from "./workflow/define-step.j
 export { defineWorkflow } from "./workflow/define-workflow.js";
 export { deserializeError, serializeError } from "./workflow/error-serialization.js";
 export type { SerializedError } from "./workflow/error-serialization.js";
-export { CancelledError, NonDeterminismError } from "./workflow/errors.js";
+export { CancelledError, NonDeterminismError, VersionMismatchError } from "./workflow/errors.js";
 export { ForbiddenApiError } from "./workflow/sandbox.js";
 export { runRegisteredWorkflowInMemory, runWorkflowInMemory } from "./workflow/run-workflow.js";
 export type { RunWorkflowOptions, RunWorkflowResult } from "./workflow/run-workflow.js";

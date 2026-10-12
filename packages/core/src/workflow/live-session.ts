@@ -240,6 +240,13 @@ export function createLiveSession<TInput, TResult>(
     setQueryHandler(queryName: string, queryHandler: QueryHandler): void {
       queryHandlers.set(queryName, queryHandler);
     },
+    patched: () => {
+      flags.unsupported = true;
+      return false;
+    },
+    deprecatePatch: () => {
+      flags.unsupported = true;
+    },
     now: () => options.clock.now(),
     random: () => options.random.random(),
     uuid: () => options.random.uuid(),

@@ -77,6 +77,7 @@ function createInMemoryContext(
 ): WorkflowContext {
   let stepSequence = 0;
   let timerSequence = 0;
+  const recordedPatches = new Set<string>();
   let childSequence = 0;
   const maxChildren = options.maxChildren ?? DEFAULT_MAX_IN_MEMORY_CHILDREN;
 
@@ -188,6 +189,19 @@ function createInMemoryContext(
     continueAsNew(input: unknown): Promise<never> {
       onContinueAsNew(input);
       return new Promise<never>(() => undefined);
+    },
+    patched(patchId: string): boolean {
+      if (!recordedPatches.has(patchId)) {
+        recordedPatches.add(patchId);
+        commands.push({ type: "record_patch", patchId });
+      }
+      return true;
+    },
+    deprecatePatch(patchId: string): void {
+      if (!recordedPatches.has(patchId)) {
+        recordedPatches.add(patchId);
+        commands.push({ type: "record_patch", patchId });
+      }
     },
     now(): Date {
       return options.clock.now();

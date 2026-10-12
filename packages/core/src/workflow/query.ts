@@ -1,6 +1,10 @@
 import type { WorkflowEvent } from "../event-store/events.js";
 import type { WorkflowHandler } from "./context.js";
-import { replayHistory, type DecisionLoopOptions } from "./decision-loop.js";
+import {
+  replayHistory,
+  throwOnVersionMismatch,
+  type DecisionLoopOptions,
+} from "./decision-loop.js";
 import { guardAgainstForbiddenApis } from "./sandbox.js";
 
 /**
@@ -33,7 +37,13 @@ export async function runQuery<TInput>(
   queryName: string,
   argument?: unknown,
 ): Promise<unknown> {
-  const { queryHandlers } = await replayHistory(handler, input, history, options);
+  const { queryHandlers, unconsultedPatches } = await replayHistory(
+    handler,
+    input,
+    history,
+    options,
+  );
+  throwOnVersionMismatch(history, unconsultedPatches, options);
   const queryHandler = queryHandlers.get(queryName);
   if (queryHandler === undefined) {
     throw new UnknownQueryError(queryName);

@@ -12,7 +12,12 @@ import type {
   WorkflowContext,
   WorkflowHandler,
 } from "./context.js";
-import { CancelledError, ChildLimitExceededError, NonDeterminismError } from "./errors.js";
+import {
+  CancelledError,
+  ChildLimitExceededError,
+  NonDeterminismError,
+  VersionMismatchError,
+} from "./errors.js";
 import { fulfilledValues, runParallel } from "./parallel.js";
 import { ForbiddenApiError, guardAgainstForbiddenApis } from "./sandbox.js";
 import type { ClockSource, RandomSource } from "./sources.js";
@@ -29,6 +34,7 @@ export interface DecisionLoopOptions {
   readonly random: RandomSource;
   readonly maxChildren?: number;
   readonly historyWarningThreshold?: number;
+  readonly buildId?: string;
 }
 
 /**
@@ -117,10 +123,14 @@ export function drainToQuiescence(): Promise<void> {
 
 /**
  * Whether `error` means the decision itself cannot be trusted
- * (`NonDeterminismError`, `ForbiddenApiError`) rather than the workflow failing.
+ * (`NonDeterminismError`, `ForbiddenApiError`, `VersionMismatchError`) rather than the workflow failing.
  */
 export function isIntegrityError(error: unknown): error is Error {
-  return error instanceof NonDeterminismError || error instanceof ForbiddenApiError;
+  return (
+    error instanceof NonDeterminismError ||
+    error instanceof ForbiddenApiError ||
+    error instanceof VersionMismatchError
+  );
 }
 
 function neverSettles<TValue>(): Promise<TValue> {
@@ -142,6 +152,7 @@ function createReplayContext(
   compensations: CompensationHandler[],
   inFlightSteps: Set<string>,
   continuation: { requested?: { readonly input: unknown } },
+  consultedPatches: Set<string>,
 ): { readonly workflowContext: WorkflowContext; readonly compensationContext: WorkflowContext } {
   const cancelRequested = history.some((event) => event.type === "cancel_requested");
   let stepSequence = 0;
@@ -151,6 +162,39 @@ function createReplayContext(
   const cancelledPromises = new WeakSet<Promise<unknown>>();
   const signalSequences = new Map<string, number>();
   const completionPositions = new WeakMap<Promise<unknown>, number>();
+  const recordedPatchIds = new Set(
+    history.flatMap((event) => (event.type === "patch_recorded" ? [event.patchId] : [])),
+  );
+  const recordedCommandCount = history.filter(
+    (event) =>
+      event.type === "step_scheduled" ||
+      event.type === "timer_started" ||
+      event.type === "child_started",
+  ).length;
+  const patchDecisions = new Map<string, boolean>();
+
+  function decidePatch(patchId: string): boolean {
+    consultedPatches.add(patchId);
+    const decided = patchDecisions.get(patchId);
+    if (decided !== undefined) {
+      return decided;
+    }
+    let useNewPath: boolean;
+    if (recordedPatchIds.has(patchId)) {
+      useNewPath = true;
+    } else if (stepSequence + timerSequence + childSequence < recordedCommandCount) {
+      useNewPath = false;
+    } else {
+      useNewPath = true;
+      newCommands.push(
+        options.buildId === undefined
+          ? { type: "record_patch", patchId }
+          : { type: "record_patch", patchId, buildId: options.buildId },
+      );
+    }
+    patchDecisions.set(patchId, useNewPath);
+    return useNewPath;
+  }
 
   function completedAt<TValue>(promise: Promise<TValue>, historyIndex: number): Promise<TValue> {
     completionPositions.set(promise, historyIndex);
@@ -398,6 +442,12 @@ function createReplayContext(
         continuation.requested ??= { input };
         return neverSettles<never>();
       },
+      patched(patchId: string): boolean {
+        return decidePatch(patchId);
+      },
+      deprecatePatch(patchId: string): void {
+        decidePatch(patchId);
+      },
       now(): Date {
         return options.clock.now();
       },
@@ -426,6 +476,7 @@ export interface ReplayOutcome<TResult> {
   readonly commands: WorkflowCommand[];
   readonly queryHandlers: ReadonlyMap<string, QueryHandler>;
   readonly continuation: { readonly input: unknown } | undefined;
+  readonly unconsultedPatches: readonly string[];
   readonly cancellation:
     | { readonly requested: false }
     | { readonly requested: true; readonly reason?: string; readonly compensated: boolean };
@@ -447,6 +498,7 @@ export async function replayHistory<TInput, TResult>(
   const compensations: CompensationHandler[] = [];
   const inFlightSteps = new Set<string>();
   const continuation: { requested?: { readonly input: unknown } } = {};
+  const consultedPatches = new Set<string>();
   const { workflowContext, compensationContext } = createReplayContext(
     history,
     options,
@@ -455,6 +507,7 @@ export async function replayHistory<TInput, TResult>(
     compensations,
     inFlightSteps,
     continuation,
+    consultedPatches,
   );
   const cancelEvent = history.find(
     (event): event is Extract<WorkflowEvent, { type: "cancel_requested" }> =>
@@ -499,12 +552,22 @@ export async function replayHistory<TInput, TResult>(
     }
   });
 
+  const unconsultedPatches = [
+    ...new Set(
+      history.flatMap((event) =>
+        event.type === "patch_recorded" && !consultedPatches.has(event.patchId)
+          ? [event.patchId]
+          : [],
+      ),
+    ),
+  ];
   if (cancelEvent === undefined) {
     return {
       settled,
       commands,
       queryHandlers,
       continuation: continuation.requested,
+      unconsultedPatches,
       cancellation: { requested: false },
     };
   }
@@ -513,6 +576,7 @@ export async function replayHistory<TInput, TResult>(
     commands,
     queryHandlers,
     continuation: continuation.requested,
+    unconsultedPatches,
     cancellation: {
       requested: true,
       ...(cancelEvent.reason === undefined ? {} : { reason: cancelEvent.reason }),
@@ -521,18 +585,44 @@ export async function replayHistory<TInput, TResult>(
   };
 }
 
+/**
+ * Refuses a decision whose history holds patches the replaying code never
+ * asked about, naming the builds that recorded them.
+ */
+export function throwOnVersionMismatch(
+  history: readonly WorkflowEvent[],
+  unconsultedPatches: readonly string[],
+  options: DecisionLoopOptions,
+): void {
+  if (unconsultedPatches.length === 0) {
+    return;
+  }
+  const recordedBy = new Set<string>();
+  for (const event of history) {
+    if (
+      event.type === "patch_recorded" &&
+      event.buildId !== undefined &&
+      unconsultedPatches.includes(event.patchId)
+    ) {
+      recordedBy.add(event.buildId);
+    }
+  }
+  throw new VersionMismatchError(unconsultedPatches, [...recordedBy], options.buildId);
+}
+
 async function decide<TInput, TResult>(
   handler: WorkflowHandler<TInput, TResult>,
   input: TInput,
   history: readonly WorkflowEvent[],
   options: DecisionLoopOptions,
 ): Promise<DecisionResult<TResult>> {
-  const { settled, commands, cancellation, continuation } = await replayHistory(
+  const { settled, commands, cancellation, continuation, unconsultedPatches } = await replayHistory(
     handler,
     input,
     history,
     options,
   );
+  throwOnVersionMismatch(history, unconsultedPatches, options);
   if (settled?.outcome === "failed" && isIntegrityError(settled.error)) {
     throw settled.error;
   }

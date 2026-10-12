@@ -31,6 +31,16 @@ export interface StartChildCommand {
 }
 
 /**
+ * The run took the new code path for `patchId`. `buildId` is the worker
+ * build that made the decision, when it declared one.
+ */
+export interface RecordPatchCommand {
+  readonly type: "record_patch";
+  readonly patchId: string;
+  readonly buildId?: string;
+}
+
+/**
  * The run finished successfully with the given result.
  */
 export interface CompleteRunCommand {
@@ -67,7 +77,7 @@ export interface ContinueAsNewCommand {
 /**
  * Every command kind a workflow decision can produce, discriminated on
  * `type`. A decision produces zero or more `ScheduleStepCommand`,
- * `StartTimerCommand` and `StartChildCommand` entries, followed by at most one of
+ * `StartTimerCommand`, `StartChildCommand` and `RecordPatchCommand` entries, followed by at most one of
  * `CompleteRunCommand`, `FailRunCommand`, `CancelRunCommand` or
  * `ContinueAsNewCommand`.
  */
@@ -75,6 +85,7 @@ export type WorkflowCommand =
   | ScheduleStepCommand
   | StartTimerCommand
   | StartChildCommand
+  | RecordPatchCommand
   | CompleteRunCommand
   | FailRunCommand
   | CancelRunCommand

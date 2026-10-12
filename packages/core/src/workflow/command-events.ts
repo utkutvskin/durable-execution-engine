@@ -24,6 +24,10 @@ export function commandToEvent(command: WorkflowCommand): WorkflowEvent {
         input: command.input,
         parentClosePolicy: command.parentClosePolicy,
       };
+    case "record_patch":
+      return command.buildId === undefined
+        ? { type: "patch_recorded", patchId: command.patchId }
+        : { type: "patch_recorded", patchId: command.patchId, buildId: command.buildId };
     case "complete_run":
       return { type: "run_completed", result: command.result };
     case "fail_run":

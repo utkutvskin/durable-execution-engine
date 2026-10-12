@@ -59,3 +59,32 @@ export class ChildLimitExceededError extends Error {
     this.limit = limit;
   }
 }
+
+/**
+ * Thrown by `runDecisionLoop` when a history holds a patch the workflow code
+ * never asks about: the run was decided by a build that knew `patchId`, and
+ * the build replaying it does not. The decision is refused instead of being
+ * made on code that is older (or newer) than the history, so the task can go
+ * back to a worker running the right build.
+ */
+export class VersionMismatchError extends Error {
+  readonly patchIds: readonly string[];
+  readonly recordedBy: readonly string[];
+  readonly buildId: string | undefined;
+
+  constructor(
+    patchIds: readonly string[],
+    recordedBy: readonly string[],
+    buildId: string | undefined,
+  ) {
+    super(
+      `version mismatch: history records patch ${patchIds.map((id) => `"${id}"`).join(", ")} ` +
+        `(decided by build ${recordedBy.length === 0 ? "unknown" : recordedBy.join(", ")}) ` +
+        `that the workflow code of build ${buildId ?? "unknown"} never asks about`,
+    );
+    this.name = "VersionMismatchError";
+    this.patchIds = patchIds;
+    this.recordedBy = recordedBy;
+    this.buildId = buildId;
+  }
+}

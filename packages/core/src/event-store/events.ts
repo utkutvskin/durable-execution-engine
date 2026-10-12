@@ -196,6 +196,17 @@ export const childFailedEventSchema = z.object({
 });
 
 /**
+ * A `ctx.patched()` or `ctx.deprecatePatch()` call reached the frontier of
+ * the run for the first time, so the run took the new code path for
+ * `patchId` from here on. `buildId` names the worker build that decided it.
+ */
+export const patchRecordedEventSchema = z.object({
+  type: z.literal("patch_recorded"),
+  patchId: z.string().min(1),
+  buildId: z.string().min(1).optional(),
+});
+
+/**
  * Every event kind that can be appended to a run's event log, discriminated
  * on `type`. This is the closed set `EventStore.append` validates against:
  * a payload that does not match one of these shapes is rejected before it
@@ -220,6 +231,7 @@ export const workflowEventSchema = z.discriminatedUnion("type", [
   childStartedEventSchema,
   childCompletedEventSchema,
   childFailedEventSchema,
+  patchRecordedEventSchema,
 ]);
 
 /**

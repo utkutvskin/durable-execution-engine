@@ -139,6 +139,21 @@ export interface WorkflowContext {
    * `CancelledError` once cancellation was requested.
    */
   continueAsNew(input: unknown): Promise<never>;
+  /**
+   * Gates a code change. Resolves `true` for a run that reaches this call
+   * for the first time on this code (the call is recorded, so every replay
+   * says `true` again) and `false` for a run whose history already moved
+   * past this point on older code. The answer for a `patchId` is the same
+   * on every call of one replay. Branch on it: new behavior when `true`,
+   * the old behavior when `false`.
+   */
+  patched(patchId: string): boolean;
+  /**
+   * Marks that no run can take the old branch of `patchId` any more, so the
+   * code no longer branches. Records the patch for runs that reach it for
+   * the first time, so code that still calls `patched(patchId)` replays them.
+   */
+  deprecatePatch(patchId: string): void;
   now(): Date;
   random(): number;
   uuid(): string;
