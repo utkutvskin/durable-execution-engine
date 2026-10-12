@@ -8,6 +8,7 @@ import { runDecisionLoop } from "../packages/core/src/workflow/decision-loop.js"
 import type { WorkflowHandler } from "../packages/core/src/workflow/context.js";
 import type { ClockSource, RandomSource } from "../packages/core/src/workflow/sources.js";
 import { shipOrderWorkflow } from "./fixtures/workflows/ship-order.js";
+import { shipOrderV2Workflow } from "./fixtures/workflows/ship-order-v2.js";
 
 interface RecordedHistoryFixture {
   readonly workflowType: string;
@@ -15,7 +16,11 @@ interface RecordedHistoryFixture {
   readonly history: readonly WorkflowEvent[];
   readonly expected:
     | { readonly outcome: "suspended"; readonly commands: readonly WorkflowCommand[] }
-    | { readonly outcome: "completed"; readonly result: unknown; readonly commands: readonly WorkflowCommand[] }
+    | {
+        readonly outcome: "completed";
+        readonly result: unknown;
+        readonly commands: readonly WorkflowCommand[];
+      }
     | {
         readonly outcome: "failed";
         readonly error: { readonly name: string; readonly message: string };
@@ -25,6 +30,7 @@ interface RecordedHistoryFixture {
 
 const workflowsByType: Record<string, WorkflowHandler> = {
   "ship-order": shipOrderWorkflow().handler as WorkflowHandler,
+  "ship-order-v2": shipOrderV2Workflow().handler as WorkflowHandler,
 };
 
 function fixedSources(): { readonly clock: ClockSource; readonly random: RandomSource } {
@@ -37,12 +43,17 @@ function fixedSources(): { readonly clock: ClockSource; readonly random: RandomS
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(here, "fixtures", "histories");
 
-function loadFixtures(): readonly { readonly file: string; readonly fixture: RecordedHistoryFixture }[] {
+function loadFixtures(): readonly {
+  readonly file: string;
+  readonly fixture: RecordedHistoryFixture;
+}[] {
   return readdirSync(fixturesDir)
     .filter((file) => file.endsWith(".json"))
     .map((file) => ({
       file,
-      fixture: JSON.parse(readFileSync(path.join(fixturesDir, file), "utf8")) as RecordedHistoryFixture,
+      fixture: JSON.parse(
+        readFileSync(path.join(fixturesDir, file), "utf8"),
+      ) as RecordedHistoryFixture,
     }));
 }
 
@@ -62,10 +73,17 @@ describe("recorded history replay harness", () => {
     it(`replays "${file}" to its recorded outcome`, async () => {
       const handler = workflowsByType[fixture.workflowType];
       if (handler === undefined) {
-        throw new Error(`no workflow registered for fixture workflow type "${fixture.workflowType}"`);
+        throw new Error(
+          `no workflow registered for fixture workflow type "${fixture.workflowType}"`,
+        );
       }
 
-      const outcome = await runDecisionLoop(handler, fixture.input, fixture.history, fixedSources());
+      const outcome = await runDecisionLoop(
+        handler,
+        fixture.input,
+        fixture.history,
+        fixedSources(),
+      );
 
       if (fixture.expected.outcome === "failed") {
         expect(outcome.outcome).toBe("failed");

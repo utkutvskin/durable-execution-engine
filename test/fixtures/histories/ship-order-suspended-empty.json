@@ -5,7 +5,12 @@
   "expected": {
     "outcome": "suspended",
     "commands": [
-      { "type": "schedule_step", "stepId": "step-1", "stepType": "charge-card", "input": { "amount": 42 } }
+      {
+        "type": "schedule_step",
+        "stepId": "step-1",
+        "stepType": "charge-card",
+        "input": { "amount": 42 }
+      }
     ]
   }
 }
