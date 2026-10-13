@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 22: http api and authentication
+
+- **Status:** DONE
+- **Completed day:** 22
+- **Files added or changed:** `packages/core/migrations/0012_api_keys.{up,down}.sql` (new: `api_keys`, `workflow_runs.idempotency_key` with a partial unique index, a namespace/started_at index), `packages/core/src/index.ts` (exports `appendEventsOnClient`), `packages/core/src/db/{migrator,schema}.test.ts`, `packages/api/src/api-keys.ts` (new: `createApiKeyStore`), `run-service.ts` (new: `createRunService`, `IdempotencyConflictError`, `InvalidCursorError`), `routes.ts` (new: route table, zod schemas, `toErrorResult`), `openapi.ts` (new: `buildOpenApiDocument`), `openapi-validator.ts` (new: `validateOpenApiDocument`), `server.ts` (new: `createApiHandler`, `createApiServer`), `index.ts`, tests `api-keys.test.ts`, `openapi.test.ts`, `server.test.ts`, `packages/api/package.json` (zod), `docs/API.md` (new), `docs/DECISIONS.md` (ADR-0032), `README.md` (link)
+- **Technical decisions:** ADR-0032 in `docs/DECISIONS.md`. Dependency: `zod` added to `@dee/api` (already used by core, needed for request validation and schema generation). No web framework and no OpenAPI parser: `node:http` plus a structural validator written for this document.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (67 test files, 501 tests, 46 of them new today). The `dee` role/database were recreated by hand again after the container restart (`service postgresql start` first, then create the superuser role `dee` with password `dee` and database `dee`). The first `verify` of the session had one failing test that did not reproduce on two reruns; its name was not captured. Proven by test against real Postgres over real HTTP: with namespace A's key, describe, history, signal, cancel and terminate on namespace B's run answer 404 (same body as a missing run, also for a malformed id), list never shows B's runs, a reused idempotency key of B does not return B's run, and B's run is unchanged afterwards. Two starts with one `Idempotency-Key` give one run, one `run_started` event and one task (also for 10 concurrent starts: exactly one 201); a reused key with another input answers 409. The generated OpenAPI 3.1 document passes `validateOpenApiDocument`, every route is in it, and the validator rejects broken refs, versions, duplicate operation ids, undeclared path parameters, unknown types and missing security schemes. Also covered: 401 for missing, unknown and revoked keys, 400 for invalid bodies, json, limit, status and cursor, 413 over the body limit, 405 with `Allow`, keyset paging over 7 runs in pages of 3. Nothing listens on a port in a real process yet, namespaces and keys can only be created from code (`ApiKeyStore.issue`), and the `WORKFLOW_TASK` that start, signal and cancel enqueue is consumed by no handler. The validator covers only the OpenAPI constructs this document uses (see ADR-0032). Day 23 (quotas, rate limiting and backpressure) is next and wraps `createApiHandler`; the per-namespace limits need the `namespaceId` that `RawRequest` already carries.
+
+---
+
 ## Day 21: workflow versioning
 
 - **Status:** DONE
