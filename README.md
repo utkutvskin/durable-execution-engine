@@ -58,5 +58,6 @@ only needs a reachable Postgres 16, not a pre-migrated one.
 - `docs/BACKLOG.md` — the development backlog and the operating instructions for each session.
 - `docs/CONVENTIONS.md` — writing and commit conventions.
 - `docs/DECISIONS.md` — architecture decision records.
+- `docs/API.md` — the HTTP endpoints, authentication, idempotent start and the OpenAPI document.
 - `docs/VERSIONING.md` — how to change a workflow without breaking running runs.
 - `docs/OUT_OF_SCOPE.md` — what v0.1 explicitly does not cover.
