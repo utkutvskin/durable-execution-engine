@@ -12,7 +12,7 @@ export {
   jsonCodec,
   maskSensitiveFields,
 } from "./event-store/codec.js";
-export { createPostgresEventStore } from "./event-store/event-store.js";
+export { appendEventsOnClient, createPostgresEventStore } from "./event-store/event-store.js";
 export type { EventStore, StoredEvent } from "./event-store/event-store.js";
 export { ConcurrencyError, PayloadTooLargeError } from "./event-store/errors.js";
 export {

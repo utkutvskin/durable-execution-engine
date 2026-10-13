@@ -58,6 +58,7 @@ describe("initial schema", () => {
       [database.schema],
     );
     expect(result.rows.map((row) => row.table_name)).toEqual([
+      "api_keys",
       "dead_letters",
       "namespaces",
       "run_events",
