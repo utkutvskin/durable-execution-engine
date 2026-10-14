@@ -34,6 +34,10 @@ export type TaskHandler = (task: LeasedTask, context: TaskContext) => Promise<vo
  *   dropping them (default 30000).
  * - `nackDelayMs`: the redelivery delay of a task whose handler threw
  *   (default 0).
+ * - `pollBudget`: asked before each poll how many of the `free` slots to
+ *   fill. Resolving `0` skips the poll and waits like an empty poll; a failing
+ *   budget is reported to `onError` and the poll uses all free slots. See
+ *   `createDepthBackpressure`.
  * - `identity`: stamped on every leased task, so a reclaimed lease names
  *   the worker that lost it.
  * - `onError`: receives errors the worker survives, such as a failed poll.
@@ -51,6 +55,7 @@ export interface WorkerOptions {
   readonly nackDelayMs?: number;
   readonly timers?: Timers;
   readonly identity?: WorkerIdentity;
+  readonly pollBudget?: (free: number) => Promise<number>;
   readonly onError?: (error: unknown) => void;
 }
 
@@ -103,6 +108,7 @@ interface ResolvedOptions {
   readonly nackDelayMs: number;
   readonly timers: Timers;
   readonly identity: WorkerIdentity | undefined;
+  readonly pollBudget: ((free: number) => Promise<number>) | undefined;
   readonly onError: (error: unknown) => void;
 }
 
@@ -158,6 +164,7 @@ function resolveOptions(options: WorkerOptions): ResolvedOptions {
     nackDelayMs: requireNonNegativeInteger("nackDelayMs", options.nackDelayMs ?? 0),
     timers: options.timers ?? systemTimers,
     identity: options.identity,
+    pollBudget: options.pollBudget,
     onError:
       options.onError ??
       ((): void => {
@@ -296,6 +303,19 @@ export function createWorker(options: WorkerOptions): Worker {
     }
   }
 
+  async function resolveBudget(free: number): Promise<number> {
+    if (config.pollBudget === undefined) {
+      return free;
+    }
+    try {
+      const budget = await config.pollBudget(free);
+      return Math.max(0, Math.min(free, Math.floor(budget)));
+    } catch (error) {
+      config.onError(error);
+      return free;
+    }
+  }
+
   async function pollLoop(): Promise<void> {
     let delay = config.pollIntervalMs;
     while (isRunning()) {
@@ -306,14 +326,17 @@ export function createWorker(options: WorkerOptions): Worker {
       }
       let tasks: LeasedTask[] = [];
       try {
-        tasks = await config.queue.dequeue({
-          queueName: config.queueName,
-          visibilityTimeoutMs: config.visibilityTimeoutMs,
-          limit: free,
-          ...(config.identity === undefined
-            ? {}
-            : { workerId: config.identity.id, workerVersion: config.identity.version }),
-        });
+        const budget = await resolveBudget(free);
+        if (budget > 0) {
+          tasks = await config.queue.dequeue({
+            queueName: config.queueName,
+            visibilityTimeoutMs: config.visibilityTimeoutMs,
+            limit: budget,
+            ...(config.identity === undefined
+              ? {}
+              : { workerId: config.identity.id, workerVersion: config.identity.version }),
+          });
+        }
       } catch (error) {
         config.onError(error);
       }
