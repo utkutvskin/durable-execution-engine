@@ -11,6 +11,8 @@ function fakeJanitor(sweep: Janitor["sweep"]): Janitor {
     metrics: createRecoveryMetrics(),
     sweep,
     reclaimOrphanedLeases: () => Promise.resolve([]),
+    listQuarantined: () => Promise.resolve([]),
+    releaseQuarantined: () => Promise.resolve(false),
     findStalledRuns: () => Promise.resolve([]),
     recoverStalledRuns: () => Promise.resolve([]),
   };

@@ -6,6 +6,7 @@
 export interface RecoveryMetricsSnapshot {
   readonly sweeps: number;
   readonly leasesReclaimed: number;
+  readonly tasksQuarantined: number;
   readonly stalledRunsDetected: number;
   readonly stalledRunsRecovered: number;
   readonly reclaimedByWorker: Readonly<Record<string, number>>;
@@ -19,6 +20,7 @@ export interface RecoveryMetricsSnapshot {
 export interface RecoveryMetrics {
   recordSweep(at: Date): void;
   recordReclaimed(workerId: string | null): void;
+  recordQuarantined(count: number): void;
   recordStalledDetected(count: number): void;
   recordStalledRecovered(count: number): void;
   snapshot(): RecoveryMetricsSnapshot;
@@ -30,6 +32,7 @@ export interface RecoveryMetrics {
 export function createRecoveryMetrics(): RecoveryMetrics {
   let sweeps = 0;
   let leasesReclaimed = 0;
+  let tasksQuarantined = 0;
   let stalledRunsDetected = 0;
   let stalledRunsRecovered = 0;
   let lastSweepAt: Date | undefined;
@@ -45,6 +48,9 @@ export function createRecoveryMetrics(): RecoveryMetrics {
       const key = workerId ?? "unknown";
       reclaimedByWorker.set(key, (reclaimedByWorker.get(key) ?? 0) + 1);
     },
+    recordQuarantined(count: number): void {
+      tasksQuarantined += count;
+    },
     recordStalledDetected(count: number): void {
       stalledRunsDetected += count;
     },
@@ -55,6 +61,7 @@ export function createRecoveryMetrics(): RecoveryMetrics {
       return {
         sweeps,
         leasesReclaimed,
+        tasksQuarantined,
         stalledRunsDetected,
         stalledRunsRecovered,
         reclaimedByWorker: Object.fromEntries(reclaimedByWorker),

@@ -14,6 +14,21 @@ export interface ReclaimedTask {
   readonly attempts: number;
   readonly leasedBy: string | null;
   readonly leasedByVersion: string | null;
+  readonly quarantined: boolean;
+}
+
+/**
+ * A task the janitor stopped redelivering because it kept losing its lease.
+ */
+export interface QuarantinedTask {
+  readonly taskId: string;
+  readonly namespaceId: string;
+  readonly runId: string;
+  readonly queueName: string;
+  readonly taskType: string;
+  readonly reclaimCount: number;
+  readonly quarantinedAt: Date;
+  readonly reason: string;
 }
 
 /**
@@ -60,9 +75,20 @@ export interface Janitor {
    * Returns every `LEASED` task whose visibility timeout has passed to
    * `PENDING`, clears its lease and counts the reclaim. A worker that is
    * merely slow loses the lease too, which is safe: its late ack is rejected
-   * and result recording is idempotent.
+   * and result recording is idempotent. A task reclaimed `poisonThreshold`
+   * times is quarantined instead: it is never delivered again, so a task that
+   * keeps killing its worker cannot starve the queue.
    */
   reclaimOrphanedLeases(): Promise<ReclaimedTask[]>;
+
+  /** Lists the quarantined tasks, oldest first, optionally of one namespace. */
+  listQuarantined(namespaceId?: string): Promise<QuarantinedTask[]>;
+
+  /**
+   * Puts a quarantined task back into the queue with a fresh reclaim budget.
+   * Resolves `false` when the task is not quarantined.
+   */
+  releaseQuarantined(taskId: string): Promise<boolean>;
 
   /** Lists the stalled runs without changing anything. */
   findStalledRuns(options: StalledRunOptions): Promise<StalledRun[]>;
@@ -90,6 +116,23 @@ export interface Janitor {
 export interface JanitorOptions {
   readonly clock?: ClockSource;
   readonly metrics?: RecoveryMetrics;
+  readonly poisonThreshold?: number;
+}
+
+/**
+ * The number of lease losses after which a task is quarantined.
+ */
+export const DEFAULT_POISON_THRESHOLD = 3;
+
+interface QuarantineRow {
+  id: string;
+  namespace_id: string;
+  run_id: string;
+  queue_name: string;
+  task_type: string;
+  reclaim_count: number;
+  quarantined_at: Date;
+  quarantine_reason: string;
 }
 
 interface ReclaimRow {
@@ -99,6 +142,7 @@ interface ReclaimRow {
   attempts: number;
   leased_by: string | null;
   leased_by_version: string | null;
+  state: string;
 }
 
 interface StalledRow {
@@ -114,7 +158,7 @@ const STALLED_PREDICATE = `
   and coalesce((select max(e.created_at) from run_events e where e.run_id = r.id), r.created_at)
       <= $1::timestamptz - $2 * interval '1 millisecond'
   and not exists (
-    select 1 from tasks t where t.run_id = r.id and t.state in ('PENDING', 'LEASED')
+    select 1 from tasks t where t.run_id = r.id and t.state in ('PENDING', 'LEASED', 'QUARANTINED')
   )
   and not exists (
     select 1 from timers m where m.run_id = r.id and m.state = 'PENDING'
@@ -136,6 +180,12 @@ function assertNonNegativeInteger(name: string, value: number): void {
 export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor {
   const clock = options.clock ?? systemClock;
   const metrics = options.metrics ?? createRecoveryMetrics();
+  const poisonThreshold = options.poisonThreshold ?? DEFAULT_POISON_THRESHOLD;
+  if (!Number.isInteger(poisonThreshold) || poisonThreshold <= 0) {
+    throw new RangeError(
+      `poisonThreshold must be a positive integer, got ${String(poisonThreshold)}`,
+    );
+  }
 
   async function reclaimOrphanedLeases(): Promise<ReclaimedTask[]> {
     const now = clock.now();
@@ -146,14 +196,18 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
          for update skip locked
        )
        update tasks
-       set state = 'PENDING', lease_token = null, leased_by = null, leased_by_version = null,
+       set state = case when tasks.reclaim_count + 1 >= $2 then 'QUARANTINED' else 'PENDING' end,
+           lease_token = null, leased_by = null, leased_by_version = null,
            leased_at = null, reclaim_count = tasks.reclaim_count + 1,
+           quarantined_at = case when tasks.reclaim_count + 1 >= $2 then $1::timestamptz end,
+           quarantine_reason = case when tasks.reclaim_count + 1 >= $2
+             then 'lease lost ' || (tasks.reclaim_count + 1)::text || ' times' end,
            visible_at = $1, updated_at = $1
        from expired
        where tasks.id = expired.id
-       returning tasks.id, tasks.run_id, tasks.queue_name, tasks.attempts,
+       returning tasks.id, tasks.run_id, tasks.queue_name, tasks.attempts, tasks.state,
                  expired.leased_by, expired.leased_by_version`,
-      [now],
+      [now, poisonThreshold],
     );
     const reclaimed = result.rows.map((row): ReclaimedTask => ({
       taskId: row.id,
@@ -162,11 +216,46 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
       attempts: row.attempts,
       leasedBy: row.leased_by,
       leasedByVersion: row.leased_by_version,
+      quarantined: row.state === "QUARANTINED",
     }));
     reclaimed.forEach((task) => {
       metrics.recordReclaimed(task.leasedBy);
     });
+    metrics.recordQuarantined(reclaimed.filter((task) => task.quarantined).length);
     return reclaimed;
+  }
+
+  async function listQuarantined(namespaceId?: string): Promise<QuarantinedTask[]> {
+    const result = await pool.query<QuarantineRow>(
+      `select id, namespace_id, run_id, queue_name, task_type, reclaim_count,
+              quarantined_at, quarantine_reason
+       from tasks
+       where state = 'QUARANTINED' and ($1::uuid is null or namespace_id = $1)
+       order by quarantined_at, id`,
+      [namespaceId ?? null],
+    );
+    return result.rows.map((row) => ({
+      taskId: row.id,
+      namespaceId: row.namespace_id,
+      runId: row.run_id,
+      queueName: row.queue_name,
+      taskType: row.task_type,
+      reclaimCount: row.reclaim_count,
+      quarantinedAt: row.quarantined_at,
+      reason: row.quarantine_reason,
+    }));
+  }
+
+  async function releaseQuarantined(taskId: string): Promise<boolean> {
+    const now = clock.now();
+    const result = await pool.query(
+      `update tasks
+       set state = 'PENDING', reclaim_count = 0, quarantined_at = null, quarantine_reason = null,
+           visible_at = $2, updated_at = $2
+       where id = $1 and state = 'QUARANTINED'`,
+      [taskId, now],
+    );
+    return result.rowCount === 1;
   }
 
   async function findStalledRuns(stalledOptions: StalledRunOptions): Promise<StalledRun[]> {
@@ -227,6 +316,8 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
   return {
     metrics,
     reclaimOrphanedLeases,
+    listQuarantined,
+    releaseQuarantined,
     findStalledRuns,
     recoverStalledRuns,
 

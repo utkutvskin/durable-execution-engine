@@ -91,10 +91,11 @@ export type {
 } from "./idempotency/recorder.js";
 export { createPool } from "./db/pool.js";
 export type { CreatePoolOptions } from "./db/pool.js";
-export { createJanitor } from "./recovery/janitor.js";
+export { DEFAULT_POISON_THRESHOLD, createJanitor } from "./recovery/janitor.js";
 export type {
   Janitor,
   JanitorOptions,
+  QuarantinedTask,
   ReclaimedTask,
   RecoverStalledRunsOptions,
   StalledRun,

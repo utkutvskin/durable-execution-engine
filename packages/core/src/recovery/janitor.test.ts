@@ -119,6 +119,7 @@ describe("janitor", () => {
         attempts: 1,
         leasedBy: "worker-a",
         leasedByVersion: "1.4.0",
+        quarantined: false,
       },
     ]);
     expect(await taskRow(taskId)).toEqual({ state: "PENDING", leased_by: null, reclaim_count: 1 });
@@ -292,5 +293,139 @@ describe("janitor", () => {
   it("rejects a negative grace period", async () => {
     const janitor = createJanitor(database.pool);
     await expect(janitor.findStalledRuns({ graceMs: -1 })).rejects.toThrow(RangeError);
+  });
+
+  describe("poison pill protection", () => {
+    async function crashOnce(
+      queue: ReturnType<typeof createTaskQueue>,
+      janitor: ReturnType<typeof createJanitor>,
+      clock: ReturnType<typeof movableClock>,
+      queueName = "q",
+    ): Promise<void> {
+      await queue.dequeue({ queueName, visibilityTimeoutMs: 10_000 });
+      clock.advance(10_001);
+      await janitor.reclaimOrphanedLeases();
+    }
+
+    it("quarantines a task whose lease was lost three times and stops delivering it", async () => {
+      const clock = movableClock();
+      const queue = createTaskQueue(database.pool, { clock });
+      const metrics = createRecoveryMetrics();
+      const janitor = createJanitor(database.pool, { clock, metrics });
+      const runId = await createRun(START);
+      const taskId = await queue.enqueue({
+        namespaceId,
+        runId,
+        queueName: "q",
+        taskType: "STEP_TASK",
+      });
+
+      await crashOnce(queue, janitor, clock);
+      await crashOnce(queue, janitor, clock);
+      expect((await taskRow(taskId)).state).toBe("PENDING");
+      await crashOnce(queue, janitor, clock);
+
+      expect((await taskRow(taskId)).state).toBe("QUARANTINED");
+      expect(await queue.dequeue({ queueName: "q", visibilityTimeoutMs: 10_000 })).toEqual([]);
+      expect(metrics.snapshot().tasksQuarantined).toBe(1);
+    });
+
+    it("keeps the queue moving: healthy tasks are delivered while the poison pill sits in quarantine", async () => {
+      const clock = movableClock();
+      const queue = createTaskQueue(database.pool, { clock });
+      const janitor = createJanitor(database.pool, { clock });
+      const runId = await createRun(START);
+      const poison = await queue.enqueue({
+        namespaceId,
+        runId,
+        queueName: "q",
+        taskType: "STEP_TASK",
+      });
+      for (let crash = 0; crash < 3; crash += 1) {
+        await crashOnce(queue, janitor, clock);
+      }
+      const healthy = await queue.enqueue({
+        namespaceId,
+        runId,
+        queueName: "q",
+        taskType: "STEP_TASK",
+      });
+
+      const delivered = await queue.dequeue({ queueName: "q", visibilityTimeoutMs: 10_000 });
+
+      expect(delivered.map((task) => task.id)).toEqual([healthy]);
+      expect((await taskRow(poison)).state).toBe("QUARANTINED");
+    });
+
+    it("reports the quarantined flag only on the reclaim that crossed the threshold", async () => {
+      const clock = movableClock();
+      const queue = createTaskQueue(database.pool, { clock });
+      const janitor = createJanitor(database.pool, { clock, poisonThreshold: 2 });
+      const runId = await createRun(START);
+      await queue.enqueue({ namespaceId, runId, queueName: "q", taskType: "STEP_TASK" });
+
+      await queue.dequeue({ queueName: "q", visibilityTimeoutMs: 10_000 });
+      clock.advance(10_001);
+      const first = await janitor.reclaimOrphanedLeases();
+      await queue.dequeue({ queueName: "q", visibilityTimeoutMs: 10_000 });
+      clock.advance(10_001);
+      const second = await janitor.reclaimOrphanedLeases();
+
+      expect(first.map((task) => task.quarantined)).toEqual([false]);
+      expect(second.map((task) => task.quarantined)).toEqual([true]);
+    });
+
+    it("lists quarantined tasks by namespace and releases one with a fresh budget", async () => {
+      const clock = movableClock();
+      const queue = createTaskQueue(database.pool, { clock });
+      const janitor = createJanitor(database.pool, { clock });
+      const other = await database.pool.query<{ id: string }>(
+        "insert into namespaces (name) values ('other') returning id",
+      );
+      const runId = await createRun(START);
+      const taskId = await queue.enqueue({
+        namespaceId,
+        runId,
+        queueName: "q",
+        taskType: "STEP_TASK",
+      });
+      for (let crash = 0; crash < 3; crash += 1) {
+        await crashOnce(queue, janitor, clock);
+      }
+
+      const listed = await janitor.listQuarantined(namespaceId);
+      expect(listed).toHaveLength(1);
+      expect(listed[0]).toMatchObject({
+        taskId,
+        runId,
+        reclaimCount: 3,
+        reason: "lease lost 3 times",
+      });
+      expect(await janitor.listQuarantined(other.rows[0]?.id)).toEqual([]);
+
+      expect(await janitor.releaseQuarantined(taskId)).toBe(true);
+      expect(await janitor.releaseQuarantined(taskId)).toBe(false);
+      expect(await taskRow(taskId)).toMatchObject({ state: "PENDING", reclaim_count: 0 });
+      const delivered = await queue.dequeue({ queueName: "q", visibilityTimeoutMs: 10_000 });
+      expect(delivered.map((task) => task.id)).toEqual([taskId]);
+    });
+
+    it("does not treat a run with a quarantined task as stalled", async () => {
+      const clock = movableClock();
+      const queue = createTaskQueue(database.pool, { clock });
+      const janitor = createJanitor(database.pool, { clock });
+      const runId = await createRun(START);
+      await queue.enqueue({ namespaceId, runId, queueName: "q", taskType: "STEP_TASK" });
+      for (let crash = 0; crash < 3; crash += 1) {
+        await crashOnce(queue, janitor, clock);
+      }
+      clock.advance(3_600_000);
+
+      expect(await janitor.findStalledRuns({ graceMs: 60_000 })).toEqual([]);
+    });
+
+    it("rejects a threshold that is not a positive integer", () => {
+      expect(() => createJanitor(database.pool, { poisonThreshold: 0 })).toThrow(RangeError);
+    });
   });
 });
