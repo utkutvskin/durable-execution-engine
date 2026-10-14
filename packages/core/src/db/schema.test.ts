@@ -60,6 +60,7 @@ describe("initial schema", () => {
     expect(result.rows.map((row) => row.table_name)).toEqual([
       "api_keys",
       "dead_letters",
+      "namespace_quotas",
       "namespaces",
       "run_events",
       "run_snapshots",

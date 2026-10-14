@@ -40,6 +40,8 @@ describe("migrateUp / migrateDown", () => {
       "0010_continue_as_new",
       "0011_sticky_execution",
       "0012_api_keys",
+      "0013_namespace_quotas",
+      "0014_task_quarantine",
     ]);
 
     const result = await database.pool.query<{ id: string }>(
@@ -58,6 +60,8 @@ describe("migrateUp / migrateDown", () => {
       "0010_continue_as_new",
       "0011_sticky_execution",
       "0012_api_keys",
+      "0013_namespace_quotas",
+      "0014_task_quarantine",
     ]);
   });
 
@@ -70,7 +74,7 @@ describe("migrateUp / migrateDown", () => {
   it("migrateDown reverts the most recently applied migration", async () => {
     await migrateUp(database.pool);
     const reverted = await migrateDown(database.pool);
-    expect(reverted).toEqual(["0012_api_keys"]);
+    expect(reverted).toEqual(["0014_task_quarantine"]);
 
     const result = await database.pool.query<{ id: string }>(
       "select id from schema_migrations order by id",
@@ -87,13 +91,17 @@ describe("migrateUp / migrateDown", () => {
       "0009_child_workflows",
       "0010_continue_as_new",
       "0011_sticky_execution",
+      "0012_api_keys",
+      "0013_namespace_quotas",
     ]);
   });
 
-  it("migrateDown with steps 12 reverts every migration, most recent first", async () => {
+  it("migrateDown with steps 14 reverts every migration, most recent first", async () => {
     await migrateUp(database.pool);
-    const reverted = await migrateDown(database.pool, undefined, 12);
+    const reverted = await migrateDown(database.pool, undefined, 14);
     expect(reverted).toEqual([
+      "0014_task_quarantine",
+      "0013_namespace_quotas",
       "0012_api_keys",
       "0011_sticky_execution",
       "0010_continue_as_new",
@@ -131,6 +139,7 @@ describe("migrateUp / migrateDown", () => {
     expect(tables.rows.map((row) => row.table_name)).toEqual([
       "api_keys",
       "dead_letters",
+      "namespace_quotas",
       "namespaces",
       "run_events",
       "run_snapshots",
