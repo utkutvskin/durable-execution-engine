@@ -9,6 +9,8 @@ export type { ApiKeyStore, AuthenticatedNamespace, IssuedApiKey } from "./api-ke
 export { buildOpenApiDocument } from "./openapi.js";
 export type { JsonObject, OpenApiOptions } from "./openapi.js";
 export { validateOpenApiDocument } from "./openapi-validator.js";
+export { createQuotaGuard } from "./quota-guard.js";
+export type { QuotaGuard, QuotaGuardOptions, Rejection, RequestKind } from "./quota-guard.js";
 export { createRoutes, toErrorResult } from "./routes.js";
 export type { ErrorResult, RawRequest, ResponseSpec, Route, RouteResult } from "./routes.js";
 export { IdempotencyConflictError, InvalidCursorError, createRunService } from "./run-service.js";

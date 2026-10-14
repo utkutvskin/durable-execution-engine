@@ -148,6 +148,12 @@ const errorResponse = (description: string): ResponseSpec => ({
 const commonErrors = {
   400: errorResponse("The request is malformed."),
   401: errorResponse("The api key is missing, unknown or revoked."),
+  429: errorResponse(
+    "The namespace exceeded its rate limit or a quota. The Retry-After header gives the wait in seconds.",
+  ),
+  503: errorResponse(
+    "The task queue is overloaded and admits no new work. The Retry-After header gives the wait in seconds.",
+  ),
 } as const;
 
 const notFound = errorResponse("The run does not exist in the caller's namespace.");

@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { Pool } from "@dee/core";
 import { createApiKeyStore, type ApiKeyStore } from "./api-keys.js";
 import { buildOpenApiDocument, type JsonObject } from "./openapi.js";
+import { createQuotaGuard, type QuotaGuard, type RequestKind } from "./quota-guard.js";
 import { createRoutes, toErrorResult, type RawRequest, type Route } from "./routes.js";
 import { createRunService, type RunService } from "./run-service.js";
 
@@ -14,6 +15,8 @@ export interface ApiOptions {
   readonly maxBodyBytes?: number;
   readonly apiKeys?: ApiKeyStore;
   readonly service?: RunService;
+  readonly quotaGuard?: QuotaGuard;
+  readonly maxQueueDepth?: number;
 }
 
 /**
@@ -118,6 +121,12 @@ export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler {
   const service = options.service ?? createRunService(pool, { queueName: options.queueName });
   const routes = createRoutes(service);
   const openApiDocument = buildOpenApiDocument(routes);
+  const quotaGuard =
+    options.quotaGuard ??
+    createQuotaGuard(pool, {
+      queueName: options.queueName,
+      ...(options.maxQueueDepth === undefined ? {} : { maxQueueDepth: options.maxQueueDepth }),
+    });
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
 
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -156,6 +165,19 @@ export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler {
         405,
         { error: { code: "method_not_allowed", message: "method not allowed" } },
         { allow: candidates.map((candidate) => candidate.route.method.toUpperCase()).join(", ") },
+      );
+      return;
+    }
+
+    const kind: RequestKind =
+      method === "get" ? "read" : match.route.operationId === "startRun" ? "start" : "write";
+    const rejection = await quotaGuard.check(identity.namespaceId, kind);
+    if (rejection !== undefined) {
+      send(
+        response,
+        rejection.status,
+        { error: { code: rejection.code, message: rejection.message } },
+        { "retry-after": String(rejection.retryAfterSeconds) },
       );
       return;
     }
