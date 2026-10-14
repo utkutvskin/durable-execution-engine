@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 23: quotas, rate limiting and backpressure
+
+- **Status:** DONE
+- **Completed day:** 23
+- **Files added or changed:** `packages/core/migrations/0013_namespace_quotas.{up,down}.sql` (new: `namespace_quotas`), `0014_task_quarantine.{up,down}.sql` (new: `QUARANTINED` task state, `quarantined_at`, `quarantine_reason`), `packages/core/src/quota/token-bucket.ts` (new: `createRateLimiter`), `quota-store.ts` (new: `createQuotaStore`, `UNLIMITED_QUOTA`), tests `token-bucket.test.ts`, `quota-store.test.ts`, `packages/core/src/recovery/janitor.ts` (`poisonThreshold`, `listQuarantined`, `releaseQuarantined`, `ReclaimedTask.quarantined`, stalled check counts quarantined tasks) and `metrics.ts` (`tasksQuarantined`), `janitor.test.ts`, `packages/core/src/db/{migrator,schema}.test.ts`, `packages/core/src/index.ts`, `packages/api/src/quota-guard.ts` (new: `createQuotaGuard`) and `quota-guard.test.ts`, `server.ts` (`quotaGuard`, `maxQueueDepth` options), `routes.ts` (429 and 503 in the OpenAPI responses), `index.ts`, `packages/worker/src/backpressure.ts` (new: `createDepthBackpressure`, `pollBudgetForDepth`) and `backpressure.test.ts`, `worker.ts` (`pollBudget`), `packages/worker/src/janitor-loop.test.ts`, `docs/API.md`, `docs/DECISIONS.md` (ADR-0033), `README.md`
+- **Technical decisions:** ADR-0033 in `docs/DECISIONS.md`. No new dependency.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (71 test files, 532 tests, 31 of them new today). The `dee` role/database were recreated by hand again after the container restart (`service postgresql start` first, then create the superuser role `dee` with password `dee` and database `dee`). The first `verify` of the session had one failure, the 200 sequence test in `projection-store.test.ts` timing out at 5000 ms under load; it passed on every later run and is unrelated to today's code. Proven by test against real Postgres over real HTTP: a namespace that spends its token bucket gets 429 with `Retry-After` while another namespace is served, and it is served again after the fake clock moves; a start over `maxConcurrentRuns` answers 429 `run_quota_exceeded` and reads still work, terminating a run frees the slot; writes over `maxPendingTasks` answer 429; with `maxQueueDepth` 50 reached, writes of every namespace answer 503 and recover once tasks are leased. A task whose lease is lost 3 times is `QUARANTINED`, is never dequeued again, healthy tasks behind it are delivered, a run holding only a quarantined task is not recovered as stalled, and `releaseQuarantined` returns it with a fresh budget. Worker `pollBudget` skips the dequeue on an empty queue, polls in batches of 1 on a shallow queue and takes every free slot on a deep one. Quota checks and inserts are separate statements, so concurrent writes can overshoot a quota (see ADR-0033), the token bucket is in process memory, and quotas can only be set from code (`QuotaStore.set`). Nothing starts `createJanitor().sweep` or passes `pollBudget` in a running process yet, and nothing alerts on quarantined tasks. Day 24 (distributed tracing) is next.
+
+---
+
 ## Day 22: http api and authentication
 
 - **Status:** DONE
