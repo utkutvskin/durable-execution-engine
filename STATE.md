@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 24: distributed tracing
+
+- **Status:** DONE
+- **Completed day:** 24
+- **Files added or changed:** `packages/core/migrations/0015_trace_context.{up,down}.sql` (new: `workflow_runs.traceparent`), `packages/core/src/observability/tracing.ts` (new: `Tracing`, `TraceSpan`, `createTracing`, `noopTracing`, `parseTraceparent`, `formatTraceparent`) and `provider.ts` (new: `createTracingProvider`, sampling, OTLP exporter) with `tracing.test.ts` and `run-tracing.test.ts`, `packages/core/src/idempotency/recorder.ts` (`tracing` option: `workflow.task` and `workflow.child` spans), `children/child-runs.ts` and `continuation/continued-run.ts` (store or copy the context), `retry/step-task-processor.ts` (`step` spans), `timers/timer-scheduler.ts` (`timer` spans), `schedules/schedule-manager.ts` (`workflow.schedule` span, spans end after commit), `db/migrator.test.ts`, `packages/core/src/index.ts`, `packages/api/src/run-service.ts`, `routes.ts`, `server.ts` (`tracing` option, `traceparent` header, `workflow.start` span) and `tracing.test.ts`, `docker-compose.yml` (Jaeger), `.env.example`, `docs/TRACING.md` (new), `docs/DEFERRED.md` (new), `docs/DECISIONS.md` (ADR-0034), `README.md`
+- **Technical decisions:** ADR-0034 in `docs/DECISIONS.md`. Dependencies added to `@dee/core`: `@opentelemetry/api`, `@opentelemetry/sdk-trace-base`, `@opentelemetry/resources`, `@opentelemetry/exporter-trace-otlp-http` (the standard OpenTelemetry packages; the tracing contract is written in-house on top of the API only).
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (74 test files, 569 tests, 37 of them new today). The `dee` role/database were recreated by hand again after the container restart (`service postgresql start` first, then create the superuser role `dee` with password `dee` and database `dee`). **The "verified in Jaeger" half of the Done-when item is not proven:** the session had no Docker daemon, so the compose Jaeger service and the OTLP exporter were never run; the span tree is verified against an in-memory exporter and the open item is in `docs/DEFERRED.md`. Proven by test against real Postgres: a run with a step, a 60 second timer and a child workflow (which runs its own step) produces one trace id, exactly one root (`workflow.start`), and every other span's parent is present; the child's step span hangs under the `workflow.child` span; five extra replays of the full history, a workflow task delivered twice and a step task whose result is already recorded add no span; a failing step gives one error span per attempt with `dee.step.attempt` 1 and 2; a transaction that creates a child and rolls back exports no `workflow.child` span; a scheduled run gets a `workflow.schedule` root and stores its context. Over real HTTP, a `traceparent` request header continues the caller's trace, a malformed one is ignored, and an idempotent repeat of a start emits no span. Sampling: ratio 0 records nothing but still stores an unsampled context, a stored sampled or unsampled flag wins over the local ratio, ratio 0.5 samples about half of 400 traces. Nothing creates a `TracingProvider` or passes `tracing` in a running process yet (the worker and API entry points are a later day), the worker's own task and lease handling emits no span, and a run has no single span covering its whole life. Day 25 (metrics, logs and health endpoints) is next.
+
+---
+
 ## Day 23: quotas, rate limiting and backpressure
 
 - **Status:** DONE
