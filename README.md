@@ -59,5 +59,6 @@ only needs a reachable Postgres 16, not a pre-migrated one.
 - `docs/CONVENTIONS.md` — writing and commit conventions.
 - `docs/DECISIONS.md` — architecture decision records.
 - `docs/API.md` — the HTTP endpoints, authentication, idempotent start, quotas, rate limits and the OpenAPI document.
+- `docs/TRACING.md` — how a run becomes one trace, the span names, sampling and how to look at it in Jaeger.
 - `docs/VERSIONING.md` — how to change a workflow without breaking running runs.
 - `docs/OUT_OF_SCOPE.md` — what v0.1 explicitly does not cover.
