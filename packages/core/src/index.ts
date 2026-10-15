@@ -250,3 +250,18 @@ export { createRateLimiter } from "./quota/token-bucket.js";
 export type { RateLimitDecision, RateLimiter, TokenBucketConfig } from "./quota/token-bucket.js";
 export { UNLIMITED_QUOTA, createQuotaStore } from "./quota/quota-store.js";
 export type { NamespaceQuota, NamespaceUsage, QuotaStore } from "./quota/quota-store.js";
+
+export {
+  createTracing,
+  formatTraceparent,
+  noopTracing,
+  parseTraceparent,
+} from "./observability/tracing.js";
+export type {
+  ParsedTraceparent,
+  StartSpanOptions,
+  TraceSpan,
+  Tracing,
+} from "./observability/tracing.js";
+export { createTracingProvider } from "./observability/provider.js";
+export type { TracingProvider, TracingProviderOptions } from "./observability/provider.js";
