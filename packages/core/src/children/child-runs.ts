@@ -13,13 +13,19 @@ import type { WorkflowEvent } from "../event-store/events.js";
 export async function createChildRunOnClient(
   client: PoolClient,
   codec: Codec,
-  parent: { readonly runId: string; readonly namespaceId: string; readonly queueName: string },
+  parent: {
+    readonly runId: string;
+    readonly namespaceId: string;
+    readonly queueName: string;
+    readonly traceparent?: string | null;
+  },
   event: Extract<WorkflowEvent, { type: "child_started" }>,
 ): Promise<{ readonly runId: string; readonly created: boolean }> {
   const inserted = await client.query<{ id: string }>(
     `insert into workflow_runs
-       (namespace_id, workflow_type, input, parent_run_id, parent_child_id, parent_close_policy)
-     values ($1, $2, $3::jsonb, $4, $5, $6)
+       (namespace_id, workflow_type, input, parent_run_id, parent_child_id, parent_close_policy,
+        traceparent)
+     values ($1, $2, $3::jsonb, $4, $5, $6, $7)
      on conflict (parent_run_id, parent_child_id) where parent_child_id is not null do nothing
      returning id`,
     [
@@ -29,6 +35,7 @@ export async function createChildRunOnClient(
       parent.runId,
       event.childId,
       event.parentClosePolicy,
+      parent.traceparent ?? null,
     ],
   );
   const created = inserted.rows[0];

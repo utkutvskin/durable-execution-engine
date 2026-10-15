@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from "pg";
 import { jsonCodec, type Codec } from "../event-store/codec.js";
 import { appendEventsOnClient } from "../event-store/event-store.js";
 import { systemClock, type ClockSource } from "../workflow/sources.js";
+import { noopTracing, type TraceSpan, type Tracing } from "../observability/tracing.js";
 import { createMonotonicClock } from "../timers/monotonic-clock.js";
 import { cronTimesBetween, nextCronTime, parseCron, InvalidScheduleError } from "./cron.js";
 
@@ -80,6 +81,7 @@ export interface ScheduleManagerOptions {
   readonly clock?: ClockSource;
   readonly codec?: Codec;
   readonly batchSize?: number;
+  readonly tracing?: Tracing;
 }
 
 /**
@@ -209,16 +211,23 @@ export function createScheduleManager(
   const clock = createMonotonicClock(options.clock ?? systemClock);
   const codec = options.codec ?? jsonCodec;
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
+  const tracing = options.tracing ?? noopTracing;
   if (!Number.isInteger(batchSize) || batchSize <= 0) {
     throw new RangeError(`batchSize must be a positive integer, got ${String(batchSize)}`);
   }
 
-  async function inTransaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
+  async function inTransaction<T>(
+    work: (client: PoolClient, spans: TraceSpan[]) => Promise<T>,
+  ): Promise<T> {
     const client = await pool.connect();
+    const spans: TraceSpan[] = [];
     try {
       await client.query("begin");
-      const result = await work(client);
+      const result = await work(client, spans);
       await client.query("commit");
+      for (const span of spans) {
+        span.end();
+      }
       return result;
     } catch (error) {
       await client.query("rollback").catch(() => undefined);
@@ -232,13 +241,29 @@ export function createScheduleManager(
     client: PoolClient,
     schedule: ScheduleRow,
     scheduledFor: Date,
+    spans: TraceSpan[],
   ): Promise<string> {
+    const span = tracing.startSpan("workflow.schedule", {
+      attributes: {
+        "dee.schedule.id": schedule.id,
+        "dee.workflow.type": schedule.workflow_type,
+        "dee.schedule.scheduled_for": scheduledFor.toISOString(),
+      },
+    });
     const run = await client.query<{ id: string }>(
-      `insert into workflow_runs (namespace_id, workflow_type, input, schedule_id)
-       values ($1, $2, $3::jsonb, $4)
+      `insert into workflow_runs (namespace_id, workflow_type, input, schedule_id, traceparent)
+       values ($1, $2, $3::jsonb, $4, $5)
        returning id`,
-      [schedule.namespace_id, schedule.workflow_type, JSON.stringify(schedule.input), schedule.id],
+      [
+        schedule.namespace_id,
+        schedule.workflow_type,
+        JSON.stringify(schedule.input),
+        schedule.id,
+        span.traceparent ?? null,
+      ],
     );
+    spans.push(span);
+    span.setAttributes({ "dee.run.id": run.rows[0]?.id ?? "" });
     const runId = run.rows[0]?.id ?? "";
     await appendEventsOnClient(client, codec, runId, 0, [
       { type: "run_started", workflowType: schedule.workflow_type, input: schedule.input },
@@ -288,6 +313,7 @@ export function createScheduleManager(
     client: PoolClient,
     schedule: ScheduleRow,
     scheduledFor: Date,
+    spans: TraceSpan[],
   ): Promise<ScheduleTrigger | undefined> {
     const known = await client.query(
       "select 1 from schedule_triggers where schedule_id = $1 and scheduled_for = $2",
@@ -299,7 +325,7 @@ export function createScheduleManager(
     const overlapping =
       schedule.overlap_policy !== "allow_all" && (await hasOpenRun(client, schedule.id));
     if (!overlapping) {
-      const runId = await startRun(client, schedule, scheduledFor);
+      const runId = await startRun(client, schedule, scheduledFor, spans);
       await recordTrigger(client, schedule.id, scheduledFor, "STARTED", runId);
       return { scheduleId: schedule.id, scheduledFor, outcome: "STARTED", runId };
     }
@@ -324,7 +350,7 @@ export function createScheduleManager(
   }
 
   async function drainNextBuffer(): Promise<ScheduleTrigger | undefined> {
-    return inTransaction(async (client) => {
+    return inTransaction(async (client, spans) => {
       const found = await client.query<ScheduleRow>(
         `select * from schedules s
          where s.state = 'ACTIVE' and s.buffered_for is not null
@@ -340,7 +366,7 @@ export function createScheduleManager(
       if (schedule === undefined || scheduledFor === null || scheduledFor === undefined) {
         return undefined;
       }
-      const runId = await startRun(client, schedule, scheduledFor);
+      const runId = await startRun(client, schedule, scheduledFor, spans);
       await client.query(
         `update schedule_triggers set outcome = 'STARTED', run_id = $3
          where schedule_id = $1 and scheduled_for = $2`,
@@ -355,7 +381,7 @@ export function createScheduleManager(
   }
 
   async function fireNextDue(now: Date): Promise<ScheduleTrigger | "none"> {
-    return inTransaction(async (client) => {
+    return inTransaction(async (client, spans) => {
       const found = await client.query<ScheduleRow>(
         `select * from schedules
          where state = 'ACTIVE' and next_fire_at <= $1
@@ -369,7 +395,7 @@ export function createScheduleManager(
       if (schedule === undefined || scheduledFor === null || scheduledFor === undefined) {
         return "none";
       }
-      const trigger = await handleTrigger(client, schedule, scheduledFor);
+      const trigger = await handleTrigger(client, schedule, scheduledFor, spans);
       await client.query(
         `update schedules set next_fire_at = $2, last_fired_at = $3, updated_at = now()
          where id = $1`,
@@ -511,9 +537,9 @@ export function createScheduleManager(
       );
       const triggers: ScheduleTrigger[] = [];
       for (const scheduledFor of instants) {
-        const trigger = await inTransaction(async (client) => {
+        const trigger = await inTransaction(async (client, spans) => {
           const row = await loadForUpdate(client, id);
-          return handleTrigger(client, row, scheduledFor);
+          return handleTrigger(client, row, scheduledFor, spans);
         });
         if (trigger !== undefined) {
           triggers.push(trigger);

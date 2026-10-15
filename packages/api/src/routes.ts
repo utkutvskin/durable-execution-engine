@@ -236,6 +236,9 @@ export function createRoutes(service: RunService): readonly Route[] {
           workflowType: request.parsedBody.workflowType,
           input: request.parsedBody.input,
           ...(key === undefined ? {} : { idempotencyKey: key }),
+          ...(request.headers["traceparent"] === undefined
+            ? {}
+            : { traceparent: request.headers["traceparent"] }),
         });
         return { status: result.created ? 201 : 200, body: result };
       },

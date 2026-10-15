@@ -11,6 +11,7 @@ interface PredecessorRow {
   schedule_id: string | null;
   first_run_id: string;
   chain_index: number;
+  traceparent: string | null;
 }
 
 /**
@@ -30,7 +31,7 @@ export async function createContinuedRunOnClient(
 ): Promise<string> {
   const predecessor = await client.query<PredecessorRow>(
     `select namespace_id, workflow_type, parent_run_id, parent_close_policy, schedule_id,
-            first_run_id, chain_index
+            first_run_id, chain_index, traceparent
      from workflow_runs where id = $1`,
     [runId],
   );
@@ -49,8 +50,8 @@ export async function createContinuedRunOnClient(
   const inserted = await client.query<{ id: string }>(
     `insert into workflow_runs
        (namespace_id, workflow_type, input, parent_run_id, parent_close_policy, schedule_id,
-        first_run_id, continued_from_run_id, chain_index)
-     values ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9)
+        first_run_id, continued_from_run_id, chain_index, traceparent)
+     values ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10)
      returning id`,
     [
       row.namespace_id,
@@ -62,6 +63,7 @@ export async function createContinuedRunOnClient(
       row.first_run_id,
       runId,
       row.chain_index + 1,
+      row.traceparent,
     ],
   );
   const nextRunId = inserted.rows[0]?.id;

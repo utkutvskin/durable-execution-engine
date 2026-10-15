@@ -1,5 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import {
+  noopTracing,
+  type Tracing,
   RunNotFoundError,
   appendEventsOnClient,
   createPostgresEventStore,
@@ -72,6 +74,7 @@ export interface StartRunInput {
   readonly workflowType: string;
   readonly input?: unknown;
   readonly idempotencyKey?: string;
+  readonly traceparent?: string;
 }
 
 /**
@@ -177,6 +180,7 @@ export interface RunService {
  */
 export interface RunServiceOptions {
   readonly queueName: string;
+  readonly tracing?: Tracing;
 }
 
 interface RunRow {
@@ -243,6 +247,7 @@ function decodeCursor(cursor: string): { startedCursor: string; runId: string } 
  * Creates a `RunService` over `pool`.
  */
 export function createRunService(pool: Pool, options: RunServiceOptions): RunService {
+  const tracing = options.tracing ?? noopTracing;
   const store = createPostgresEventStore(pool);
   const interactions: RunInteractions = createRunInteractions(pool, {
     queueName: options.queueName,
@@ -282,11 +287,16 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
 
   async function insertRun(namespaceId: string, input: StartRunInput): Promise<string | undefined> {
     const client = await pool.connect();
+    const span = tracing.startSpan("workflow.start", {
+      parent: input.traceparent,
+      kind: "server",
+      attributes: { "dee.workflow.type": input.workflowType, "dee.namespace.id": namespaceId },
+    });
     try {
       await client.query("begin");
       const inserted = await client.query<{ id: string }>(
-        `insert into workflow_runs (namespace_id, workflow_type, input, idempotency_key)
-         values ($1, $2, $3::jsonb, $4)
+        `insert into workflow_runs (namespace_id, workflow_type, input, idempotency_key, traceparent)
+         values ($1, $2, $3::jsonb, $4, $5)
          on conflict (namespace_id, idempotency_key) where idempotency_key is not null
          do nothing
          returning id`,
@@ -295,6 +305,7 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
           input.workflowType,
           JSON.stringify(input.input ?? null),
           input.idempotencyKey ?? null,
+          span.traceparent ?? null,
         ],
       );
       const runId = inserted.rows[0]?.id;
@@ -315,6 +326,8 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
         [namespaceId, runId, options.queueName, JSON.stringify({ reason: "start" })],
       );
       await client.query("commit");
+      span.setAttributes({ "dee.run.id": runId });
+      span.end();
       return runId;
     } catch (error) {
       await client.query("rollback").catch(() => undefined);

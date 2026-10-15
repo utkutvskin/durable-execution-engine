@@ -2,13 +2,16 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { Pool } from "@dee/core";
 import { createApiKeyStore, type ApiKeyStore } from "./api-keys.js";
 import { buildOpenApiDocument, type JsonObject } from "./openapi.js";
+import type { Tracing } from "@dee/core";
 import { createQuotaGuard, type QuotaGuard, type RequestKind } from "./quota-guard.js";
 import { createRoutes, toErrorResult, type RawRequest, type Route } from "./routes.js";
 import { createRunService, type RunService } from "./run-service.js";
 
 /**
  * Options for `createApiHandler`. `queueName` is the queue the workflow
- * tasks of started, signalled and cancelled runs go to.
+ * tasks of started, signalled and cancelled runs go to. With `tracing`, a
+ * started run gets a `workflow.start` span that continues the request's
+ * `traceparent` header and that the run's later spans hang under.
  */
 export interface ApiOptions {
   readonly queueName: string;
@@ -17,6 +20,7 @@ export interface ApiOptions {
   readonly service?: RunService;
   readonly quotaGuard?: QuotaGuard;
   readonly maxQueueDepth?: number;
+  readonly tracing?: Tracing;
 }
 
 /**
@@ -118,7 +122,12 @@ function sendError(response: ServerResponse, status: number, code: string, messa
  */
 export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler {
   const apiKeys = options.apiKeys ?? createApiKeyStore(pool);
-  const service = options.service ?? createRunService(pool, { queueName: options.queueName });
+  const service =
+    options.service ??
+    createRunService(pool, {
+      queueName: options.queueName,
+      ...(options.tracing === undefined ? {} : { tracing: options.tracing }),
+    });
   const routes = createRoutes(service);
   const openApiDocument = buildOpenApiDocument(routes);
   const quotaGuard =

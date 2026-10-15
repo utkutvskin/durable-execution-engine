@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import { z } from "zod";
+import { noopTracing, type TraceSpan, type Tracing } from "../observability/tracing.js";
 import type { ResultRecorder } from "../idempotency/recorder.js";
 import type { LeasedTask, TaskQueue } from "../queue/task-queue.js";
 import type { StepDefinition } from "../workflow/define-step.js";
@@ -52,7 +53,9 @@ export type StepTaskOutcome =
 
 /**
  * Everything `createStepTaskProcessor` works with. `lookup` finds a step by
- * its type; `clock`, `random` and `timers` default to the real ones.
+ * its type; `clock`, `random` and `timers` default to the real ones. With
+ * `tracing`, each executed attempt emits a `step` span under the run's stored
+ * `traceparent`; a delivery whose result is already recorded emits none.
  */
 export interface StepTaskProcessorOptions {
   readonly pool: Pool;
@@ -64,6 +67,7 @@ export interface StepTaskProcessorOptions {
   readonly clock?: ClockSource;
   readonly random?: RandomSource;
   readonly timers?: TimeoutTimers;
+  readonly tracing?: Tracing;
 }
 
 /**
@@ -102,6 +106,15 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
   const clock = options.clock ?? systemClock;
   const random = options.random ?? systemRandomSource;
   const timers = options.timers ?? systemTimers;
+  const tracing = options.tracing ?? noopTracing;
+
+  async function readTraceparent(runId: string): Promise<string | null> {
+    const result = await options.pool.query<{ traceparent: string | null }>(
+      "select traceparent from workflow_runs where id = $1",
+      [runId],
+    );
+    return result.rows[0]?.traceparent ?? null;
+  }
 
   async function hasRecordedResult(runId: string, stepId: string): Promise<boolean> {
     const result = await options.pool.query(
@@ -109,6 +122,25 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
       [runId, stepId],
     );
     return result.rowCount !== 0;
+  }
+
+  async function executeTraced(
+    definition: StepDefinition | undefined,
+    stepType: string,
+    input: unknown,
+    span: TraceSpan,
+  ): Promise<unknown> {
+    try {
+      if (definition === undefined) {
+        throw new NonRetryableError(`no step registered for type "${stepType}"`);
+      }
+      return await runWithTimeout(() => definition.handler(input), definition.timeoutMs, timers);
+    } catch (thrown) {
+      span.recordError(thrown);
+      throw thrown;
+    } finally {
+      span.end();
+    }
   }
 
   return {
@@ -125,16 +157,18 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
       const attempt = await options.attempts.nextAttempt(runId, stepId);
       const definition = options.lookup(payload.stepType);
       const policy: RetryPolicy = definition?.retry ?? DEFAULT_RETRY_POLICY;
+      const span = tracing.startSpan(`step ${payload.stepType}`, {
+        parent: await readTraceparent(runId),
+        attributes: {
+          "dee.run.id": runId,
+          "dee.step.id": stepId,
+          "dee.step.type": payload.stepType,
+          "dee.step.attempt": attempt,
+        },
+      });
 
       try {
-        if (definition === undefined) {
-          throw new NonRetryableError(`no step registered for type "${payload.stepType}"`);
-        }
-        const result = await runWithTimeout(
-          () => definition.handler(payload.input),
-          definition.timeoutMs,
-          timers,
-        );
+        const result = await executeTraced(definition, payload.stepType, payload.input, span);
         await options.recorder.recordStepResult({
           runId,
           stepId,

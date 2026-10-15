@@ -11,6 +11,7 @@ import { createChildRunOnClient } from "../children/child-runs.js";
 import { lockRunWithParent } from "../children/run-locks.js";
 import { isTerminalState, type RunState } from "../run/state-machine.js";
 import { insertTimerOnClient } from "../timers/timer-scheduler.js";
+import { noopTracing, type TraceSpan, type Tracing } from "../observability/tracing.js";
 import { workflowEventSchema, type WorkflowEvent } from "../event-store/events.js";
 import type { SerializedError } from "../workflow/error-serialization.js";
 
@@ -157,10 +158,14 @@ function toOutcome(row: StepResultRow): StepOutcome {
 /**
  * Options for `createResultRecorder`. `queueName` is the queue the first
  * workflow task of each child run goes to; recording a `child_started` event
- * without it is an error.
+ * without it is an error. With `tracing`, every recorded workflow task emits
+ * a `workflow.task` span and every created child run a `workflow.child`
+ * span, both under the run's stored `traceparent`. Redelivered, discarded or
+ * rolled back tasks emit nothing.
  */
 export interface ResultRecorderOptions {
   readonly queueName?: string;
+  readonly tracing?: Tracing;
 }
 
 /**
@@ -178,6 +183,7 @@ export function createResultRecorder(
   codec: Codec = jsonCodec,
   recorderOptions: ResultRecorderOptions = {},
 ): ResultRecorder {
+  const tracing = recorderOptions.tracing ?? noopTracing;
   return {
     async recordStepResult(input: RecordStepResultInput): Promise<RecordedStepResult> {
       const event = toStepEvent(input);
@@ -233,9 +239,15 @@ export function createResultRecorder(
     ): Promise<RecordedWorkflowTaskResult> {
       const events = input.events.map((event) => workflowEventSchema.parse(event));
       const client = await pool.connect();
+      const pendingSpans: TraceSpan[] = [];
       try {
         await client.query("begin");
         const status = await lockRunStatus(client, input.runId);
+        const runTrace = await client.query<{ traceparent: string | null }>(
+          "select traceparent from workflow_runs where id = $1",
+          [input.runId],
+        );
+        const traceparent = runTrace.rows[0]?.traceparent ?? null;
         const existing = await client.query<{ first: string; last: string }>(
           `select first_sequence_number as first, last_sequence_number as last
            from workflow_task_results where run_id = $1 and task_key = $2`,
@@ -274,16 +286,28 @@ export function createResultRecorder(
             if (recorderOptions.queueName === undefined) {
               throw new Error("recording a child workflow needs a queueName");
             }
-            await createChildRunOnClient(
+            const childSpan = tracing.startSpan("workflow.child", {
+              parent: traceparent,
+              attributes: {
+                "dee.run.id": input.runId,
+                "dee.child.id": event.childId,
+                "dee.workflow.type": event.workflowType,
+              },
+            });
+            const child = await createChildRunOnClient(
               client,
               codec,
               {
                 runId: input.runId,
                 namespaceId: namespace.rows[0]?.namespace_id ?? "",
                 queueName: recorderOptions.queueName,
+                traceparent: childSpan.traceparent ?? traceparent,
               },
               event,
             );
+            if (child.created) {
+              pendingSpans.push(childSpan);
+            }
           }
           if (event.type === "run_continued_as_new") {
             await createContinuedRunOnClient(client, codec, input.runId, event);
@@ -308,6 +332,18 @@ export function createResultRecorder(
           [input.runId, input.taskKey, firstSequenceNumber, lastSequenceNumber],
         );
         await client.query("commit");
+        const taskSpan = tracing.startSpan("workflow.task", {
+          parent: traceparent,
+          attributes: {
+            "dee.run.id": input.runId,
+            "dee.task.key": input.taskKey,
+            "dee.events.count": stored.length,
+          },
+        });
+        taskSpan.end();
+        for (const span of pendingSpans) {
+          span.end();
+        }
         return { recorded: true, firstSequenceNumber, lastSequenceNumber };
       } catch (error) {
         await client.query("rollback").catch(() => undefined);

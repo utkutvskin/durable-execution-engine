@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from "pg";
 import { appendEventsOnClient, readCurrentSequenceOnClient } from "../event-store/event-store.js";
 import { jsonCodec, type Codec } from "../event-store/codec.js";
 import { systemClock, type ClockSource } from "../workflow/sources.js";
+import { noopTracing, type Tracing } from "../observability/tracing.js";
 import { createMonotonicClock } from "./monotonic-clock.js";
 
 /**
@@ -54,6 +55,7 @@ export interface TimerSchedulerOptions {
   readonly clock?: ClockSource;
   readonly codec?: Codec;
   readonly batchSize?: number;
+  readonly tracing?: Tracing;
 }
 
 /**
@@ -113,6 +115,7 @@ interface DueTimerRow {
   run_id: string;
   timer_id: string;
   fire_at: Date;
+  created_at: Date;
 }
 
 const DEFAULT_BATCH_SIZE = 100;
@@ -126,6 +129,7 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
   const clock = createMonotonicClock(options.clock ?? systemClock);
   const codec = options.codec ?? jsonCodec;
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
+  const tracing = options.tracing ?? noopTracing;
   if (!Number.isInteger(batchSize) || batchSize <= 0) {
     throw new RangeError(`batchSize must be a positive integer, got ${String(batchSize)}`);
   }
@@ -135,7 +139,7 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
     try {
       await client.query("begin");
       const due = await client.query<DueTimerRow>(
-        `select id, run_id, timer_id, fire_at from timers
+        `select id, run_id, timer_id, fire_at, created_at from timers
          where state = 'PENDING' and fire_at <= $1
          order by fire_at, id
          limit 1
@@ -147,10 +151,13 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
         await client.query("commit");
         return undefined;
       }
-      const run = await client.query<{ namespace_id: string; status: string }>(
-        "select namespace_id, status from workflow_runs where id = $1 for update",
-        [timer.run_id],
-      );
+      const run = await client.query<{
+        namespace_id: string;
+        status: string;
+        traceparent: string | null;
+      }>("select namespace_id, status, traceparent from workflow_runs where id = $1 for update", [
+        timer.run_id,
+      ]);
       const runRow = run.rows[0];
       if (runRow?.status !== "RUNNING") {
         await client.query("update timers set state = 'CANCELLED', fired_at = $2 where id = $1", [
@@ -181,6 +188,16 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
         ],
       );
       await client.query("commit");
+      const span = tracing.startSpan(`timer ${timer.timer_id}`, {
+        parent: runRow.traceparent,
+        startTime: timer.created_at,
+        attributes: {
+          "dee.run.id": timer.run_id,
+          "dee.timer.id": timer.timer_id,
+          "dee.timer.late_ms": Math.max(0, now.getTime() - timer.fire_at.getTime()),
+        },
+      });
+      span.end(now);
       return {
         runId: timer.run_id,
         timerId: timer.timer_id,
