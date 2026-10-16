@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 25: metrics, logs and health endpoints
+
+- **Status:** DONE
+- **Completed day:** 25
+- **Files added or changed:** `packages/core/src/observability/metrics-registry.ts` (new: `createMetricsRegistry`, `METRICS_CONTENT_TYPE`), `engine-metrics.ts` (new: `createEngineMetrics`, `ENGINE_METRIC_NAMES`), `logger.ts` (new: `createLogger`, `withCorrelationId`, `resolveCorrelationId`), `health.ts` (new: `createHealthChecks`), `prometheus-text.ts` (strict parser used by tests) with tests `metrics-registry.test.ts`, `engine-metrics.test.ts`, `logger.test.ts`, `health.test.ts`, `dashboard.test.ts`, `packages/core/src/index.ts`, `packages/worker/src/worker.ts` (`onTaskSettled`, `clock` options, `SettledTask`) and `worker.test.ts`, `packages/api/src/server.ts` (`/health`, `/ready`, `/metrics`, correlation id header and request log; `health`, `metrics`, `logger` options) and `observability.test.ts`, `docs/grafana/dee-overview.json` (new), `docs/OBSERVABILITY.md` (new), `docs/DECISIONS.md` (ADR-0035), `README.md`
+- **Technical decisions:** ADR-0035 in `docs/DECISIONS.md`. No new dependency: the Prometheus text format is rendered in-house.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (80 test files, 604 tests, 35 of them new today). The `dee` role/database were recreated by hand again after the container restart (`service postgresql start` first, then create the superuser role `dee` with password `dee` and database `dee`). Proven by test: `/metrics` over real HTTP parses with a strict Prometheus text parser and declares exactly the 8 metrics (`dee_queue_depth`, `dee_task_latency_seconds`, `dee_step_retries_total`, `dee_timer_lag_seconds`, `dee_active_workers`, `dee_runs`, `dee_tasks_quarantined`, `dee_leases_reclaimed_total`); values are checked against real Postgres rows (delayed tasks excluded from depth, timer lag 90 s, 2 distinct leasing workers, retried attempts, quarantined tasks, run counts by status). With an api pool pointed at a closed port, `/ready` answers 503, `/health` 200 and `/metrics` 503. A correlation id header is echoed, an invalid one replaced, and the request log line carries it; the correlation id survives awaits and concurrent calls stay apart. The dashboard JSON queries only exported metrics and charts all eight. Not done: nothing starts a metrics server or passes `onTaskSettled` in a running process (the entry points are a later day), no Prometheus or Grafana service is in compose, the dashboard was never imported into a real Grafana, and the default api logger writes to stdout so existing api tests print request lines. Day 26 (web UI) is next.
+
+---
+
 ## Day 24: distributed tracing
 
 - **Status:** DONE
