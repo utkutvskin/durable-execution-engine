@@ -2,7 +2,18 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { Pool } from "@dee/core";
 import { createApiKeyStore, type ApiKeyStore } from "./api-keys.js";
 import { buildOpenApiDocument, type JsonObject } from "./openapi.js";
-import type { Tracing } from "@dee/core";
+import {
+  METRICS_CONTENT_TYPE,
+  createEngineMetrics,
+  createHealthChecks,
+  createLogger,
+  resolveCorrelationId,
+  withCorrelationId,
+  type EngineMetrics,
+  type HealthChecks,
+  type Logger,
+  type Tracing,
+} from "@dee/core";
 import { createQuotaGuard, type QuotaGuard, type RequestKind } from "./quota-guard.js";
 import { createRoutes, toErrorResult, type RawRequest, type Route } from "./routes.js";
 import { createRunService, type RunService } from "./run-service.js";
@@ -12,6 +23,12 @@ import { createRunService, type RunService } from "./run-service.js";
  * tasks of started, signalled and cancelled runs go to. With `tracing`, a
  * started run gets a `workflow.start` span that continues the request's
  * `traceparent` header and that the run's later spans hang under.
+ *
+ * `GET /health`, `GET /ready` and `GET /metrics` are public. `health` and
+ * `metrics` default to the ones built over the pool. Every request gets a
+ * correlation id (the `x-correlation-id` request header when usable, else a
+ * new uuid), returned in the same response header and attached to the
+ * request's log lines written through `logger`.
  */
 export interface ApiOptions {
   readonly queueName: string;
@@ -21,6 +38,9 @@ export interface ApiOptions {
   readonly quotaGuard?: QuotaGuard;
   readonly maxQueueDepth?: number;
   readonly tracing?: Tracing;
+  readonly health?: HealthChecks;
+  readonly metrics?: EngineMetrics;
+  readonly logger?: Logger;
 }
 
 /**
@@ -31,6 +51,7 @@ export interface ApiHandler {
   readonly apiKeys: ApiKeyStore;
   readonly routes: readonly Route[];
   readonly openApiDocument: JsonObject;
+  readonly metrics: EngineMetrics;
 }
 
 const DEFAULT_MAX_BODY_BYTES = 1024 * 1024;
@@ -137,10 +158,49 @@ export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler {
       ...(options.maxQueueDepth === undefined ? {} : { maxQueueDepth: options.maxQueueDepth }),
     });
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
+  const health = options.health ?? createHealthChecks(pool);
+  const metrics = options.metrics ?? createEngineMetrics(pool);
+  const logger = options.logger ?? createLogger();
+
+  async function handleOperational(pathname: string, response: ServerResponse): Promise<boolean> {
+    if (pathname === "/health") {
+      send(response, 200, health.live());
+      return true;
+    }
+    if (pathname === "/ready") {
+      const readiness = await health.ready();
+      send(response, readiness.ready ? 200 : 503, {
+        status: readiness.ready ? "ok" : "unavailable",
+        checks: readiness.checks,
+      });
+      return true;
+    }
+    if (pathname === "/metrics") {
+      let text: string;
+      try {
+        text = await metrics.render();
+      } catch (error) {
+        logger.error("metrics render failed", { error });
+        sendError(response, 503, "metrics_unavailable", "metrics could not be collected");
+        return true;
+      }
+      response.writeHead(200, {
+        "content-type": METRICS_CONTENT_TYPE,
+        "content-length": Buffer.byteLength(text),
+      });
+      response.end(text);
+      return true;
+    }
+    return false;
+  }
 
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const url = new URL(request.url ?? "/", "http://localhost");
     const method = (request.method ?? "GET").toLowerCase();
+
+    if (method === "get" && (await handleOperational(url.pathname, response))) {
+      return;
+    }
 
     if (url.pathname === "/openapi.json" && method === "get") {
       send(response, 200, openApiDocument);
@@ -211,8 +271,26 @@ export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler {
     apiKeys,
     routes,
     openApiDocument,
+    metrics,
     listener(request, response): void {
-      handle(request, response).catch((error: unknown) => {
+      const correlationId = resolveCorrelationId(
+        Array.isArray(request.headers["x-correlation-id"])
+          ? request.headers["x-correlation-id"][0]
+          : request.headers["x-correlation-id"],
+      );
+      response.setHeader("x-correlation-id", correlationId);
+      const startedAt = Date.now();
+      response.on("finish", () => {
+        withCorrelationId(correlationId, () => {
+          logger.info("request completed", {
+            method: request.method,
+            path: (request.url ?? "/").split("?")[0],
+            status: response.statusCode,
+            durationMs: Date.now() - startedAt,
+          });
+        });
+      });
+      withCorrelationId(correlationId, () => handle(request, response)).catch((error: unknown) => {
         if (response.headersSent) {
           response.destroy();
           return;

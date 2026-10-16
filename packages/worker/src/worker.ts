@@ -38,6 +38,10 @@ export type TaskHandler = (task: LeasedTask, context: TaskContext) => Promise<vo
  *   fill. Resolving `0` skips the poll and waits like an empty poll; a failing
  *   budget is reported to `onError` and the poll uses all free slots. See
  *   `createDepthBackpressure`.
+ * - `onTaskSettled`: called after each task is acked or nacked with its
+ *   outcome and the seconds from the task becoming visible to settling, as
+ *   measured by `clock` (default the system clock). A throwing callback is
+ *   reported to `onError`.
  * - `identity`: stamped on every leased task, so a reclaimed lease names
  *   the worker that lost it.
  * - `onError`: receives errors the worker survives, such as a failed poll.
@@ -56,7 +60,18 @@ export interface WorkerOptions {
   readonly timers?: Timers;
   readonly identity?: WorkerIdentity;
   readonly pollBudget?: (free: number) => Promise<number>;
+  readonly onTaskSettled?: (settled: SettledTask) => void;
+  readonly clock?: { now(): Date };
   readonly onError?: (error: unknown) => void;
+}
+
+/**
+ * What `WorkerOptions.onTaskSettled` receives.
+ */
+export interface SettledTask {
+  readonly task: LeasedTask;
+  readonly outcome: "completed" | "failed";
+  readonly latencySeconds: number;
 }
 
 /**
@@ -109,6 +124,8 @@ interface ResolvedOptions {
   readonly timers: Timers;
   readonly identity: WorkerIdentity | undefined;
   readonly pollBudget: ((free: number) => Promise<number>) | undefined;
+  readonly onTaskSettled: ((settled: SettledTask) => void) | undefined;
+  readonly clock: { now(): Date };
   readonly onError: (error: unknown) => void;
 }
 
@@ -165,6 +182,8 @@ function resolveOptions(options: WorkerOptions): ResolvedOptions {
     timers: options.timers ?? systemTimers,
     identity: options.identity,
     pollBudget: options.pollBudget,
+    onTaskSettled: options.onTaskSettled,
+    clock: options.clock ?? { now: () => new Date() },
     onError:
       options.onError ??
       ((): void => {
@@ -261,6 +280,16 @@ export function createWorker(options: WorkerOptions): Worker {
       } else {
         await config.queue.ack(running.task.id, running.task.leaseToken);
       }
+    } catch (error) {
+      config.onError(error);
+      return;
+    }
+    try {
+      config.onTaskSettled?.({
+        task: running.task,
+        outcome: failed ? "failed" : "completed",
+        latencySeconds: (config.clock.now().getTime() - running.task.visibleAt.getTime()) / 1000,
+      });
     } catch (error) {
       config.onError(error);
     }

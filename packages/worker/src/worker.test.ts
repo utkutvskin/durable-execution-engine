@@ -228,3 +228,41 @@ describe("worker graceful shutdown", () => {
     expect(await first).toEqual({ completed: 0, dropped: 0 });
   });
 });
+
+describe("worker settle callback", () => {
+  it("reports completed and failed tasks with the seconds since they became visible", async () => {
+    const settled: { id: string; outcome: string; latencySeconds: number }[] = [];
+    const { queue, worker } = setup({
+      handler: (task) =>
+        task.id === "task-1" ? Promise.reject(new Error("boom")) : Promise.resolve(),
+      clock: { now: () => new Date(2500) },
+      onTaskSettled: (entry) =>
+        settled.push({
+          id: entry.task.id,
+          outcome: entry.outcome,
+          latencySeconds: entry.latencySeconds,
+        }),
+    });
+    queue.add(2);
+    worker.start();
+    await waitFor(() => settled.length === 2);
+    expect(settled).toContainEqual({ id: "task-1", outcome: "failed", latencySeconds: 2.5 });
+    expect(settled).toContainEqual({ id: "task-2", outcome: "completed", latencySeconds: 2.5 });
+    await worker.stop();
+  });
+
+  it("survives a throwing callback and reports it to onError", async () => {
+    const errors: unknown[] = [];
+    const { queue, worker } = setup({
+      onTaskSettled: () => {
+        throw new Error("callback broke");
+      },
+      onError: (error) => errors.push(error),
+    });
+    queue.add(2);
+    worker.start();
+    await waitFor(() => queue.acked.length === 2);
+    expect(errors).toHaveLength(2);
+    await worker.stop();
+  });
+});
