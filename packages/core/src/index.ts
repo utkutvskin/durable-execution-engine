@@ -265,3 +265,33 @@ export type {
 } from "./observability/tracing.js";
 export { createTracingProvider } from "./observability/provider.js";
 export type { TracingProvider, TracingProviderOptions } from "./observability/provider.js";
+
+export { METRICS_CONTENT_TYPE, createMetricsRegistry } from "./observability/metrics-registry.js";
+export type {
+  Counter,
+  Gauge,
+  Histogram,
+  Labels,
+  MetricDefinition,
+  MetricsRegistry,
+} from "./observability/metrics-registry.js";
+export {
+  ENGINE_METRIC_NAMES,
+  TASK_LATENCY_BUCKETS,
+  createEngineMetrics,
+} from "./observability/engine-metrics.js";
+export type {
+  EngineMetrics,
+  EngineMetricsOptions,
+  TaskOutcome,
+} from "./observability/engine-metrics.js";
+export {
+  createLogger,
+  currentCorrelationId,
+  resolveCorrelationId,
+  silentLogger,
+  withCorrelationId,
+} from "./observability/logger.js";
+export type { LogFields, LogLevel, Logger, LoggerOptions } from "./observability/logger.js";
+export { createHealthChecks } from "./observability/health.js";
+export type { HealthChecks, HealthChecksOptions, ReadinessResult } from "./observability/health.js";
