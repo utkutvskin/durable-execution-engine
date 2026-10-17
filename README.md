@@ -59,6 +59,7 @@ only needs a reachable Postgres 16, not a pre-migrated one.
 - `docs/CONVENTIONS.md` — writing and commit conventions.
 - `docs/DECISIONS.md` — architecture decision records.
 - `docs/API.md` — the HTTP endpoints, authentication, idempotent start, quotas, rate limits and the OpenAPI document.
+- `docs/UI.md` — the run explorer web ui, how it is served, what it shows and how it is tested.
 - `docs/TRACING.md` — how a run becomes one trace, the span names, sampling and how to look at it in Jaeger.
 - `docs/OBSERVABILITY.md` — metrics, structured logs, health probes and the example Grafana dashboard.
 - `docs/VERSIONING.md` — how to change a workflow without breaking running runs.

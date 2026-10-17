@@ -16,18 +16,30 @@ The key is shown once; only its sha256 hash is stored.
 
 ## Endpoints
 
-| Method | Path                         | Operation      | Success |
-| ------ | ---------------------------- | -------------- | ------- |
-| POST   | `/v1/runs`                   | `startRun`     | 201/200 |
-| GET    | `/v1/runs`                   | `listRuns`     | 200     |
-| GET    | `/v1/runs/{runId}`           | `describeRun`  | 200     |
-| GET    | `/v1/runs/{runId}/history`   | `getHistory`   | 200     |
-| POST   | `/v1/runs/{runId}/signal`    | `signalRun`    | 200     |
-| POST   | `/v1/runs/{runId}/cancel`    | `cancelRun`    | 202     |
-| POST   | `/v1/runs/{runId}/terminate` | `terminateRun` | 200     |
-| GET    | `/openapi.json`              | public         | 200     |
+| Method | Path                                      | Operation           | Success |
+| ------ | ----------------------------------------- | ------------------- | ------- |
+| POST   | `/v1/runs`                                | `startRun`          | 201/200 |
+| GET    | `/v1/runs`                                | `listRuns`          | 200     |
+| GET    | `/v1/runs/{runId}`                        | `describeRun`       | 200     |
+| GET    | `/v1/runs/{runId}/history`                | `getHistory`        | 200     |
+| POST   | `/v1/runs/{runId}/signal`                 | `signalRun`         | 200     |
+| POST   | `/v1/runs/{runId}/cancel`                 | `cancelRun`         | 202     |
+| POST   | `/v1/runs/{runId}/terminate`              | `terminateRun`      | 200     |
+| GET    | `/v1/namespace`                           | `describeNamespace` | 200     |
+| GET    | `/v1/dead-letters`                        | `listDeadLetters`   | 200     |
+| POST   | `/v1/dead-letters/{deadLetterId}/requeue` | `requeueDeadLetter` | 200     |
+| GET    | `/v1/runs/{runId}/stream`                 | not in OpenAPI      | 200     |
+| GET    | `/openapi.json`                           | public              | 200     |
 
 Errors are `{ "error": { "code", "message", "details"? } }`. 400 is a validation failure or a malformed body or cursor, 409 a closed run or a reused idempotency key with a different request, 413 a body over 1 MiB.
+
+## Run stream
+
+`GET /v1/runs/{runId}/stream?after=<sequence number>` is a server sent events stream of one run. It sends a `slice` event with `{ events, status, closed }` for the history after `after` (or the `Last-Event-ID` header, which holds the last sequence number sent), keeps polling the database every `streamPollMs` (default 500 ms) and sends a new `slice` whenever events or the status change. When the run has closed and everything was sent it sends an `end` event and closes. A comment line is sent as a heartbeat every 15 seconds. The stream needs the bearer key like every other call, so a browser reads it with `fetch` and not with `EventSource`. A run of another namespace answers 404, a cursor that is not a non negative integer answers 400.
+
+## Dead letters
+
+`GET /v1/dead-letters` lists the namespace's step tasks that used all their attempts, oldest first. `POST /v1/dead-letters/{deadLetterId}/requeue` puts one back on its queue with a fresh retry budget and answers `{ "taskId" }`; an unknown id, an id of another namespace and an entry that was requeued already all answer 404.
 
 ## Idempotent start
 
@@ -35,7 +47,7 @@ Send `Idempotency-Key: <1 to 255 characters>` with `POST /v1/runs`. The first ca
 
 ## Listing
 
-`GET /v1/runs?status=&workflowType=&limit=&cursor=` returns runs newest first, at most `limit` (1 to 200, default 50). Pass the returned `nextCursor` to get the next page; the last page has none.
+`GET /v1/runs?status=&workflowType=&startedAfter=&startedBefore=&limit=&cursor=` returns runs newest first, at most `limit` (1 to 200, default 50). Pass the returned `nextCursor` to get the next page; the last page has none. `startedAfter` (inclusive) and `startedBefore` (exclusive) are ISO 8601 timestamps.
 
 ## Rate limits and quotas
 
