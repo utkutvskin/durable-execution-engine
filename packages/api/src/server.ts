@@ -1,3 +1,5 @@
+import { performance } from "node:perf_hooks";
+import { clearTimeout, setTimeout } from "node:timers";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { z } from "zod";
 import type { Pool } from "@dee/core";
@@ -39,7 +41,9 @@ export type SideHandler = (request: IncomingMessage, response: ServerResponse) =
  *
  * `GET /v1/runs/{runId}/stream` is a server sent events stream of a run's
  * history, polled from the database every `streamPollMs` (default 500). It
- * is not part of the OpenAPI document. `sideHandler` is offered every request
+ * is not part of the OpenAPI document. The handler reads its clocks and
+ * timers from `node:perf_hooks` and `node:timers`, which workflow decisions
+ * do not patch, so it keeps working in a process that also decides workflows. `sideHandler` is offered every request
  * first and answers the ones that are not api calls.
  */
 export interface ApiOptions {
@@ -151,12 +155,18 @@ function send(
 
 function sleepUnlessClosed(response: ServerResponse, ms: number): Promise<void> {
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    response.once("close", () => {
+    const finish = (): void => {
       clearTimeout(timer);
+      response.off("close", finish);
       resolve();
-    });
+    };
+    const timer = setTimeout(finish, ms);
+    response.once("close", finish);
   });
+}
+
+function isClosed(response: ServerResponse): boolean {
+  return response.destroyed || response.writableEnded;
 }
 
 function parseStreamCursor(url: URL, request: IncomingMessage): number {
@@ -262,7 +272,7 @@ export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler {
     let lastStatus: string | undefined;
     let idlePolls = 0;
     const heartbeatEvery = Math.max(1, Math.round(STREAM_HEARTBEAT_MS / streamPollMs));
-    while (!response.destroyed && !response.writableEnded) {
+    while (!isClosed(response)) {
       const last = slice.events.at(-1);
       if (slice.events.length > 0 || slice.status !== lastStatus) {
         if (last !== undefined) {
@@ -288,7 +298,7 @@ export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler {
         }
       }
       await sleepUnlessClosed(response, streamPollMs);
-      if (response.destroyed || response.writableEnded) {
+      if (isClosed(response)) {
         return;
       }
       slice = await service.readHistorySince(identity.namespaceId, runId, cursor);
@@ -402,14 +412,14 @@ export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler {
           : request.headers["x-correlation-id"],
       );
       response.setHeader("x-correlation-id", correlationId);
-      const startedAt = Date.now();
+      const startedAt = performance.now();
       response.on("finish", () => {
         withCorrelationId(correlationId, () => {
           logger.info("request completed", {
             method: request.method,
             path: (request.url ?? "/").split("?")[0],
             status: response.statusCode,
-            durationMs: Date.now() - startedAt,
+            durationMs: Math.round(performance.now() - startedAt),
           });
         });
       });

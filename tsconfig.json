@@ -5,7 +5,11 @@
     "declaration": false,
     "declarationMap": false,
     "incremental": false,
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@dee/core": ["./packages/core/src/index.ts"]
+    }
   },
   "include": ["test/**/*.ts", "vitest.config.ts"]
 }

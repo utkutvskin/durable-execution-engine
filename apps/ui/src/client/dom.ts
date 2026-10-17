@@ -49,12 +49,13 @@ export function h<K extends keyof HTMLElementTagNameMap>(
   if (
     element instanceof HTMLInputElement ||
     element instanceof HTMLTextAreaElement ||
-    element instanceof HTMLSelectElement
+    element instanceof HTMLSelectElement ||
+    element instanceof HTMLOptionElement
   ) {
     if (props.value !== undefined) {
       element.value = props.value;
     }
-    if (props.name !== undefined) {
+    if (props.name !== undefined && !(element instanceof HTMLOptionElement)) {
       element.name = props.name;
     }
   }

@@ -6,11 +6,15 @@ const { Pool: PoolConstructor } = pg;
 
 /**
  * Options for `createPool`. `schema` makes every connection default to that
- * Postgres schema through `search_path`.
+ * Postgres schema through `search_path`. `idleTimeoutMillis` of 0 keeps idle
+ * connections open and arms no timer when a client is released, which a
+ * process needs when it also runs workflow decisions: those patch the global
+ * `setTimeout` while they run.
  */
 export interface CreatePoolOptions {
   readonly schema?: string;
   readonly max?: number;
+  readonly idleTimeoutMillis?: number;
 }
 
 /**
@@ -22,5 +26,8 @@ export function createPool(env: DatabaseUrlEnv, options: CreatePoolOptions = {})
     connectionString: resolveDatabaseUrl(env),
     ...(options.schema === undefined ? {} : { options: `-c search_path=${options.schema}` }),
     ...(options.max === undefined ? {} : { max: options.max }),
+    ...(options.idleTimeoutMillis === undefined
+      ? {}
+      : { idleTimeoutMillis: options.idleTimeoutMillis }),
   });
 }
