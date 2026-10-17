@@ -3,3 +3,5 @@
  * resolution tests to confirm this package is wired up correctly.
  */
 export const packageName = "@dee/ui";
+
+export { UI_BASE_PATH, createUiHandler } from "./server.js";
