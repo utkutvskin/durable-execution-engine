@@ -25,12 +25,15 @@ describe("generated openapi document", () => {
     expect(Object.values(paths).flatMap((item) => Object.keys(item))).toHaveLength(routes.length);
   });
 
-  it("covers the seven endpoints of the product surface", () => {
+  it("covers the endpoints of the product surface and the ui", () => {
     expect(routes.map((route) => route.operationId).sort()).toEqual([
       "cancelRun",
+      "describeNamespace",
       "describeRun",
       "getHistory",
+      "listDeadLetters",
       "listRuns",
+      "requeueDeadLetter",
       "signalRun",
       "startRun",
       "terminateRun",
@@ -60,6 +63,8 @@ describe("generated openapi document", () => {
     expect(parameters.map((parameter) => parameter.name)).toEqual([
       "status",
       "workflowType",
+      "startedAfter",
+      "startedBefore",
       "limit",
       "cursor",
     ]);

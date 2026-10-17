@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import {
+  createDeadLetterQueue,
   noopTracing,
   type Tracing,
   RunNotFoundError,
@@ -43,6 +44,48 @@ export class InvalidCursorError extends Error {
     super("the pagination cursor is malformed; request the first page again");
     this.name = "InvalidCursorError";
   }
+}
+
+/**
+ * Raised when a dead letter does not exist in the caller's namespace or was
+ * requeued already.
+ */
+export class DeadLetterNotFoundError extends Error {
+  constructor(id: string) {
+    super(`dead letter "${id}" was not found`);
+    this.name = "DeadLetterNotFoundError";
+  }
+}
+
+/**
+ * A step task that ran out of attempts, as the api shows it.
+ */
+export interface DeadLetterSummary {
+  readonly id: string;
+  readonly runId: string;
+  readonly stepId: string;
+  readonly attempts: number;
+  readonly error: { readonly name: string; readonly message: string };
+  readonly reason: string;
+  readonly createdAt: string;
+}
+
+/**
+ * The namespace a caller is authenticated for.
+ */
+export interface NamespaceDescription {
+  readonly id: string;
+  readonly name: string;
+}
+
+/**
+ * The events of a run after a sequence number, with the run's status at the
+ * time of the read. `closed` is true once the run has left `RUNNING`.
+ */
+export interface HistorySlice {
+  readonly events: readonly HistoryEntry[];
+  readonly status: string;
+  readonly closed: boolean;
 }
 
 /**
@@ -92,6 +135,8 @@ export interface StartRunResult {
 export interface ListRunsInput {
   readonly status?: string | undefined;
   readonly workflowType?: string | undefined;
+  readonly startedAfter?: string | undefined;
+  readonly startedBefore?: string | undefined;
   readonly limit: number;
   readonly cursor?: string | undefined;
 }
@@ -142,6 +187,37 @@ export interface RunService {
    * `RunNotFoundError`.
    */
   getHistory(namespaceId: string, runId: string): Promise<readonly HistoryEntry[]>;
+
+  /**
+   * Reads the events of a run with a sequence number above `afterSequence`
+   * together with the run's status. Rejects with `RunNotFoundError`.
+   */
+  readHistorySince(
+    namespaceId: string,
+    runId: string,
+    afterSequence: number,
+  ): Promise<HistorySlice>;
+
+  /**
+   * Reads the namespace the caller is authenticated for.
+   */
+  describeNamespace(namespaceId: string): Promise<NamespaceDescription>;
+
+  /**
+   * Lists the namespace's dead letters that wait for an operator, oldest
+   * first.
+   */
+  listDeadLetters(namespaceId: string): Promise<readonly DeadLetterSummary[]>;
+
+  /**
+   * Puts a dead letter's step task back on its queue with a fresh retry
+   * budget and returns the new task id. Rejects with
+   * `DeadLetterNotFoundError`.
+   */
+  requeueDeadLetter(
+    namespaceId: string,
+    deadLetterId: string,
+  ): Promise<{ readonly taskId: string }>;
 
   /**
    * Sends a signal. Rejects with `RunNotFoundError` or `RunNotOpenError`.
@@ -256,6 +332,7 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     random: systemRandomSource,
   });
   const control: RunControl = createRunControl(pool, { queueName: options.queueName });
+  const deadLetters = createDeadLetterQueue(pool);
 
   async function assertOwned(namespaceId: string, runId: string): Promise<void> {
     if (!UUID_PATTERN.test(runId)) {
@@ -376,6 +453,14 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
         values.push(input.workflowType);
         conditions.push(`workflow_type = $${String(values.length)}`);
       }
+      if (input.startedAfter !== undefined) {
+        values.push(input.startedAfter);
+        conditions.push(`started_at >= $${String(values.length)}::timestamptz`);
+      }
+      if (input.startedBefore !== undefined) {
+        values.push(input.startedBefore);
+        conditions.push(`started_at < $${String(values.length)}::timestamptz`);
+      }
       if (input.cursor !== undefined) {
         const { startedCursor, runId } = decodeCursor(input.cursor);
         values.push(startedCursor, runId);
@@ -412,6 +497,62 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
         createdAt: stored.createdAt.toISOString(),
         event: stored.event,
       }));
+    },
+
+    async readHistorySince(namespaceId, runId, afterSequence) {
+      const run = await readRun(namespaceId, runId);
+      const events = await store.read(runId, afterSequence);
+      return {
+        events: events.map((stored) => ({
+          sequenceNumber: stored.sequenceNumber,
+          createdAt: stored.createdAt.toISOString(),
+          event: stored.event,
+        })),
+        status: run.status,
+        closed: run.status !== "RUNNING",
+      };
+    },
+
+    async describeNamespace(namespaceId) {
+      const result = await pool.query<{ id: string; name: string }>(
+        "select id, name from namespaces where id = $1",
+        [namespaceId],
+      );
+      const row = result.rows[0];
+      if (row === undefined) {
+        throw new Error(`namespace "${namespaceId}" does not exist`);
+      }
+      return { id: row.id, name: row.name };
+    },
+
+    async listDeadLetters(namespaceId) {
+      const all = await deadLetters.list();
+      return all
+        .filter((letter) => letter.namespaceId === namespaceId)
+        .map((letter) => ({
+          id: letter.id,
+          runId: letter.runId,
+          stepId: letter.stepId,
+          attempts: letter.attempts,
+          error: { name: letter.error.name, message: letter.error.message },
+          reason: letter.reason,
+          createdAt: letter.createdAt.toISOString(),
+        }));
+    },
+
+    async requeueDeadLetter(namespaceId, deadLetterId) {
+      if (!UUID_PATTERN.test(deadLetterId)) {
+        throw new DeadLetterNotFoundError(deadLetterId);
+      }
+      const letter = await deadLetters.get(deadLetterId);
+      if (letter?.namespaceId !== namespaceId || letter.requeuedAt !== null) {
+        throw new DeadLetterNotFoundError(deadLetterId);
+      }
+      const taskId = await deadLetters.requeue(deadLetterId);
+      if (taskId === undefined) {
+        throw new DeadLetterNotFoundError(deadLetterId);
+      }
+      return { taskId };
     },
 
     async signalRun(namespaceId, runId, signalName, payload) {

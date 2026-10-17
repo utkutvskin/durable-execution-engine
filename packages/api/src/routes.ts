@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { RunAlreadyClosedError, RunNotFoundError, RunNotOpenError } from "@dee/core";
-import { IdempotencyConflictError, InvalidCursorError, type RunService } from "./run-service.js";
+import {
+  DeadLetterNotFoundError,
+  IdempotencyConflictError,
+  InvalidCursorError,
+  type RunService,
+} from "./run-service.js";
 
 /**
  * What a route handler produces: a status code and a JSON body.
@@ -102,6 +107,8 @@ const startResponseSchema = z
 const listQuerySchema = z.object({
   status: runStatusSchema.optional(),
   workflowType: z.string().min(1).optional(),
+  startedAfter: z.iso.datetime().optional(),
+  startedBefore: z.iso.datetime().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   cursor: z.string().min(1).optional(),
 });
@@ -121,6 +128,28 @@ const historyResponseSchema = z
     ),
   })
   .meta({ id: "HistoryResponse" });
+
+const namespaceSchema = z
+  .object({ id: z.uuid(), name: z.string() })
+  .meta({ id: "NamespaceDescription" });
+
+const deadLetterSchema = z
+  .object({
+    id: z.uuid(),
+    runId: z.uuid(),
+    stepId: z.string(),
+    attempts: z.number().int(),
+    error: z.object({ name: z.string(), message: z.string() }),
+    reason: z.string(),
+    createdAt: z.iso.datetime(),
+  })
+  .meta({ id: "DeadLetter" });
+
+const deadLetterListSchema = z
+  .object({ deadLetters: z.array(deadLetterSchema) })
+  .meta({ id: "DeadLetterListResponse" });
+
+const requeueResponseSchema = z.object({ taskId: z.uuid() }).meta({ id: "RequeueResponse" });
 
 const signalRequestSchema = z
   .object({ name: z.string().min(1).max(255), payload: z.unknown().optional() })
@@ -157,6 +186,9 @@ const commonErrors = {
 } as const;
 
 const notFound = errorResponse("The run does not exist in the caller's namespace.");
+const deadLetterNotFound = errorResponse(
+  "The dead letter does not exist in the caller's namespace or was requeued already.",
+);
 
 interface RouteDefinition<TBody, TQuery> {
   readonly method: "get" | "post";
@@ -187,6 +219,10 @@ function defineRoute<TBody = undefined, TQuery = undefined>(
       return handle({ ...request, parsedBody, parsedQuery });
     },
   };
+}
+
+function deadLetterIdOf(request: RawRequest): string {
+  return request.params["deadLetterId"] ?? "";
 }
 
 function runIdOf(request: RawRequest): string {
@@ -256,6 +292,51 @@ export function createRoutes(service: RunService): readonly Route[] {
       async handle(request) {
         const page = await service.listRuns(request.namespaceId, request.parsedQuery);
         return { status: 200, body: page };
+      },
+    }),
+    defineRoute({
+      method: "get",
+      path: "/v1/namespace",
+      operationId: "describeNamespace",
+      summary: "Describe the namespace the api key belongs to.",
+      responses: {
+        200: { description: "The namespace.", schema: namespaceSchema },
+        ...commonErrors,
+      },
+      async handle(request) {
+        return { status: 200, body: await service.describeNamespace(request.namespaceId) };
+      },
+    }),
+    defineRoute({
+      method: "get",
+      path: "/v1/dead-letters",
+      operationId: "listDeadLetters",
+      summary: "List the step tasks that ran out of attempts and wait for an operator.",
+      responses: {
+        200: { description: "The dead letters, oldest first.", schema: deadLetterListSchema },
+        ...commonErrors,
+      },
+      async handle(request) {
+        const deadLetters = await service.listDeadLetters(request.namespaceId);
+        return { status: 200, body: { deadLetters } };
+      },
+    }),
+    defineRoute({
+      method: "post",
+      path: "/v1/dead-letters/{deadLetterId}/requeue",
+      operationId: "requeueDeadLetter",
+      summary: "Put a dead lettered step task back on its queue with a fresh retry budget.",
+      responses: {
+        200: { description: "The step task was enqueued again.", schema: requeueResponseSchema },
+        ...commonErrors,
+        404: deadLetterNotFound,
+      },
+      async handle(request) {
+        const receipt = await service.requeueDeadLetter(
+          request.namespaceId,
+          deadLetterIdOf(request),
+        );
+        return { status: 200, body: receipt };
       },
     }),
     defineRoute({
@@ -382,6 +463,12 @@ export function toErrorResult(error: unknown): ErrorResult {
           })),
         },
       },
+    };
+  }
+  if (error instanceof DeadLetterNotFoundError) {
+    return {
+      status: 404,
+      body: { error: { code: "not_found", message: "dead letter not found" } },
     };
   }
   if (error instanceof RunNotFoundError) {

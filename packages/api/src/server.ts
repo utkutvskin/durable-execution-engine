@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { z } from "zod";
 import type { Pool } from "@dee/core";
-import { createApiKeyStore, type ApiKeyStore } from "./api-keys.js";
+import { createApiKeyStore, type ApiKeyStore, type AuthenticatedNamespace } from "./api-keys.js";
 import { buildOpenApiDocument, type JsonObject } from "./openapi.js";
 import {
   METRICS_CONTENT_TYPE,
@@ -19,6 +20,12 @@ import { createRoutes, toErrorResult, type RawRequest, type Route } from "./rout
 import { createRunService, type RunService } from "./run-service.js";
 
 /**
+ * Serves requests the api does not own, such as the web ui's static files.
+ * Returns true when it answered the request.
+ */
+export type SideHandler = (request: IncomingMessage, response: ServerResponse) => boolean;
+
+/**
  * Options for `createApiHandler`. `queueName` is the queue the workflow
  * tasks of started, signalled and cancelled runs go to. With `tracing`, a
  * started run gets a `workflow.start` span that continues the request's
@@ -29,6 +36,11 @@ import { createRunService, type RunService } from "./run-service.js";
  * correlation id (the `x-correlation-id` request header when usable, else a
  * new uuid), returned in the same response header and attached to the
  * request's log lines written through `logger`.
+ *
+ * `GET /v1/runs/{runId}/stream` is a server sent events stream of a run's
+ * history, polled from the database every `streamPollMs` (default 500). It
+ * is not part of the OpenAPI document. `sideHandler` is offered every request
+ * first and answers the ones that are not api calls.
  */
 export interface ApiOptions {
   readonly queueName: string;
@@ -41,6 +53,8 @@ export interface ApiOptions {
   readonly health?: HealthChecks;
   readonly metrics?: EngineMetrics;
   readonly logger?: Logger;
+  readonly streamPollMs?: number;
+  readonly sideHandler?: SideHandler;
 }
 
 /**
@@ -55,6 +69,9 @@ export interface ApiHandler {
 }
 
 const DEFAULT_MAX_BODY_BYTES = 1024 * 1024;
+const DEFAULT_STREAM_POLL_MS = 500;
+const STREAM_HEARTBEAT_MS = 15_000;
+const STREAM_PATH = "/v1/runs/{runId}/stream";
 
 class BodyTooLargeError extends Error {
   constructor(limit: number) {
@@ -132,6 +149,27 @@ function send(
   response.end(payload);
 }
 
+function sleepUnlessClosed(response: ServerResponse, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    response.once("close", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
+function parseStreamCursor(url: URL, request: IncomingMessage): number {
+  const raw = url.searchParams.get("after") ?? request.headers["last-event-id"] ?? "0";
+  const value = Array.isArray(raw) ? (raw[0] ?? "0") : raw;
+  if (!/^\d{1,15}$/.test(value)) {
+    throw new z.ZodError([
+      { code: "custom", path: ["after"], message: "must be a non negative integer" },
+    ]);
+  }
+  return Number(value);
+}
+
 function sendError(response: ServerResponse, status: number, code: string, message: string): void {
   send(response, status, { error: { code, message } });
 }
@@ -161,6 +199,7 @@ export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler {
   const health = options.health ?? createHealthChecks(pool);
   const metrics = options.metrics ?? createEngineMetrics(pool);
   const logger = options.logger ?? createLogger();
+  const streamPollMs = options.streamPollMs ?? DEFAULT_STREAM_POLL_MS;
 
   async function handleOperational(pathname: string, response: ServerResponse): Promise<boolean> {
     if (pathname === "/health") {
@@ -194,9 +233,75 @@ export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler {
     return false;
   }
 
+  async function streamRun(
+    request: IncomingMessage,
+    response: ServerResponse,
+    identity: AuthenticatedNamespace,
+    runId: string,
+    url: URL,
+  ): Promise<void> {
+    const rejection = await quotaGuard.check(identity.namespaceId, "read");
+    if (rejection !== undefined) {
+      send(
+        response,
+        rejection.status,
+        { error: { code: rejection.code, message: rejection.message } },
+        { "retry-after": String(rejection.retryAfterSeconds) },
+      );
+      return;
+    }
+    let cursor = parseStreamCursor(url, request);
+    let slice = await service.readHistorySince(identity.namespaceId, runId, cursor);
+    response.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+      "x-accel-buffering": "no",
+    });
+    response.write(": open\n\n");
+    let lastStatus: string | undefined;
+    let idlePolls = 0;
+    const heartbeatEvery = Math.max(1, Math.round(STREAM_HEARTBEAT_MS / streamPollMs));
+    while (!response.destroyed && !response.writableEnded) {
+      const last = slice.events.at(-1);
+      if (slice.events.length > 0 || slice.status !== lastStatus) {
+        if (last !== undefined) {
+          cursor = last.sequenceNumber;
+        }
+        lastStatus = slice.status;
+        idlePolls = 0;
+        response.write(
+          `id: ${String(cursor)}\nevent: slice\ndata: ${JSON.stringify({
+            events: slice.events,
+            status: slice.status,
+            closed: slice.closed,
+          })}\n\n`,
+        );
+      } else if (slice.closed) {
+        response.write("event: end\ndata: {}\n\n");
+        response.end();
+        return;
+      } else {
+        idlePolls += 1;
+        if (idlePolls % heartbeatEvery === 0) {
+          response.write(": ping\n\n");
+        }
+      }
+      await sleepUnlessClosed(response, streamPollMs);
+      if (response.destroyed || response.writableEnded) {
+        return;
+      }
+      slice = await service.readHistorySince(identity.namespaceId, runId, cursor);
+    }
+  }
+
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const url = new URL(request.url ?? "/", "http://localhost");
     const method = (request.method ?? "GET").toLowerCase();
+
+    if (options.sideHandler?.(request, response) === true) {
+      return;
+    }
 
     if (method === "get" && (await handleOperational(url.pathname, response))) {
       return;
@@ -204,6 +309,24 @@ export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler {
 
     if (url.pathname === "/openapi.json" && method === "get") {
       send(response, 200, openApiDocument);
+      return;
+    }
+
+    const streamParams = method === "get" ? matchPath(STREAM_PATH, url.pathname) : undefined;
+    if (streamParams !== undefined) {
+      const streamToken = bearerToken(request);
+      const streamIdentity =
+        streamToken === undefined ? undefined : await apiKeys.authenticate(streamToken);
+      if (streamIdentity === undefined) {
+        send(
+          response,
+          401,
+          { error: { code: "unauthorized", message: "a valid bearer api key is required" } },
+          { "www-authenticate": 'Bearer realm="dee"' },
+        );
+        return;
+      }
+      await streamRun(request, response, streamIdentity, streamParams["runId"] ?? "", url);
       return;
     }
 

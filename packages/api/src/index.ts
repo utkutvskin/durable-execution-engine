@@ -13,9 +13,17 @@ export { createQuotaGuard } from "./quota-guard.js";
 export type { QuotaGuard, QuotaGuardOptions, Rejection, RequestKind } from "./quota-guard.js";
 export { createRoutes, toErrorResult } from "./routes.js";
 export type { ErrorResult, RawRequest, ResponseSpec, Route, RouteResult } from "./routes.js";
-export { IdempotencyConflictError, InvalidCursorError, createRunService } from "./run-service.js";
+export {
+  DeadLetterNotFoundError,
+  IdempotencyConflictError,
+  InvalidCursorError,
+  createRunService,
+} from "./run-service.js";
 export type {
+  DeadLetterSummary,
   HistoryEntry,
+  HistorySlice,
+  NamespaceDescription,
   ListRunsInput,
   RunDescription,
   RunPage,
@@ -26,4 +34,4 @@ export type {
   StartRunResult,
 } from "./run-service.js";
 export { createApiHandler, createApiServer } from "./server.js";
-export type { ApiHandler, ApiOptions } from "./server.js";
+export type { ApiHandler, ApiOptions, SideHandler } from "./server.js";
