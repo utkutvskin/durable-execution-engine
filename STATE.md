@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 27: chaos tests and the invariant checker
+
+- **Status:** DONE
+- **Completed day:** 27
+- **Files added or changed:** `packages/core/src/invariants/invariant-checker.ts` (new: `createInvariantChecker`, `INVARIANT_NAMES`) and `invariant-checker.test.ts`, `packages/core/src/run/projection-store.ts` (events are read before the row lock, fold retried when the stored position moved) and `projection-store.test.ts`, `packages/core/src/db/pool.ts` (`onError`, always listens to pool and client errors) and `pool.test.ts`, `packages/core/src/index.ts` (`resolveDatabaseUrl`, checker exports), `packages/worker/src/chaos/` (new: `fault-proxy.ts`, `slow-pool.ts`, `seeded-random.ts`, `world.ts`, `scenarios.ts`, `report.ts`, `chaos-suite.integration.test.ts` and unit tests for the proxy, the slow pool, the random source and the report), `docs/CHAOS_REPORT.md` (new, written by the suite), `docs/DECISIONS.md` (ADR-0037), `docs/DEFERRED.md`, `README.md`
+- **Technical decisions:** ADR-0037 in `docs/DECISIONS.md`. No new dependency: the fault proxy is `node:net`, the slow disk is a pool wrapper.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (94 test files, 692 tests, 38 of them new today). The `dee` role/database were recreated by hand again after the container restart (`service postgresql start` first, then create the superuser role `dee` with password `dee` and database `dee`). The first `verify` of the session, run before any change, had 3 failing tests in 2 files that did not reproduce on two reruns; their names were not captured. Proven by test: the six scenarios (worker kill with `SIGKILL`, database connection loss through a TCP proxy including a commit whose answer is swallowed, double delivery with 2 to 4 concurrent deliveries per task, clock moved backward and forward with two timer schedulers racing, slow disk, network latency with bursts) each ran 10 seeded repetitions with 0 violations of the five invariants (run terminal or advancing, task not lost, step result written once, projection consistent, timer fired once), also on three further runs of the suite; each repetition also fails if no fault was injected, the workload did not converge, or a run ended with the wrong result. The checker is shown to catch planted violations in 11 tests. **The suite found two real bugs, both fixed:** `refreshProjection` and `rebuildProjection` deadlocked when as many calls ran at once as the pool had connections (a held client plus a second client for `store.read`), and `createPool` left a connection that died between statements as an unhandled `error` event, which ends the process. Not done (see `docs/DEFERRED.md` and ADR-0037): faults are injected in front of Postgres, so a restarted server, a real fsync stall and a lost network between hosts are not covered; a client released after its connection died goes back into the pool and fails one statement; the invariant checker treats a run parked on a signal as stalled, so the suite cannot park runs on signals; nothing runs the suite in CI. Day 28 (performance measurement and tuning) is next.
+
+---
+
 ## Day 26: web UI
 
 - **Status:** DONE
