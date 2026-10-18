@@ -33,10 +33,10 @@ function projectionFromRow(row: RunRow): RunProjection {
   };
 }
 
-async function lockRunRow(client: PoolClient, runId: string): Promise<RunRow> {
+async function readRunRow(client: PoolClient, runId: string, lock: boolean): Promise<RunRow> {
   const result = await client.query<RunRow>(
     `select status, input, result, error, closed_at, last_sequence_number
-     from workflow_runs where id = $1 for update`,
+     from workflow_runs where id = $1${lock ? " for update" : ""}`,
     [runId],
   );
   const row = result.rows[0];
@@ -44,6 +44,10 @@ async function lockRunRow(client: PoolClient, runId: string): Promise<RunRow> {
     throw new Error(`workflow run "${runId}" does not exist`);
   }
   return row;
+}
+
+function lockRunRow(client: PoolClient, runId: string): Promise<RunRow> {
+  return readRunRow(client, runId, true);
 }
 
 async function writeProjection(
@@ -68,27 +72,48 @@ async function writeProjection(
   );
 }
 
+type StartFrom = (row: RunRow, client: PoolClient) => RunProjection | Promise<RunProjection>;
+
+async function observeStart(
+  pool: Pool,
+  runId: string,
+  startFrom: StartFrom,
+): Promise<RunProjection> {
+  const client = await pool.connect();
+  try {
+    return await startFrom(await readRunRow(client, runId, false), client);
+  } finally {
+    client.release();
+  }
+}
+
 async function foldInto(
   pool: Pool,
   store: EventStore,
   runId: string,
-  startFrom: (row: RunRow, client: PoolClient) => RunProjection | Promise<RunProjection>,
+  startFrom: StartFrom,
 ): Promise<RunProjection> {
-  const client = await pool.connect();
-  try {
-    await client.query("begin");
-    const row = await lockRunRow(client, runId);
-    const start = await startFrom(row, client);
-    const events = await store.read(runId, start.lastSequenceNumber);
-    const next = foldRunEvents(events, start);
-    await writeProjection(client, runId, next);
-    await client.query("commit");
-    return next;
-  } catch (error) {
-    await client.query("rollback").catch(() => undefined);
-    throw error;
-  } finally {
-    client.release();
+  for (;;) {
+    const observed = await observeStart(pool, runId, startFrom);
+    const events = await store.read(runId, observed.lastSequenceNumber);
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+      const start = await startFrom(await lockRunRow(client, runId), client);
+      if (start.lastSequenceNumber !== observed.lastSequenceNumber) {
+        await client.query("rollback");
+        continue;
+      }
+      const next = foldRunEvents(events, start);
+      await writeProjection(client, runId, next);
+      await client.query("commit");
+      return next;
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }
 

@@ -104,6 +104,7 @@ export type {
 } from "./recovery/janitor.js";
 export { createRecoveryMetrics } from "./recovery/metrics.js";
 export type { RecoveryMetrics, RecoveryMetricsSnapshot } from "./recovery/metrics.js";
+export { resolveDatabaseUrl } from "./db/env.js";
 export type { DatabaseUrlEnv } from "./db/env.js";
 export type { Pool } from "pg";
 export {

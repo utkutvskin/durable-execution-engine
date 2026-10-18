@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createPool } from "../db/pool.js";
 import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
 import { createPostgresEventStore, type EventStore } from "../event-store/event-store.js";
 import type { WorkflowEvent } from "../event-store/events.js";
@@ -189,4 +190,47 @@ describe("run projection store", () => {
       expect(await snapshot(runId), `seed ${String(seed)}`).toEqual(incremental);
     }
   });
+
+  it("refreshes more runs at once than the pool has connections", async () => {
+    const narrowPool = createPool(process.env, { schema: database.schema, max: 2 });
+    const narrowStore = createPostgresEventStore(narrowPool);
+    try {
+      const runIds = await Promise.all(Array.from({ length: 8 }, () => insertRun()));
+      for (const runId of runIds) {
+        await store.append(runId, 0, [
+          { type: "run_started", workflowType: "ship-order", input: {} },
+          { type: "run_completed", result: 1 },
+        ]);
+      }
+      const refreshed = await Promise.all(
+        runIds.map((runId) => refreshProjection(narrowPool, narrowStore, runId)),
+      );
+      expect(refreshed.map((projection) => projection.state)).toEqual(
+        runIds.map(() => "COMPLETED"),
+      );
+    } finally {
+      await narrowPool.end();
+    }
+  }, 10_000);
+
+  it("refreshes one run from many callers at once without applying an event twice", async () => {
+    const narrowPool = createPool(process.env, { schema: database.schema, max: 2 });
+    const narrowStore = createPostgresEventStore(narrowPool);
+    try {
+      const runId = await insertRun();
+      await store.append(runId, 0, [
+        { type: "run_started", workflowType: "ship-order", input: {} },
+        { type: "run_completed", result: 1 },
+      ]);
+      await Promise.all(
+        Array.from({ length: 6 }, () => refreshProjection(narrowPool, narrowStore, runId)),
+      );
+      expect(await snapshot(runId)).toMatchObject({
+        status: "COMPLETED",
+        last_sequence_number: "2",
+      });
+    } finally {
+      await narrowPool.end();
+    }
+  }, 10_000);
 });
