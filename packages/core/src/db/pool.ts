@@ -15,6 +15,7 @@ export interface CreatePoolOptions {
   readonly schema?: string;
   readonly max?: number;
   readonly idleTimeoutMillis?: number;
+  readonly onError?: (error: Error) => void;
 }
 
 /**
@@ -22,7 +23,7 @@ export interface CreatePoolOptions {
  * only talk to the queue and the event store need no direct `pg` dependency.
  */
 export function createPool(env: DatabaseUrlEnv, options: CreatePoolOptions = {}): Pool {
-  return new PoolConstructor({
+  const pool = new PoolConstructor({
     connectionString: resolveDatabaseUrl(env),
     ...(options.schema === undefined ? {} : { options: `-c search_path=${options.schema}` }),
     ...(options.max === undefined ? {} : { max: options.max }),
@@ -30,4 +31,10 @@ export function createPool(env: DatabaseUrlEnv, options: CreatePoolOptions = {})
       ? {}
       : { idleTimeoutMillis: options.idleTimeoutMillis }),
   });
+  const report = options.onError ?? ((): void => undefined);
+  pool.on("error", report);
+  pool.on("connect", (client) => {
+    client.on("error", report);
+  });
+  return pool;
 }
