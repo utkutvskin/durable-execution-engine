@@ -61,6 +61,7 @@ only needs a reachable Postgres 16, not a pre-migrated one.
 - `docs/API.md` — the HTTP endpoints, authentication, idempotent start, quotas, rate limits and the OpenAPI document.
 - `docs/UI.md` — the run explorer web ui, how it is served, what it shows and how it is tested.
 - `docs/TRACING.md` — how a run becomes one trace, the span names, sampling and how to look at it in Jaeger.
+- `docs/CHAOS_REPORT.md` — the fault injection suite and its latest results: six failure scenarios, ten repetitions each, and the invariant checker behind them.
 - `docs/OBSERVABILITY.md` — metrics, structured logs, health probes and the example Grafana dashboard.
 - `docs/VERSIONING.md` — how to change a workflow without breaking running runs.
 - `docs/OUT_OF_SCOPE.md` — what v0.1 explicitly does not cover.
