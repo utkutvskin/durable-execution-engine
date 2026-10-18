@@ -295,3 +295,11 @@ export {
 export type { LogFields, LogLevel, Logger, LoggerOptions } from "./observability/logger.js";
 export { createHealthChecks } from "./observability/health.js";
 export type { HealthChecks, HealthChecksOptions, ReadinessResult } from "./observability/health.js";
+export { INVARIANT_NAMES, createInvariantChecker } from "./invariants/invariant-checker.js";
+export type {
+  InvariantCheckOptions,
+  InvariantChecker,
+  InvariantName,
+  InvariantReport,
+  InvariantViolation,
+} from "./invariants/invariant-checker.js";
