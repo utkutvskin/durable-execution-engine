@@ -18,6 +18,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --if-present run typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
+    "bench:explain": "node --import ./packages/worker/src/chaos/register.ts ./packages/worker/src/bench/run-explain.ts",
+    "bench": "node --import ./packages/worker/src/chaos/register.ts ./packages/worker/src/bench/run-bench.ts",
     "migrate:up": "pnpm --filter @dee/core run migrate:up",
     "migrate:down": "pnpm --filter @dee/core run migrate:down"
   },
