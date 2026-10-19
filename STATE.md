@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 28: performance measurement and tuning
+
+- **Status:** DONE
+- **Completed day:** 28
+- **Files added or changed:** `packages/worker/src/bench/` (new: `stats.ts`, `harness.ts`, `format.ts`, `run-bench.ts`, `hot-queries.ts`, `run-explain.ts` and tests `stats.test.ts`, `harness.integration.test.ts`, `hot-queries.integration.test.ts`), `packages/core/src/event-store/event-store.ts` (`appendEventsOnClient` writes all events with one insert) and `event-store.test.ts`, `packages/core/migrations/0016_hot_query_indexes.{up,down}.sql` (new), `packages/core/src/db/{migrator,schema}.test.ts`, `package.json` (`bench`, `bench:explain`), `docs/BENCHMARKS.md` (new), `docs/DECISIONS.md` (ADR-0038), `docs/DEFERRED.md`, `README.md`
+- **Technical decisions:** ADR-0038 in `docs/DECISIONS.md`. No new dependency.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (97 test files, 715 tests, 23 of them new today). The `dee` role/database were recreated by hand again after the container restart (`service postgresql start` first, then create the superuser role `dee` with password `dee` and database `dee`); the local Postgres was also restarted once with `pg_stat_statements` preloaded for profiling, which the tests do not need. The baseline `verify` of the session was green on the first run. Measured on one 4 core machine, median of 5 runs of 400 runs with 3 steps: 859 runs started per second, 728 steps completed per second, end to end p50/p95/p99 710/935/960 ms (saturated queue, so latency includes queue wait), 16.4k events appended per second. **Three bottlenecks fixed with before and after numbers:** event writes cost one statement per event (profile: the process is bound by statements sent, `writev` was 906 of 3,080 ms) and now cost one per append, so appending batches of 10 went from 16.4k to 29.1k events per second (p50 8.9 to 5.2 ms) and starting a run from 859 to 1,019 per second; the dequeue sorted every open task and now reads an ordered partial index, 4.96 ms to 0.05 ms at 3,300 open tasks; the janitor's stalled run scan read every run and task and now uses partial indexes on open runs and open tasks, 245 ms to 40 to 78 ms at 100,000 runs. **Not improved:** the end-to-end throughput (steps per second 728 to 696, inside the run to run spread of 679 to 797 before and 643 to 705 after, a small loss from index maintenance cannot be ruled out); it is limited by the roughly 47 statements a run costs, and `docs/BENCHMARKS.md` lists the next levers. Pool size and worker concurrency showed no clear effect on this machine. Not done (see `docs/DEFERRED.md`): no multi-machine or remote database run, no tuned Postgres, and the benchmark drives the recorder directly, not the decision loop. Day 29 (cli and example applications) is next.
+
+---
+
 ## Day 27: chaos tests and the invariant checker
 
 - **Status:** DONE
