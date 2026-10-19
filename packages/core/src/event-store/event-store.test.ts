@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createPostgresEventStore, type EventStore } from "./event-store.js";
+import { jsonCodec } from "./codec.js";
+import { appendEventsOnClient, createPostgresEventStore, type EventStore } from "./event-store.js";
 import { ConcurrencyError } from "./errors.js";
 import type { WorkflowEvent } from "./events.js";
 
@@ -134,5 +135,74 @@ describe("createPostgresEventStore", () => {
     const history = await store.read(runId);
     expect(history).toHaveLength(1);
     expect(history[0]?.sequenceNumber).toBe(1);
+  });
+
+  it("writes a batch of 25 events with a single insert statement", async () => {
+    const statements: string[] = [];
+    const client = await database.pool.connect();
+    const originalQuery = client.query.bind(client) as (...args: unknown[]) => unknown;
+    (client as unknown as { query: (...args: unknown[]) => unknown }).query = (
+      ...args: unknown[]
+    ) => {
+      const first = args[0];
+      statements.push(typeof first === "string" ? first : "");
+      return originalQuery(...args);
+    };
+    try {
+      const events: WorkflowEvent[] = Array.from({ length: 25 }, (_, index) => ({
+        type: "signal_received",
+        signalName: "tick",
+        payload: index,
+      }));
+      await client.query("begin");
+      const stored = await appendEventsOnClient(client, jsonCodec, runId, 0, events);
+      await client.query("commit");
+      expect(stored).toHaveLength(25);
+    } finally {
+      client.release();
+    }
+    expect(statements.filter((sql) => sql.includes("insert into run_events"))).toHaveLength(1);
+  });
+
+  it("keeps every event of a large batch in order with its own payload", async () => {
+    const events: WorkflowEvent[] = Array.from({ length: 300 }, (_, index) => ({
+      type: "signal_received",
+      signalName: "tick",
+      payload: { index, text: `payload "${String(index)}" with 'quotes' and \\ backslashes` },
+    }));
+    const stored = await store.append(runId, 0, events);
+    expect(stored.map((entry) => entry.sequenceNumber)).toEqual(
+      Array.from({ length: 300 }, (_, index) => index + 1),
+    );
+    const history = await store.read(runId);
+    expect(history.map((entry) => entry.event)).toEqual(events);
+  });
+
+  it("returns the stored events in the order they were given with a created_at each", async () => {
+    const stored = await store.append(runId, 0, [
+      { type: "run_started", workflowType: "ship-order", input: {} },
+      { type: "step_scheduled", stepId: "a", stepType: "reserve", input: 1 },
+      { type: "step_scheduled", stepId: "b", stepType: "ship", input: 2 },
+    ]);
+    expect(stored.map((entry) => entry.event.type)).toEqual([
+      "run_started",
+      "step_scheduled",
+      "step_scheduled",
+    ]);
+    expect(stored.every((entry) => entry.createdAt instanceof Date)).toBe(true);
+  });
+
+  it("appends a second batch after the first without a sequence gap", async () => {
+    await store.append(runId, 0, [
+      { type: "run_started", workflowType: "ship-order", input: {} },
+      { type: "step_scheduled", stepId: "a", stepType: "reserve", input: 1 },
+    ]);
+    const second = await store.append(runId, 2, [
+      { type: "step_completed", stepId: "a", result: 1 },
+      { type: "run_completed", result: 1 },
+    ]);
+    expect(second.map((entry) => entry.sequenceNumber)).toEqual([3, 4]);
+    const history = await store.read(runId);
+    expect(history.map((entry) => entry.sequenceNumber)).toEqual([1, 2, 3, 4]);
   });
 });

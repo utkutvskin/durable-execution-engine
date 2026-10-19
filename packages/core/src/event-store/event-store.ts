@@ -83,22 +83,33 @@ export async function appendEventsOnClient(
   if (currentSeq !== expectedSeq) {
     throw new ConcurrencyError(runId, expectedSeq, currentSeq);
   }
-  const stored: StoredEvent[] = [];
-  for (const [offset, event] of events.entries()) {
+  if (events.length === 0) {
+    return [];
+  }
+  const result = await client.query<{ sequence_number: string; created_at: Date }>(
+    `insert into run_events (run_id, sequence_number, event_type, payload)
+     select $1, batch.sequence_number, batch.event_type, batch.payload::jsonb
+     from unnest($2::bigint[], $3::text[], $4::text[])
+       as batch (sequence_number, event_type, payload)
+     returning sequence_number, created_at`,
+    [
+      runId,
+      events.map((_, offset) => expectedSeq + offset + 1),
+      events.map((event) => event.type),
+      events.map((event) => codec.encode(event)),
+    ],
+  );
+  const createdAtBySequence = new Map(
+    result.rows.map((row) => [Number(row.sequence_number), row.created_at]),
+  );
+  return events.map((event, offset) => {
     const sequenceNumber = expectedSeq + offset + 1;
-    const result = await client.query<{ created_at: Date }>(
-      `insert into run_events (run_id, sequence_number, event_type, payload)
-       values ($1, $2, $3, $4)
-       returning created_at`,
-      [runId, sequenceNumber, event.type, codec.encode(event)],
-    );
-    const createdAt = result.rows[0]?.created_at;
+    const createdAt = createdAtBySequence.get(sequenceNumber);
     if (createdAt === undefined) {
       throw new Error(`append to run "${runId}" did not return created_at`);
     }
-    stored.push({ sequenceNumber, event, createdAt });
-  }
-  return stored;
+    return { sequenceNumber, event, createdAt };
+  });
 }
 
 /**
