@@ -50,6 +50,31 @@ describe("initial schema", () => {
     expect(indexdef).toMatch(/WHERE \(state = 'PENDING'::text\)/);
   });
 
+  it("defines the dequeue index on (queue_name, visible_at, created_at, id) for open tasks", async () => {
+    const result = await database.pool.query<{ indexname: string; indexdef: string }>(
+      `select indexname, indexdef from pg_indexes
+       where schemaname = $1 and indexname in ('tasks_queue_order_idx', 'tasks_queue_dequeue_idx')`,
+      [database.schema],
+    );
+    expect(result.rows.map((row) => row.indexname)).toEqual(["tasks_queue_order_idx"]);
+    expect(result.rows[0]?.indexdef).toMatch(/\(queue_name, visible_at, created_at, id\)/);
+    expect(result.rows[0]?.indexdef).toMatch(/PENDING/);
+  });
+
+  it("defines partial indexes for open runs and for the open tasks of a run", async () => {
+    const result = await database.pool.query<{ indexname: string; indexdef: string }>(
+      `select indexname, indexdef from pg_indexes
+       where schemaname = $1 and indexname in ('workflow_runs_open_idx', 'tasks_open_run_idx')
+       order by indexname`,
+      [database.schema],
+    );
+    expect(result.rows.map((row) => row.indexname)).toEqual([
+      "tasks_open_run_idx",
+      "workflow_runs_open_idx",
+    ]);
+    expect(result.rows[1]?.indexdef).toMatch(/WHERE \(status = 'RUNNING'::text\)/);
+  });
+
   it("creates the six tables named by day 2's scope plus the workflow task results table", async () => {
     const result = await database.pool.query<{ table_name: string }>(
       `select table_name from information_schema.tables
