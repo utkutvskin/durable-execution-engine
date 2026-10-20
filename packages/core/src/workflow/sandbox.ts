@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 /**
  * Thrown when workflow code calls a non-deterministic global API directly
  * instead of going through the matching `WorkflowContext` method. Workflow
@@ -28,12 +30,18 @@ const systemDateNow = Date.now;
 const systemMathRandom = Math.random;
 const systemSetTimeout = globalThis.setTimeout;
 
+const guardedContext = new AsyncLocalStorage<true>();
+
 let activeGuards = 0;
 
 function patchGlobals(): void {
-  Date.now = () => forbid("Date.now()");
-  Math.random = () => forbid("Math.random()");
-  globalThis.setTimeout = (() => forbid("setTimeout()")) as unknown as typeof setTimeout;
+  Date.now = () => (guardedContext.getStore() === true ? forbid("Date.now()") : systemDateNow());
+  Math.random = () =>
+    guardedContext.getStore() === true ? forbid("Math.random()") : systemMathRandom();
+  globalThis.setTimeout = ((...args: Parameters<typeof setTimeout>) =>
+    guardedContext.getStore() === true
+      ? forbid("setTimeout()")
+      : systemSetTimeout(...args)) as unknown as typeof setTimeout;
 }
 
 function restoreGlobals(): void {
@@ -50,6 +58,10 @@ function restoreGlobals(): void {
  * rejects. `execute` is expected to await its workflow decision through to
  * quiescence before returning, since that is the window during which
  * workflow code (as opposed to the surrounding engine code) actually runs.
+ *
+ * Only code running inside `execute`'s own asynchronous call chain is
+ * refused: other code in the same process, such as a step handler running
+ * concurrently with a decision, still gets the real functions.
  *
  * Patching is reference-counted rather than save-and-restore per call:
  * `runDecisionLoop` can run several decisions concurrently (replaying the
@@ -68,7 +80,7 @@ export async function guardAgainstForbiddenApis<TResult>(
   activeGuards += 1;
 
   try {
-    return await execute();
+    return await guardedContext.run(true, execute);
   } finally {
     activeGuards -= 1;
     if (activeGuards === 0) {
