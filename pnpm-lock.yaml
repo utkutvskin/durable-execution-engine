@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@dee/cli':
+        specifier: workspace:*
+        version: link:packages/cli
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.11.0)
@@ -41,6 +44,18 @@ importers:
 
   apps/ui: {}
 
+  examples/etl-pipeline:
+    dependencies:
+      '@dee/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+
+  examples/payment-saga:
+    dependencies:
+      '@dee/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+
   packages/api:
     dependencies:
       '@dee/core':
@@ -52,9 +67,24 @@ importers:
 
   packages/cli:
     dependencies:
+      '@dee/api':
+        specifier: workspace:*
+        version: link:../api
       '@dee/core':
         specifier: workspace:*
         version: link:../core
+      '@dee/example-etl-pipeline':
+        specifier: workspace:*
+        version: link:../../examples/etl-pipeline
+      '@dee/example-payment-saga':
+        specifier: workspace:*
+        version: link:../../examples/payment-saga
+      '@dee/ui':
+        specifier: workspace:*
+        version: link:../../apps/ui
+      '@dee/worker':
+        specifier: workspace:*
+        version: link:../worker
 
   packages/core:
     dependencies:

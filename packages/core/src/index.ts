@@ -304,3 +304,5 @@ export type {
   InvariantReport,
   InvariantViolation,
 } from "./invariants/invariant-checker.js";
+export { defaultMigrationsDir, loadMigrations, migrateDown, migrateUp } from "./db/migrator.js";
+export type { Migration } from "./db/migrator.js";

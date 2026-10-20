@@ -1,8 +1,19 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "outDir": "dist",
-    "rootDir": "src"
+    "composite": false,
+    "incremental": false,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "baseUrl": ".",
+    "paths": {
+      "@dee/core": ["../core/src/index.ts"],
+      "@dee/worker": ["../worker/src/index.ts"],
+      "@dee/api": ["../api/src/index.ts"],
+      "@dee/ui": ["../../apps/ui/src/index.ts"],
+      "@dee/example-payment-saga": ["../../examples/payment-saga/src/index.ts"],
+      "@dee/example-etl-pipeline": ["../../examples/etl-pipeline/src/index.ts"]
+    }
   },
   "include": ["src"]
 }

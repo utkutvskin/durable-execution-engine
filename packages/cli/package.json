@@ -4,16 +4,20 @@
   "private": true,
   "type": "module",
   "description": "Developer cli: wf dev, wf worker, wf run and wf migrate commands.",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "bin": {
-    "wf": "./dist/index.js"
+    "wf": "./bin/wf.js"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build": "tsc -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@dee/core": "workspace:*"
+    "@dee/api": "workspace:*",
+    "@dee/core": "workspace:*",
+    "@dee/example-etl-pipeline": "workspace:*",
+    "@dee/example-payment-saga": "workspace:*",
+    "@dee/ui": "workspace:*",
+    "@dee/worker": "workspace:*"
   }
 }

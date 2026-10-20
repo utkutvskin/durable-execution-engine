@@ -1,0 +1,15 @@
+{
+  "name": "@dee/example-payment-saga",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Example: a payment saga with a reservation, a capture and compensation.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@dee/core": "workspace:*"
+  }
+}

@@ -8,7 +8,13 @@
     "noEmit": true,
     "baseUrl": ".",
     "paths": {
-      "@dee/core": ["./packages/core/src/index.ts"]
+      "@dee/core": ["./packages/core/src/index.ts"],
+      "@dee/worker": ["./packages/worker/src/index.ts"],
+      "@dee/api": ["./packages/api/src/index.ts"],
+      "@dee/ui": ["./apps/ui/src/index.ts"],
+      "@dee/cli": ["./packages/cli/src/index.ts"],
+      "@dee/example-payment-saga": ["./examples/payment-saga/src/index.ts"],
+      "@dee/example-etl-pipeline": ["./examples/etl-pipeline/src/index.ts"]
     }
   },
   "include": ["test/**/*.ts", "vitest.config.ts"]

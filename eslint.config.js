@@ -6,7 +6,14 @@ import eslintConfigPrettier from "eslint-config-prettier";
 
 export default defineConfig(
   {
-    ignores: ["**/dist/**", "**/coverage/**", "**/node_modules/**", "**/*.d.ts", "pnpm-lock.yaml"],
+    ignores: [
+      "**/dist/**",
+      "**/coverage/**",
+      "**/node_modules/**",
+      "**/*.d.ts",
+      "pnpm-lock.yaml",
+      "packages/cli/bin/**",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,

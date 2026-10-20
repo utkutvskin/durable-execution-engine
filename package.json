@@ -21,9 +21,13 @@
     "bench:explain": "node --import ./packages/worker/src/chaos/register.ts ./packages/worker/src/bench/run-explain.ts",
     "bench": "node --import ./packages/worker/src/chaos/register.ts ./packages/worker/src/bench/run-bench.ts",
     "migrate:up": "pnpm --filter @dee/core run migrate:up",
-    "migrate:down": "pnpm --filter @dee/core run migrate:down"
+    "migrate:down": "pnpm --filter @dee/core run migrate:down",
+    "example:payment": "node packages/cli/bin/wf.js example payment-saga",
+    "example:etl": "node packages/cli/bin/wf.js example etl-pipeline",
+    "test:examples": "vitest run examples packages/cli"
   },
   "devDependencies": {
+    "@dee/cli": "workspace:*",
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.20.4",
     "@vitest/coverage-v8": "^5.0.1",
