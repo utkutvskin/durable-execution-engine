@@ -17,3 +17,15 @@ Code that takes a client with `pool.connect()` releases it with `client.release(
 ## Benchmarks on more than one machine (day 28)
 
 `docs/BENCHMARKS.md` is measured with the benchmark process and Postgres on one 4 core machine with default settings. Not measured: workers on separate hosts, a remote database, a tuned Postgres (`shared_buffers`, `synchronous_commit`), and runs that execute through the workflow decision loop (the benchmark drives the recorder directly, as the chaos suite does). The statements per run (about 47) are the main lever left; see the "What to try next" list in that file. To close this: run `pnpm run bench` against a Postgres in compose from a second machine and add the figures next to the local ones.
+
+## `npx wf dev` on a machine without a checkout (day 29)
+
+`wf` runs the TypeScript sources of this repository through Node's type stripping and the workspace links, so `npx wf dev` works after `pnpm install` in a checkout, not from a published package. There is no `dist` build or published package yet. To close this: bundle the cli and its workspace dependencies into a publishable package, or compile the packages and publish them (day 30 covers the release).
+
+## Examples against a real provider and warehouse (day 29)
+
+The payment gateway and the warehouse of the examples are in memory, so the demos prove the workflows, the compensation, the retries and the idempotence of the steps, not an integration. Nothing deploys the examples as a separate worker process; `wf worker --module examples/payment-saga/src/index.ts` is the way to run one. To close this: add a gateway implementation over a real sandbox API and a warehouse over a second Postgres schema, and run the demos against them.
+
+## Step tasks are enqueued outside the decision's transaction (day 29)
+
+The engine records a workflow decision and then enqueues the `STEP_TASK` of each scheduled step in a second transaction. A crash in between delays the step by the stalled run grace period (60 seconds by default) until the janitor sends a workflow task, which recreates the missing step task. No work is lost and no step runs twice because of it, but the delay is visible. To close this: have the recorder enqueue the `STEP_TASK` of a `step_scheduled` event in the same transaction as the event.

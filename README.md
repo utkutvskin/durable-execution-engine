@@ -21,7 +21,7 @@ TypeScript on top of PostgreSQL.
 | `packages/api`    | rest endpoints, authentication, quotas       |
 | `packages/cli`    | developer commands (`wf dev`, `wf run`, ...) |
 | `apps/ui`         | run explorer web ui                          |
-| `examples`        | example applications (added on day 29)       |
+| `examples`        | a payment saga and an etl pipeline           |
 
 ## Quick start
 
@@ -35,6 +35,19 @@ pnpm run verify
 ```
 
 `pnpm run verify` runs lint, typecheck and the test suite, in that order.
+
+## Try it
+
+`wf` is the developer command line (`docs/CLI.md`). With Docker or a local Postgres at hand:
+
+```sh
+pnpm install
+npx wf dev                          # postgres, migrations, api, web ui and a worker
+npx wf run start payment-saga --input '{"orderId":"o-1","customerId":"c-1","amountCents":4999}' --wait
+npx wf example all                  # both examples end to end, in one command
+```
+
+The ui is at `http://127.0.0.1:8080/ui/`. The examples are described in `docs/EXAMPLES.md`.
 
 ## Database
 
@@ -57,6 +70,8 @@ only needs a reachable Postgres 16, not a pre-migrated one.
 
 - `docs/BACKLOG.md` — the development backlog and the operating instructions for each session.
 - `docs/CONVENTIONS.md` — writing and commit conventions.
+- `docs/CLI.md` — the `wf` command line.
+- `docs/EXAMPLES.md` — the payment saga and etl pipeline examples.
 - `docs/DECISIONS.md` — architecture decision records.
 - `docs/API.md` — the HTTP endpoints, authentication, idempotent start, quotas, rate limits and the OpenAPI document.
 - `docs/UI.md` — the run explorer web ui, how it is served, what it shows and how it is tested.
