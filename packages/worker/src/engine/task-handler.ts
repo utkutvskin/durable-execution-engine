@@ -1,4 +1,5 @@
 import {
+  ConcurrencyError,
   commandToEvent,
   createAttemptLog,
   createDeadLetterQueue,
@@ -110,7 +111,9 @@ function openStepIds(events: readonly WorkflowEvent[]): WorkflowEvent[] {
  * `STEP_TASK` runs the step with its retry policy and timeout, records the
  * result and enqueues a `WORKFLOW_TASK` so the run moves on. Tasks of closed
  * runs are acknowledged without effect, and redelivered tasks change
- * nothing.
+ * nothing. A workflow task that decided from a history another writer has
+ * since extended records nothing and reports `superseded`: whoever wrote the
+ * newer event also enqueued the task that sees it.
  */
 export function createEngineTaskHandler(options: EngineTaskHandlerOptions): TaskHandler {
   const clock = options.clock ?? systemClock;
@@ -221,12 +224,27 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
       history,
     );
     const events = decision.commands.map(commandToEvent);
-    const recorded = await recorder.recordWorkflowTaskResult({
-      runId: task.runId,
-      taskKey: task.id,
-      expectedSeq: stored.at(-1)?.sequenceNumber ?? 0,
-      events,
-    });
+    let recorded;
+    try {
+      recorded = await recorder.recordWorkflowTaskResult({
+        runId: task.runId,
+        taskKey: task.id,
+        expectedSeq: stored.at(-1)?.sequenceNumber ?? 0,
+        events,
+      });
+    } catch (error) {
+      decider.invalidate(task.runId);
+      if (error instanceof ConcurrencyError) {
+        options.onDecision?.({
+          runId: task.runId,
+          workflowType: started.workflowType,
+          outcome: "superseded",
+          recordedEvents: 0,
+        });
+        return;
+      }
+      throw error;
+    }
     if (!recorded.recorded) {
       decider.invalidate(task.runId);
     }

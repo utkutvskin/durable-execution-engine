@@ -354,6 +354,50 @@ describe("engine runtime against postgres", () => {
     expect(await eventTypes(runId)).toEqual(["run_started", "step_scheduled"]);
   });
 
+  it("lets workflow tasks of one run race without failing and records one decision", async () => {
+    const echo = defineStep<{ value: string }, string>("echo", { handler: ({ value }) => value });
+    const flow = defineWorkflow("echo-flow", (ctx) => ctx.step<string>("echo", { value: "hi" }));
+    const queue = createTaskQueue(pool, { clock });
+    const reports: string[] = [];
+    const handler = createEngineTaskHandler({
+      pool,
+      queue,
+      queueName: "default",
+      workflows: [flow],
+      steps: [echo],
+      clock,
+      onDecision: (report) => {
+        reports.push(report.outcome);
+      },
+    });
+    const runId = await start("echo-flow");
+    for (let copy = 0; copy < 7; copy += 1) {
+      await queue.enqueue({
+        namespaceId,
+        runId,
+        queueName: "default",
+        taskType: "WORKFLOW_TASK",
+        payload: { reason: "duplicate" },
+      });
+    }
+    const tasks = await queue.dequeue({
+      queueName: "default",
+      visibilityTimeoutMs: 30_000,
+      limit: 8,
+    });
+    expect(tasks).toHaveLength(8);
+    const context = { signal: new AbortController().signal };
+    const outcomes = await Promise.allSettled(tasks.map((task) => handler(task, context)));
+    expect(outcomes.every((outcome) => outcome.status === "fulfilled")).toBe(true);
+    expect(await eventTypes(runId)).toEqual(["run_started", "step_scheduled"]);
+    const stepTasks = await pool.query(
+      "select 1 from tasks where run_id = $1 and task_type = 'STEP_TASK'",
+      [runId],
+    );
+    expect(stepTasks.rowCount).toBe(1);
+    expect(reports).toHaveLength(8);
+  });
+
   it("refuses a workflow task of a type the worker does not know", async () => {
     const queue = createTaskQueue(pool, { clock });
     const handler = createEngineTaskHandler({
