@@ -28,3 +28,12 @@ export { startScheduleLoop } from "./schedule-loop.js";
 export type { ScheduleLoop, ScheduleLoopOptions } from "./schedule-loop.js";
 export { createDepthBackpressure, pollBudgetForDepth } from "./backpressure.js";
 export type { DepthBackpressureOptions } from "./backpressure.js";
+export { UnknownWorkflowError, createEngineTaskHandler } from "./engine/task-handler.js";
+export type {
+  AnyStepDefinition,
+  AnyWorkflowDefinition,
+  DecisionReport,
+  EngineTaskHandlerOptions,
+} from "./engine/task-handler.js";
+export { DEFAULT_QUEUE_NAME, startEngine } from "./engine/runtime.js";
+export type { Engine, EngineOptions } from "./engine/runtime.js";

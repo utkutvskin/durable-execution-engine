@@ -67,7 +67,7 @@ export interface ShiftableClock extends ClockSource {
 export function createShiftableClock(): ShiftableClock {
   let offsetMs = 0;
   return {
-    now: () => new Date(Date.now() + offsetMs),
+    now: () => new Date(new Date().getTime() + offsetMs),
     shift(ms: number): void {
       offsetMs += ms;
     },
