@@ -2,6 +2,30 @@
 
 The API lives in `packages/api`. `createApiServer(pool, { queueName })` returns a Node `http.Server` (not yet listening) together with the `apiKeys` store and the generated OpenAPI document.
 
+## Reference by example
+
+The OpenAPI 3.1 document at `GET /openapi.json` is the full reference and is generated from the same route table the server runs. With `wf dev` running and the key it printed in `$KEY`:
+
+```sh
+curl -s -X POST localhost:8080/v1/runs \
+  -H "authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -H 'idempotency-key: order-1' \
+  -d '{"workflowType":"hello","input":{"name":"ada"}}'
+
+curl -s -H "authorization: Bearer $KEY" localhost:8080/v1/runs/$RUN_ID
+curl -s -H "authorization: Bearer $KEY" localhost:8080/v1/runs/$RUN_ID/history
+
+curl -s -X POST localhost:8080/v1/runs/$RUN_ID/signal \
+  -H "authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d '{"name":"approval","payload":{"approved":true}}'
+
+curl -s -X POST localhost:8080/v1/runs/$RUN_ID/cancel \
+  -H "authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d '{"reason":"customer asked"}'
+```
+
+Probes and metrics need no key: `GET /health`, `GET /ready`, `GET /metrics`.
+
 ## Authentication and namespaces
 
 Every endpoint under `/v1` needs `Authorization: Bearer <key>`. A key belongs to exactly one namespace and every query filters on it. A run of another namespace answers 404, exactly like a run that does not exist. Missing, unknown and revoked keys answer 401 with `WWW-Authenticate: Bearer realm="dee"`.

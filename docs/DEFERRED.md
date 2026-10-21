@@ -29,3 +29,19 @@ The payment gateway and the warehouse of the examples are in memory, so the demo
 ## Step tasks are enqueued outside the decision's transaction (day 29)
 
 The engine records a workflow decision and then enqueues the `STEP_TASK` of each scheduled step in a second transaction. A crash in between delays the step by the stalled run grace period (60 seconds by default) until the janitor sends a workflow task, which recreates the missing step task. No work is lost and no step runs twice because of it, but the delay is visible. To close this: have the recorder enqueue the `STEP_TASK` of a `step_scheduled` event in the same transaction as the event.
+
+## The image was not built and is not published (day 30)
+
+The Dockerfile and the compose `engine` profile were written in a session without a Docker daemon. The build steps were reproduced outside Docker (see ADR-0040), but `docker build` has not run, and the image is not pushed anywhere. The `docker` job in CI builds it and runs a smoke test against a Postgres service. To close this: read the first CI result of that job, then add a tag triggered workflow that pushes the image to a registry.
+
+## The release note lives in the changelog (day 30)
+
+The `v0.1.0` tag is pushed to `origin`, and `CHANGELOG.md` holds the release note. A GitHub release object was not created: the tools of the session can read releases but not create them. To close this: create the release from the tag in GitHub and paste the `0.1.0` section of `CHANGELOG.md`.
+
+## Production entry points of the cli (day 30)
+
+`wf dev` is the only process that serves the API, and it does not switch on tracing, quotas or the history compactor; `wf worker` takes `--queue` and `--concurrency` but not pool size. There is no admin command for namespaces, keys and quotas. To close this: see "Next" in `docs/ROADMAP.md`.
+
+## The quick start was verified on a checkout, not in a clean container (day 30)
+
+The steps of the README were run from a fresh `git clone` of the pushed commit in an empty directory with a fresh `pnpm install` against the local Postgres, and the same flow is covered by the test of the `hello` example. They were not run in a container image of a clean machine, because no Docker daemon was available. To close this: run the README steps in a `node:22` container with a Postgres service.
