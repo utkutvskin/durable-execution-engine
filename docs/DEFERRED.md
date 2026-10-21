@@ -34,9 +34,9 @@ The engine records a workflow decision and then enqueues the `STEP_TASK` of each
 
 The Dockerfile and the compose `engine` profile were written in a session without a Docker daemon. The build steps were reproduced outside Docker (see ADR-0040), but `docker build` has not run, and the image is not pushed anywhere. The `docker` job in CI builds it and runs a smoke test against a Postgres service. To close this: read the first CI result of that job, then add a tag triggered workflow that pushes the image to a registry.
 
-## The release note lives in the changelog (day 30)
+## The release tag and release object (day 30)
 
-The `v0.1.0` tag is pushed to `origin`, and `CHANGELOG.md` holds the release note. A GitHub release object was not created: the tools of the session can read releases but not create them. To close this: create the release from the tag in GitHub and paste the `0.1.0` section of `CHANGELOG.md`.
+`CHANGELOG.md` holds the release note. The annotated tag `v0.1.0` was created locally on the day 30 closing commit, but pushing it failed (`unexpected disconnect while reading sideband packet`, three attempts; branch pushes worked), and a GitHub release object was not created because the tools of the session can read releases but not create them. To close this: from a machine that can push tags, run `git fetch origin && git tag -a v0.1.0 <closing commit of day 30> -m v0.1.0 && git push origin v0.1.0`, then create the release in GitHub and paste the `0.1.0` section of `CHANGELOG.md`.
 
 ## Production entry points of the cli (day 30)
 
