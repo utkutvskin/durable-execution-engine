@@ -1,6 +1,6 @@
 {
   "name": "@dee/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Developer cli: wf dev, wf worker, wf run and wf migrate commands.",

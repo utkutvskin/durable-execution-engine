@@ -1,6 +1,6 @@
 {
   "name": "@dee/api",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "HTTP api surface: rest endpoints, authentication, quotas and rate limiting.",

@@ -1,6 +1,6 @@
 {
   "name": "@dee/example-etl-pipeline",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Example: an etl pipeline with fan-out, retries and a nightly schedule.",
