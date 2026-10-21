@@ -97,7 +97,9 @@ describe("release 0.1.0", () => {
 
   it("points the quick start at a module that defines the workflow it starts", () => {
     const readme = read("README.md");
-    expect(readme).toContain("npx wf dev --module examples/hello/src/index.ts");
+    expect(readme).toContain(
+      "npx wf dev --module examples/hello/src/index.ts --example payment-saga",
+    );
     expect(readme).toContain("npx wf run start hello");
     expect(workflows.map((workflow) => workflow.workflowType)).toContain("hello");
   });

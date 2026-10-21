@@ -40,10 +40,10 @@ pnpm install
 **2. Start the environment** (terminal one)
 
 ```sh
-npx wf dev --module examples/hello/src/index.ts
+npx wf dev --module examples/hello/src/index.ts --example payment-saga
 ```
 
-`wf dev` starts the compose Postgres when the database does not answer, applies the migrations, and starts the API, the web ui and a worker in one process. It prints an API key and saves the address and the key to `.wf/dev.json`. The workflow in `examples/hello/src/index.ts` is a step followed by a one second durable timer.
+`wf dev` starts the compose Postgres when the database does not answer, applies the migrations, and starts the API, the web ui and a worker in one process. It prints an API key and saves the address and the key to `.wf/dev.json`. The workflow in `examples/hello/src/index.ts` is a step followed by a one second durable timer; `--example payment-saga` loads the payment saga for step 4.
 
 **3. Run a workflow** (terminal two, same directory)
 
@@ -55,7 +55,7 @@ The command waits for the run and prints it: status `COMPLETED` and the result `
 
 **4. Watch it survive a crash**
 
-Start the payment saga, stop the process with `Ctrl-C` while it waits for an approval, start `npx wf dev` again and send the signal. The run carries on from its history:
+Start the payment saga, stop the process with `Ctrl-C` while it waits for an approval, start the same `npx wf dev ...` command again and send the signal. The run carries on from its history:
 
 ```sh
 npx wf run start payment-saga --input '{"orderId":"o-1","customerId":"c-1","amountCents":250000}'
