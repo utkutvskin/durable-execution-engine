@@ -25,5 +25,17 @@ services:
       - "${JAEGER_UI_PORT:-16686}:16686"
       - "${JAEGER_OTLP_HTTP_PORT:-4318}:4318"
 
+  engine:
+    profiles: ["engine"]
+    build: .
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-dee}:${POSTGRES_PASSWORD:-dee}@postgres:5432/${POSTGRES_DB:-dee}
+    ports:
+      - "${ENGINE_PORT:-8080}:8080"
+
 volumes:
   dee-postgres-data:

@@ -77,3 +77,39 @@ jobs:
       - run: pnpm run example:payment
 
       - run: pnpm run example:etl
+
+  docker:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dee
+          POSTGRES_PASSWORD: dee
+          POSTGRES_DB: dee
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dee -d dee"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: docker build -t dee:ci .
+
+      - name: start the image and run a workflow through it
+        run: |
+          docker run -d --name engine --network host \
+            -e DATABASE_URL=postgres://dee:dee@localhost:5432/dee dee:ci
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/health >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8080/ready
+          key=$(docker logs engine 2>&1 | sed -n 's/^namespace default, api key //p')
+          docker exec -e WF_API_URL=http://127.0.0.1:8080 -e WF_API_KEY="$key" engine \
+            node packages/cli/bin/wf.js run start payment-saga \
+            --input '{"orderId":"o-1","customerId":"c-1","amountCents":4999}' --wait
+          docker logs engine
