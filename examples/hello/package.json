@@ -1,0 +1,15 @@
+{
+  "name": "@dee/example-hello",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Example: the smallest workflow, used by the quick start.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@dee/core": "workspace:*"
+  }
+}
