@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "description": "A durable execution engine: workflows and steps that survive process crashes.",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=22"
   },

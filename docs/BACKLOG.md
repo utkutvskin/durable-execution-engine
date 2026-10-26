@@ -502,12 +502,12 @@ Days 31 to 60 are planned from the review in `docs/REVIEW.md`. Read the section 
 
 ### PHASE 9: DISTRIBUTION AND ADOPTION (Days 41-44)
 
-#### Day 41: Licence and a built distribution
+#### Day 41: A built distribution
 
 **Goal:** The packages can be installed and run outside this repository.
 **Scope:**
 
-- **Licence:** the owner's choice, read from `STATE.md` or `docs/DECISIONS.md`. If none is recorded, this day writes the question into `BLOCKER` and does the rest of the day; it does not choose for the owner. Add `LICENSE` and the `license` field.
+- **Licence:** already chosen: Apache-2.0 (ADR-0041), with `LICENSE`, `NOTICE` and the `license` field in place since v0.1.0. Check that the packed packages carry `LICENSE` and `NOTICE`.
 - **Build:** `tsc -b` to `dist` with declarations and `rewriteRelativeImportExtensions`, ESM only.
 - **Exports:**
   - `exports` maps with a `development` condition pointing at `src`, so the `@dee/*` mapping lives in one place and the vitest aliases, the tsconfig `paths` and the resolve hook go away.
@@ -516,7 +516,7 @@ Days 31 to 60 are planned from the review in `docs/REVIEW.md`. Read the section 
   **Done when:**
 - `pnpm pack` of every package, installed into an empty directory outside the repository with `npm install`, runs `npx wf dev` against a Postgres and completes the hello workflow. This runs in CI in a clean `node:22` container, closing the two `docs/DEFERRED.md` entries about it.
 - `publint` and `attw` report no error.
-  **Commit:** `build: compile packages to dist`, `chore(repo): licence`
+  **Commit:** `build: compile packages to dist`, `chore(ci): check the packed packages`
 
 #### Day 42: Release pipeline
 

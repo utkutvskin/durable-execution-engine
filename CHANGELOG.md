@@ -22,6 +22,7 @@ The first release. Everything below is new.
 - Sticky execution: a replay cache per worker and a claim table that routes workflow tasks.
 - Workflow versioning with `ctx.patched` and `ctx.deprecatePatch`, and build ids that refuse histories newer than the code.
 - HTTP API with namespaced API keys, idempotent start, filtering and keyset paging, an SSE run stream, dead letter endpoints and a generated OpenAPI 3.1 document.
+- Licensed under the Apache License 2.0 (`LICENSE`, `NOTICE`, the `license` field of every package).
 - Quotas and rate limits per namespace, queue depth backpressure for the API, and depth based polling for workers.
 - Observability: Prometheus metrics, structured logs with correlation ids, health and readiness probes, OpenTelemetry tracing with one trace per run, and an example Grafana dashboard.
 - Run explorer web ui served from the API.

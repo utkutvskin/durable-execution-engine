@@ -139,4 +139,4 @@ pnpm run verify
 
 ## License
 
-Not yet licensed: the package metadata says `UNLICENSED`. See `docs/ROADMAP.md`.
+Apache License 2.0. See `LICENSE` and `NOTICE`.

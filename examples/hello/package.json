@@ -1,6 +1,7 @@
 {
   "name": "@dee/example-hello",
   "version": "0.1.0",
+  "license": "Apache-2.0",
   "private": true,
   "type": "module",
   "description": "Example: the smallest workflow, used by the quick start.",

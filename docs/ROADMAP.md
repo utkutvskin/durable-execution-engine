@@ -19,7 +19,6 @@ Days 31 to 60 of `docs/BACKLOG.md` turn this list and the findings of `docs/REVI
 - Signals with a dedup key, and queries over HTTP.
 - Workflow and step SDK generators for other languages, over the HTTP API.
 - A shared rate limiter between API processes.
-- A licence. The package metadata says `UNLICENSED` until the owner chooses one.
 
 ## Not planned
 
