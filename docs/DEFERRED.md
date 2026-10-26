@@ -34,9 +34,9 @@ The engine records a workflow decision and then enqueues the `STEP_TASK` of each
 
 The Dockerfile and the compose `engine` profile were written in a session without a Docker daemon. The build steps were reproduced outside Docker (see ADR-0040), but `docker build` has not run, and the image is not pushed anywhere. The `docker` job in CI builds it and runs a smoke test against a Postgres service. To close this: read the first CI result of that job, then add a tag triggered workflow that pushes the image to a registry.
 
-## The release tag and release object (day 30)
+## The release object (day 30)
 
-`CHANGELOG.md` holds the release note. The release now includes the Apache-2.0 licence (ADR-0041), so `v0.1.0` belongs on commit `67c63c9` (`chore(repo): license under apache-2.0`), not on the day 30 closing commit. The agent sessions cannot publish it: the session git proxy rejects tag pushes (day 30: `unexpected disconnect while reading sideband packet`; again after the review: `the remote end hung up unexpectedly`, five attempts, while branch pushes succeeded), and their GitHub tools cannot create tags or releases. To close this: from a machine that can push tags, run `git fetch origin && git tag -a v0.1.0 67c63c9 -m v0.1.0 && git push origin v0.1.0`, then create the release in GitHub from that tag and paste the `0.1.0` section of `CHANGELOG.md`.
+`CHANGELOG.md` holds the release note. The annotated tag `v0.1.0` is on `origin`, on commit `67c63c9` (`chore(repo): license under apache-2.0`, ADR-0041); the owner pushed it, because the session git proxy rejects tag pushes from agent sessions. A GitHub release object is not created yet, and the session tools cannot create one. To close this: in GitHub, draft a release from the `v0.1.0` tag and paste the `0.1.0` section of `CHANGELOG.md`.
 
 ## Production entry points of the cli (day 30)
 
