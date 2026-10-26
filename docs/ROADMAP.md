@@ -2,6 +2,8 @@
 
 v0.1.0 is a complete single-database engine. This page lists what comes next, in the order the owner expects to take it. Nothing here is a promise of a date.
 
+Days 31 to 60 of `docs/BACKLOG.md` turn this list and the findings of `docs/REVIEW.md` into a day by day plan for v0.2: stabilization and v0.1.1 first, then distribution, the authoring API, flow control, scale and operations.
+
 ## Next (v0.2)
 
 - **Publish.** Push the image to a registry from CI on a tag, and publish `@dee/*` as packages built to JavaScript, so `npx wf dev` works without a checkout (`docs/DEFERRED.md`, day 29).

@@ -24,7 +24,7 @@ This file lives at `docs/BACKLOG.md`. Each session reads this file, then `STATE.
 2. Each of that day's "Done when" items must have a test or a runnable command that proves it. An item without proof does not count as complete.
 3. Update `STATE.md`: the completed day, the files added, the technical decisions taken, the blocker if there is one, the note handed off to tomorrow.
 4. If a new architectural decision was taken, add it to `docs/DECISIONS.md` in ADR format (Context / Decision / Consequence).
-5. Make the commits, push to `main`. No `day-NN` tag: this repository does not use daily tags, `STATE.md`'s `Completed day` field and the commit history are the record of progress. This does not apply to the `v0.1.0` release tag on day 30.
+5. Make the commits, push to `main`. No `day-NN` tag: this repository does not use daily tags, `STATE.md`'s `Completed day` field and the commit history are the record of progress. This does not apply to the release tags: `v0.1.0` on day 30, `v0.1.1` on day 40 and `v0.2.0` on day 60.
 
 ### A3. Commit rules
 
@@ -304,6 +304,566 @@ If the day's scope is not finished, do not push broken code to `main`. Instead:
 
 ---
 
+## SECTION B, CONTINUED: DAYS 31-60 (v0.2)
+
+Days 31 to 60 are planned from the review in `docs/REVIEW.md`. Read the section a day names before starting it. Every day that fixes a reviewed bug starts by writing the test that reproduces it, red, before touching the code. A bug that does not reproduce is recorded in `STATE.md` with the test that shows it, not silently skipped.
+
+### PHASE 8: STABILIZATION (Days 31-40)
+
+#### Day 31: Green CI and honest verification
+
+**Goal:** CI on `main` is green and stays the measure of a finished day.
+**Scope:**
+
+- The e2e test reads Chromium from `PLAYWRIGHT_CHROMIUM_PATH`, and CI installs a browser for it. Locally the test is skipped with a visible message when no browser exists. It is never skipped in CI.
+- Fix the two flakes in `test/e2e/explorer.e2e.test.ts`: waiting assertions instead of `count()`, and `pump()` retrying on `ConcurrencyError`.
+- The `docker` job fails loudly when the health loop times out, and prints `docker logs` and the `/ready` body on failure. Fix the cause it reveals.
+- Set `testTimeout` and `hookTimeout` in `vitest.config.ts`.
+- Turn on `erasableSyntaxOnly`.
+- Add `format:check` to `verify`.
+- Move the actions to their current major versions.
+- Add a step to A2: the session reads the CI result of its pushed commit through the GitHub tools, and a red CI run is a `BLOCKER`.
+- Replace the real-time waits listed in `docs/REVIEW.md` section 1 with fake clock or event-driven waits, starting with `examples/hello`.
+  **Done when:** Every CI job is green on the pushed commit, read back from GitHub. The e2e file passes 20 consecutive local runs. `grep` finds no `setTimeout`-based wait left in the files listed in the review, or each remaining one is named in `docs/DEFERRED.md` with its reason.
+  **Commit:** `fix(ci): run the browser test and diagnose the image job`, `test: remove real-time waits`
+
+#### Day 32: Deterministic context values and a tighter sandbox
+
+**Goal:** Every value a workflow reads is the same on replay.
+**Scope:**
+
+- `ctx.now()` returns the time of the event that triggered the decision.
+- `ctx.random()` and `ctx.uuid()` come from a PRNG seeded by the run id and a per-run counter, or from recorded marker events. The choice goes in an ADR.
+- The non-determinism comparison compares canonical codec encodings, not `isDeepStrictEqual` on a live object.
+- The sandbox also patches `Date` itself, `performance.now`, `crypto.randomUUID`, `setInterval` and `setImmediate`.
+- A decision fails with a clear error when workflow code is still active after quiescence.
+- Correct `docs/CONCEPTS.md` where it described recorded values.
+  **Done when:**
+- A run that calls `ctx.uuid()`, `ctx.random()` and `ctx.now()` and feeds them into step inputs completes through 5 decisions, with the system clock and random source, on both the cold and the sticky path.
+- Inputs holding `undefined`, a `Date` and `-0` replay without `NonDeterminismError`.
+- Each newly patched global has a test that proves it is refused inside a decision and works outside one.
+  **Commit:** `fix(core): deterministic now, random and uuid on replay`, `fix(core): close sandbox gaps`
+
+#### Day 33: Replay in history order and complete command matching
+
+**Goal:** Replay takes the same path as the live run for every recorded history.
+**Scope:**
+
+- Feed recorded results to the handler in history order, draining microtasks between events, the way the live session does.
+- Match all commands (step, timer with its duration, child, patch) in one ordered sequence.
+- Fail the decision when recorded commands are left that the new code did not issue.
+- Add a property-based test (fast-check) that generates workflows and event orderings and asserts that cold replay, sticky replay and the live run agree.
+  **Done when:** Tests prove all of these:
+- A signal handled in `.then()` before an awaited step takes the same branch live and on replay.
+- A changed timer duration, a step swapped for a sleep, and a removed trailing step each raise `NonDeterminismError`.
+- The property test runs 500 generated cases with no disagreement.
+  **Commit:** `fix(core): replay events in history order`, `test(core): property test of replay equivalence`
+
+#### Day 34: One terminal result per step and atomic step enqueue
+
+**Goal:** No step ever has two terminal events, and no step waits on the janitor after a crash.
+**Scope:**
+
+- Under the run row lock, `recordStepResult` refuses a second terminal result for `(run_id, step_id)`. Back this with a unique index.
+- Move the "already recorded" check into that transaction.
+- Make dead-lettering and the ack one transaction.
+- Enqueue the `STEP_TASK` of a `step_scheduled` event in the same transaction as the event. This closes the `docs/DEFERRED.md` entry.
+- Remove the second client from `ensureStepTasks`.
+- Release a client with `client.release(error)` on every failure path.
+- Give the pool an acquire timeout.
+  **Done when:**
+- A test with a slow attempt 1 that lost its lease, a failed attempt 1 and a successful attempt 2 ends with exactly one terminal event, and cold and sticky replay agree.
+- A crash injected between recording a decision and the old enqueue no longer delays the step.
+- An engine with concurrency twice the pool size completes 50 runs with no deadlock.
+- A client whose connection died is not reused.
+  **Commit:** `fix(core): a step records one terminal result`, `fix(worker): enqueue step tasks in the decision transaction`
+
+#### Day 35: Poison tasks, quarantine and idle runs
+
+**Goal:** A bad task costs bounded work, and a run that is waiting costs no work.
+**Scope:**
+
+- Exponential nack delay from `task.attempts`, configurable in `startEngine`.
+- A task that fails its handler N times is quarantined.
+- `dequeue` counts a reclaimed lease and quarantines at the threshold.
+- `NonDeterminismError`, `VersionMismatchError` and an unknown workflow type follow a documented policy: fail the run, or park the task for an operator. Write an ADR.
+- The janitor tells a stalled run apart from one waiting on a signal, a child or a dead-lettered step, through a `waiting_on` marker or a `last_progress_at` column, with backoff on repeated recovery.
+  **Done when:**
+- A handler that always throws is retried with growing delays and quarantined after N tries.
+- A task that crashes its worker is quarantined while two other workers are polling.
+- Over 10 simulated minutes, a run waiting on a signal enqueues zero workflow tasks.
+- A really stalled run is still recovered.
+  **Commit:** `fix(worker): back off and quarantine poison tasks`, `fix(core): janitor ignores runs that are waiting`
+
+#### Day 36: Queue routing, database time and step cancellation
+
+**Goal:** Work goes to the pool that owns it, a lease means the same on every host, and a lost lease stops the step.
+**Scope:**
+
+- Add `queue_name` to `workflow_runs`.
+- Timers, stalled recovery, schedules, signals, cancels, close and continue-as-new all enqueue to the run's queue. The scanning loops filter by queue.
+- Lease, visibility and extend use the database's time.
+- The step `AbortSignal` reaches step handlers. A failed heartbeat past the visibility timeout aborts the step. A shutdown timeout aborts before it nacks.
+- Schedules get a catch-up policy (`latest_only` by default, `all` within a window).
+- An invalid cron or time zone is reported as an error state, not as a silently disabled schedule.
+  **Done when:**
+- Two engines on different queues share one database and each run's timers, signals and recoveries reach only its own queue.
+- A worker whose clock runs 30 seconds fast does not take a live lease.
+- A hanging step is aborted when its lease is lost and does not run twice at the same time.
+- A per-minute schedule offline for one simulated day starts one run under `latest_only`.
+  **Commit:** `fix(core): route every task by the run's queue`, `fix(worker): abort steps that lost their lease`
+
+#### Day 37: Workflow timeouts and failure propagation
+
+**Goal:** A workflow can bound its own lifetime and react to a step that failed for good.
+**Scope:**
+
+- A run timeout and an execution timeout, driven by a durable timer. They are recorded through the recorder and close the run with `closeRunIfTerminal`, notifying the parent.
+- A step that exhausts its retries raises a typed `StepFailedError` inside the workflow, so the workflow can compensate. Keep the dead letter entry for the operator; record the policy in an ADR.
+- `step_failed` keeps the error type, `cause` and serializable details.
+- Compensation errors are recorded, not swallowed.
+- `sleep` rejects `NaN` and negative durations with a clear error.
+- `queryRun` works on a compacted run.
+  **Done when:** Tests prove all of these:
+- A run with a 1 hour timeout on a fake clock ends `TIMED_OUT` and its parent sees it.
+- A workflow catches an exhausted step and runs its compensation.
+- A custom error class survives the round trip with its details.
+- A failing compensation is visible in the history.
+  **Commit:** `feat(core): run timeouts and catchable step failure`
+
+#### Day 38: API, UI and CLI hardening
+
+**Goal:** The reviewed surface defects from `docs/REVIEW.md` section 4 are closed.
+**Scope:**
+
+- **API:**
+  - SSE gets a per-namespace stream cap and a maximum lifetime.
+  - 500s are logged with the correlation id.
+  - A malformed percent-encoding answers 400.
+  - Unauthenticated requests are throttled per client address.
+  - History and dead letters are paginated with a cursor, and dead letters are filtered by namespace in SQL.
+  - `/metrics` is cached for a configurable interval and can require a bearer token.
+  - The `workflow.start` span is ended on every path.
+  - Starting a run validates the workflow type when a registry is given.
+  - JSON responses get `nosniff`.
+- **UI:**
+  - The timeline deduplicates by sequence number.
+  - The CSP gets `frame-ancestors`, `base-uri` and `form-action`.
+  - Cancel and requeue ask for confirmation.
+- **CLI:**
+  - Run ids are encoded in URLs.
+  - Non-JSON errors are reported without a stack trace.
+  - `--wait` honours 429 and `Retry-After`.
+  - `--limit` is validated.
+- **Logger:** core fields cannot be overridden, and a redaction hook exists.
+- **Masking:** either wire `maskSensitiveFields` into the API and the UI, or correct `docs/DEPLOYMENT.md`.
+  **Done when:** Each item has a test. A flood of 1,000 unauthenticated requests costs a bounded number of queries. A dropped stream reconnects without duplicate timeline entries (Playwright).
+  **Commit:** `fix(api): bound streams, log failures, paginate`, `fix(ui): dedupe timeline and tighten csp`
+
+#### Day 39: Production entry points
+
+**Goal:** Running the engine in production does not mean running `wf dev`.
+**Scope:**
+
+- `wf serve`: the API without a worker. It takes the key from the environment or an existing key, and logs structured JSON.
+- Flags on `wf serve` and `wf worker`: pool size, log level and format, tracing endpoint, quotas, the history compactor schedule, and a health and metrics port for a worker.
+- `migrateUp` takes an advisory lock.
+- `wf worker` and `wf migrate` never start compose when `NODE_ENV=production`.
+- `wf migrate down` asks for confirmation.
+- `.wf/dev.json` is written with mode 0600.
+- Wire `onTaskSettled` and recovery metrics in `startEngine`, so `dee_task_latency_seconds` and `dee_leases_reclaimed_total` fill.
+- Wire the sticky router into `startEngine`.
+- The Dockerfile's default command becomes `wf serve`. Compose gets separate `api` and `worker` services.
+- Rewrite `docs/DEPLOYMENT.md` to match.
+  **Done when:**
+- Two `wf migrate up` processes started together both succeed.
+- `wf serve` plus two `wf worker` processes complete the payment saga, and every one of the 8 metrics has a non-empty series.
+- With 3 workers, the sticky hit rate in a benchmark run is above 80 percent.
+- The docker CI job runs the split services and passes.
+  **Commit:** `feat(cli): serve command and production flags`, `fix(core): lock migrations`
+
+#### Day 40: Chaos on the engine runtime and v0.1.1
+
+**Goal:** The fixes of days 32 to 39 are proven under faults, then released as a patch.
+**Scope:**
+
+- The chaos suite drives `startEngine` and real workflows, not only the recorder.
+- New scenarios: a slow attempt racing a retry, two queues on one database, clock skew between workers, a pool smaller than concurrency, and a run waiting on a signal (the checker learns to tell waiting from stalled).
+- A nightly CI workflow runs the suite.
+- Update `docs/CHAOS_REPORT.md` and `CHANGELOG.md`.
+- Tag `v0.1.1` and push the tag.
+- Push the missing `v0.1.0` tag as well, if the owner has not.
+  **Done when:** Each scenario, old and new, runs 10 seeded repetitions against the engine runtime with zero invariant violations. The nightly workflow has run once green. `git ls-remote --tags origin` lists `v0.1.1`.
+  **Commit:** `test(chaos): drive the engine runtime`, `chore(release): v0.1.1`
+
+---
+
+### PHASE 9: DISTRIBUTION AND ADOPTION (Days 41-44)
+
+#### Day 41: Licence and a built distribution
+
+**Goal:** The packages can be installed and run outside this repository.
+**Scope:**
+
+- **Licence:** the owner's choice, read from `STATE.md` or `docs/DECISIONS.md`. If none is recorded, this day writes the question into `BLOCKER` and does the rest of the day; it does not choose for the owner. Add `LICENSE` and the `license` field.
+- **Build:** `tsc -b` to `dist` with declarations and `rewriteRelativeImportExtensions`, ESM only.
+- **Exports:**
+  - `exports` maps with a `development` condition pointing at `src`, so the `@dee/*` mapping lives in one place and the vitest aliases, the tsconfig `paths` and the resolve hook go away.
+  - `migrations/*.sql` and the UI assets are included in `files`.
+- **Checks:** `publint` and `@arethetypeswrong/cli` run in CI.
+  **Done when:**
+- `pnpm pack` of every package, installed into an empty directory outside the repository with `npm install`, runs `npx wf dev` against a Postgres and completes the hello workflow. This runs in CI in a clean `node:22` container, closing the two `docs/DEFERRED.md` entries about it.
+- `publint` and `attw` report no error.
+  **Commit:** `build: compile packages to dist`, `chore(repo): licence`
+
+#### Day 42: Release pipeline
+
+**Goal:** A tag produces a release without anyone typing commands by hand.
+**Scope:**
+
+- Changesets with one fixed version group.
+- A tag-triggered workflow that runs `verify`, then:
+  - publishes to npm with trusted publishing and provenance;
+  - builds the image for amd64 and arm64 with SBOM and provenance and pushes it to GHCR under semver tags;
+  - creates the GitHub release from the `CHANGELOG.md` section.
+- The image runs from `dist`.
+- Document the steps the owner must take once (npm scope, trusted publisher, GHCR visibility) in `docs/RELEASING.md`.
+  **Done when:** The workflow runs green in dry-run mode on a pre-release tag: every step except the final npm publish and GHCR push executes. The steps that need the owner's accounts are listed in `docs/RELEASING.md` and in `STATE.md`.
+  **Commit:** `chore(ci): tag-triggered release pipeline`
+
+#### Day 43: Embedded mode and transactional enqueue
+
+**Goal:** An application can start a workflow atomically with its own writes. This is the headline feature from `docs/REVIEW.md` section 6.
+**Scope:**
+
+- `startWorkflow(client, ...)`, `signalWorkflow(client, ...)` and `cancelWorkflow(client, ...)` take a caller's open transaction. The run row, its events and its first task commit or roll back with the application's writes.
+- A SQL function `dee.start_workflow(...)` lets triggers and non-Node code enqueue.
+- A `schema` option places the engine tables next to the application's.
+- An example (`examples/outbox/`) shows an order insert and a workflow start in one transaction.
+- `docs/EMBEDDING.md`.
+  **Done when:**
+- A rolled-back transaction leaves no run, event or task behind.
+- A committed one runs to completion.
+- The SQL function starts a run that completes.
+- The engine passes its integration suite with a non-default schema.
+  **Commit:** `feat(core): transactional workflow start`, `docs(examples): outbox example`
+
+#### Day 44: Stability policy and replay testing tools
+
+**Goal:** Users can change workflow code safely, and the project says what it will not break.
+**Scope:**
+
+- `docs/STABILITY.md`:
+  - semver on 0.x;
+  - the public API (package exports, `/v1`, CLI flags, the database schema and the history event format);
+  - deprecation rules.
+- A version field on history events, with forward-compatible reading.
+- `wf history export <runId>`.
+- `wf replay --module <path> <file...>`, plus a `replayHistories` test helper that replays exported histories against new code and reports non-determinism.
+- A fixture suite of recorded histories from every earlier day runs in CI as a gate.
+- An API report (`@microsoft/api-extractor`) catches accidental export changes.
+  **Done when:**
+- A workflow change that breaks determinism makes `wf replay` exit non-zero, naming the run and the event.
+- A compatible change passes.
+- The fixture gate fails when an event schema changes incompatibly.
+  **Commit:** `feat(cli): history export and replay`, `docs: stability policy`
+
+---
+
+### PHASE 10: AUTHORING API (Days 45-48)
+
+#### Day 45: Workflow updates and queries over HTTP
+
+**Goal:** A validated, synchronous write into a running workflow that returns a result.
+**Scope:**
+
+- `defineUpdate` with a validator and a handler.
+- `update_accepted` and `update_completed` events.
+- `POST /v1/runs/{id}/updates/{name}` waits for the result with a timeout.
+- A rejected update leaves no event.
+- `GET /v1/runs/{id}/queries/{name}`.
+- `wf run update` and `wf run query`.
+- OpenAPI, `docs/API.md`, the UI form.
+  **Done when:**
+- An update that passes validation returns its result over HTTP and replays deterministically.
+- A rejected update returns 400 and writes nothing.
+- A query returns current state without writing an event.
+- Concurrent updates are applied in a defined order.
+  **Commit:** `feat(core): workflow updates`, `feat(api): update and query endpoints`
+
+#### Day 46: Events, conditions and signal semantics
+
+**Goal:** Waiting on the world, not only on one run id.
+**Scope:**
+
+- `ctx.waitForEvent(name, { match, timeout })` with events addressed by a correlation key.
+- Events that arrive early are buffered for a configurable period.
+- `POST /v1/events`.
+- Event-triggered starts.
+- `ctx.condition(fn, timeout)`.
+- Signal deduplication ids.
+- Signal-with-start.
+- Continue-as-new carries unconsumed signals into the new run.
+  **Done when:**
+- An event sent before the run waits is delivered.
+- A timeout fires on a fake clock.
+- An event with a matching key starts a run.
+- A duplicate signal id is applied once.
+- Signal-with-start creates exactly one run under 20 concurrent calls.
+- No signal is lost across continue-as-new.
+  **Commit:** `feat(core): wait for events and conditions`, `feat(core): signal dedup and signal with start`
+
+#### Day 47: Search attributes, memo and visibility queries
+
+**Goal:** Operators can find runs by business data.
+**Scope:**
+
+- Typed search attributes set at start and updated from the workflow, with an upsert event.
+- A memo.
+- Indexed storage.
+- A small filter grammar (`status = 'FAILED' and customerId = 'c-1' and startedAt > '...'`) parsed into parameterized SQL. No string concatenation.
+- `GET /v1/runs?query=...`, `wf run list --query`, and search in the UI.
+  **Done when:**
+- A query over 100,000 runs answers in under 100 ms, with `EXPLAIN` evidence in `docs/BENCHMARKS.md`.
+- Malformed and hostile queries are refused with a 400 naming the position.
+- Attribute updates survive replay and continue-as-new.
+  **Commit:** `feat(core): search attributes and memo`, `feat(api): visibility queries`
+
+#### Day 48: Step heartbeats, step timeouts and typed definitions
+
+**Goal:** Long steps report progress, and workflow code is checked by the compiler.
+**Scope:**
+
+- `ctx.heartbeat(details)` inside a step, with a heartbeat timeout.
+- The last details are passed to the retried attempt.
+- Schedule-to-close and start-to-close timeouts.
+- Typed definitions: `defineWorkflow`, `defineStep`, signals, queries and updates carry input and output types, so `ctx.step(chargeCard, input)` is checked at compile time. The string form keeps working.
+  **Done when:**
+- A step that stops heartbeating is retried after the heartbeat timeout on a fake clock and resumes from its last details.
+- A step past its schedule-to-close timeout fails with a typed error.
+- A type test (`expectTypeOf`) rejects a wrong input type.
+  **Commit:** `feat(core): step heartbeats and timeouts`, `feat(core): typed workflow definitions`
+
+---
+
+### PHASE 11: FLOW CONTROL (Days 49-52)
+
+#### Day 49: Priorities, separate pools and namespace fairness
+
+**Goal:** Urgent work goes first, and one tenant cannot starve the rest.
+**Scope:**
+
+- A task priority set at start and inherited by children.
+- The dequeue order uses priority, through an index.
+- Workflow tasks and step tasks get separate concurrency pools in a worker, so long steps do not block decisions.
+- Dequeue round-robins across namespaces.
+  **Done when:**
+- With 10,000 low-priority tasks queued, a high-priority run completes within one poll interval of a free slot.
+- With one namespace holding 10,000 tasks and another 10, the second namespace's tasks finish first.
+- Long steps filling the step pool do not delay a workflow decision.
+  **Commit:** `feat(core): task priorities and namespace fairness`
+
+#### Day 50: Concurrency keys
+
+**Goal:** Limit concurrent runs or steps per business key, such as one per customer.
+**Scope:**
+
+- `concurrency: { key, limit }` on workflows and steps, evaluated from the input.
+- Enforced in the database at dequeue time.
+- A sleeping or waiting run holds no slot.
+- Metrics for queued-by-key.
+- A UI hint on runs waiting for a slot.
+  **Done when:**
+- With limit 1 per key, 50 runs over 5 keys never have two running for one key, checked by the invariant checker.
+- A run that sleeps frees its slot.
+- A crashed worker's slot is reclaimed with its lease.
+  **Commit:** `feat(core): concurrency keys`
+
+#### Day 51: Shared rate limits, debounce and singleton
+
+**Goal:** Protect downstream systems across all processes.
+**Scope:**
+
+- Rate limits per queue or per key (`limitPerPeriod`, `period`) enforced in Postgres.
+- They replace the per-process limiter of ADR-0033 for quotas too.
+- Start options:
+  - `debounce` (the last start in a window wins);
+  - `singleton` (refuse or queue while one is open);
+  - an idempotency key with a TTL.
+    **Done when:**
+- Three API processes together admit no more than the limit in a window.
+- 10 starts in a debounce window produce one run with the last input.
+- Singleton under 20 concurrent starts yields exactly one open run.
+- An expired idempotency key starts a new run.
+  **Commit:** `feat(core): shared rate limits`, `feat(core): debounce and singleton starts`
+
+#### Day 52: Pause and schedule policies
+
+**Goal:** Operators can stop the flow without losing it.
+**Scope:**
+
+- Pause and resume for a run, a queue and a namespace. Paused work stays queued and timers still fire into a held state.
+- Schedule overlap policies (`skip`, `buffer_one`, `cancel_other`, `allow_all`).
+- Schedule backfill for a time range.
+- Schedule pause.
+- API, CLI and UI for all of it.
+  **Done when:**
+- A paused queue dequeues nothing and resumes with every task intact.
+- Each overlap policy has a test on a fake clock.
+- A backfill of 24 hours of an hourly schedule starts 24 runs exactly once, even when it runs twice.
+  **Commit:** `feat(core): pause and resume`, `feat(core): schedule overlap and backfill`
+
+---
+
+### PHASE 12: SCALE (Days 53-56)
+
+#### Day 53: Fewer statements per run
+
+**Goal:** Cut the main throughput limit measured on day 28.
+**Scope:**
+
+- Fold the hot paths into single statements or SQL functions:
+  - start a run;
+  - complete a step: record, ack and enqueue the workflow task;
+  - complete a workflow task.
+- A partial unique index on pending workflow tasks per run, so a fan-out does not produce N replays.
+- Batch acks and heartbeats.
+- Move the heartbeat to a non-indexed lease column so it can be a HOT update.
+- Tune autovacuum per table for `tasks`, `timers` and `run_stickiness`.
+  **Done when:**
+- Statements per 3-step run drop from about 47 to at most 15, counted by a test with a statement counter.
+- Steps per second improve, shown in `docs/BENCHMARKS.md` with before and after medians of 5 runs.
+- The chaos suite still shows zero violations.
+  **Commit:** `perf(core): fold hot paths into single statements`, `docs: benchmark after statement reduction`
+
+#### Day 54: Wake-ups, leader election and batched timers
+
+**Goal:** Low latency when idle, and no duplicated background work.
+**Scope:**
+
+- LISTEN/NOTIFY on enqueue as a wake-up hint, one notification per transaction, on a dedicated connection, behind a flag. Polling stays as the fallback.
+- The timer, schedule and janitor loops run on one elected process per queue, through an advisory lock, with fast takeover.
+- Timers fire in batches.
+- Document PgBouncer transaction mode and the session connection that LISTEN needs in `docs/DEPLOYMENT.md`.
+  **Done when:**
+- Idle-queue start-to-first-step latency p50 drops below 20 ms (before and after figures).
+- With 3 engines, background loops run on exactly one, and a killed leader is replaced within 2 lease periods.
+- 10,000 timers due at once fire exactly once.
+  **Commit:** `perf(worker): notify wake-ups`, `feat(worker): leader election for background loops`
+
+#### Day 55: Retention and cleanup
+
+**Goal:** No table grows without bound.
+**Scope:**
+
+- Finished tasks are deleted on ack, or moved to an append-only history table. Update the invariant checker accordingly.
+- Retention jobs, per namespace, for the closed run data:
+  - `workflow_task_results`;
+  - `step_attempts`;
+  - fired timers;
+  - `schedule_triggers`;
+  - requeued dead letters.
+- The history compactor runs on a schedule in the elected process.
+- Compaction of long-running open runs past a size threshold, if `docs/REVIEW.md` section 2 still shows it unbounded. Otherwise record why not.
+  **Done when:**
+- After 10,000 completed runs and the retention period, every listed table is back to the size of the open runs, checked by a test.
+- `tasks` size stays flat in a 30 minute benchmark.
+- Open runs are untouched.
+  **Commit:** `feat(core): retention for closed runs`, `perf(core): delete finished tasks`
+
+#### Day 56: Partitioning, archival and read replicas
+
+**Goal:** History scales by time, and reads leave the primary.
+**Scope:**
+
+- Native range partitioning of `run_events` (and closed-run tables as the ADR decides) by time, with a partition maintainer in the elected process.
+- Retention becomes detach and drop.
+- Archival exports a partition to NDJSON files before it is dropped, and `wf history import` reads them back for replay.
+- An optional `DATABASE_READ_URL` serves list, history, UI and metrics reads, with read-your-writes after a start or signal.
+- A migration converts an existing database with open runs.
+  **Done when:**
+- The migration converts a database with 100,000 runs, open and closed, and every open run completes afterwards.
+- An archived run replays from its export.
+- Reads go to the replica in a test with two databases.
+- Benchmarks show no regression.
+  **Commit:** `feat(core): partitioned history`, `feat(core): archival and read replica routing`
+
+---
+
+### PHASE 13: OPERATIONS AND RELEASE (Days 57-60)
+
+#### Day 57: Admin surface and key scopes
+
+**Goal:** Everything that is code-only today has an endpoint and a command.
+**Scope:**
+
+- An admin API and `wf namespace`, `wf keys` and `wf quota` commands.
+- Keys get scopes (`read`, `operate`, `admin`), an expiry and `last_used_at`.
+- Issuing a key no longer creates a namespace.
+- `wf run terminate`, `wf dlq list|requeue`, and a quarantine endpoint, command and UI view.
+- An audit log of admin and operator actions.
+  **Done when:**
+- A `read` key is refused every write, with a 403.
+- An expired key gets a 401.
+- Every admin action appears in the audit log with its actor.
+- A quarantined task can be listed and released from the UI (Playwright).
+  **Commit:** `feat(api): admin endpoints and key scopes`, `feat(cli): admin commands`
+
+#### Day 58: Payload codec and encryption
+
+**Goal:** Sensitive data never reaches the database in clear text.
+**Scope:**
+
+- One codec path for every payload: events, `step_results`, `tasks.payload`, and the run input and result.
+- An encryption codec (AES-256-GCM through `node:crypto`) with key ids and key rotation.
+- A codec endpoint that the UI and CLI call to decode, so the server can store only ciphertext.
+- Search attributes stay clear text by design.
+- Fix the gzip codec so it can be stored with the Postgres store.
+- Masking is applied in logs and the UI.
+  **Done when:**
+- With encryption on, no plaintext payload appears in any table, checked by a test that scans every row.
+- Rotating the key keeps old runs readable.
+- The UI shows decoded payloads only through the codec endpoint.
+- The gzip codec round-trips through Postgres.
+  **Commit:** `feat(core): unified payload codec and encryption`
+
+#### Day 59: Reset, fork and batch operations
+
+**Goal:** Recovering from a bug in production is a command, not a script.
+**Scope:**
+
+- `reset` of a run to a chosen event: a new run whose history is copied up to that point, linked to the old one.
+- `fork` with new code from step N.
+- Batch cancel, terminate, signal, reset and requeue, driven by a visibility query (day 47).
+- Batches are executed as a workflow, so they are durable, resumable and rate limited.
+- API, CLI and UI.
+  **Done when:**
+- A run that failed on a bug is reset after a code fix and completes, with steps before the reset point not executed again.
+- A batch terminate over 1,000 runs survives a worker kill midway and touches each run exactly once.
+  **Commit:** `feat(core): reset and fork`, `feat(core): batch operations`
+
+#### Day 60: v0.2.0
+
+**Goal:** A release that a team can adopt.
+**Scope:**
+
+- Re-run the benchmarks and the chaos suite and update their documents.
+- An upgrade guide from 0.1 to 0.2 that covers open runs across the migrations, proven by a test that upgrades a database of v0.1.1 with open runs.
+- Update:
+  - `README.md`;
+  - `docs/ARCHITECTURE.md` and `docs/CONCEPTS.md`;
+  - `docs/ROADMAP.md`: what was deferred, plus streamed step output, worker deployment versioning, a step-only worker SDK over HTTP, interceptors and keyed entities as the next candidates;
+  - `CHANGELOG.md`.
+- Release `v0.2.0` through the day 42 pipeline.
+  **Done when:**
+- The upgrade test passes.
+- Every CI job is green on the release commit.
+- The release workflow ran for `v0.2.0`.
+- The README quick start works from the published artifacts, or from the packed ones if the owner has not yet enabled publishing (recorded in `STATE.md`).
+  **Commit:** `docs: v0.2 documentation`, `chore(release): v0.2.0`
+
+---
+
 ## SECTION C: SPARE TASK POOL
 
 If the day finishes early, take from here in order, do not touch the next day's scope.
@@ -318,4 +878,4 @@ If the day finishes early, take from here in order, do not touch the next day's 
 
 ## SECTION D: HIGH-RISK DAYS
 
-Days 5, 6, 12, 19, 21 and 27 carry the highest risk of overrun. If the scope has to be split on these days, preserve the core behavior and defer the ergonomics and the extra tests to `docs/DEFERRED.md`. Never give up the determinism, crash recovery and idempotency guarantees.
+Days 5, 6, 12, 19, 21, 27, 32, 33, 34, 43, 53 and 56 carry the highest risk of overrun. If the scope has to be split on these days, preserve the core behavior and defer the ergonomics and the extra tests to `docs/DEFERRED.md`. Never give up the determinism, crash recovery and idempotency guarantees.
