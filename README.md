@@ -123,6 +123,7 @@ Reference and background:
 - `docs/BENCHMARKS.md` — baseline throughput and latency on a single node.
 - `docs/DECISIONS.md` — architecture decision records.
 - `docs/DEFERRED.md` — what was named in a day's scope and not finished.
+- `docs/REVIEW.md` — the code review and survey taken after v0.1.0, which days 31 to 60 of the backlog are planned from.
 - `docs/OUT_OF_SCOPE.md` — what v0.1 explicitly does not cover.
 - `docs/CONVENTIONS.md` and `docs/BACKLOG.md` — writing conventions and the development backlog.
 
