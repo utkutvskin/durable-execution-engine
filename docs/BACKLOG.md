@@ -2,6 +2,8 @@
 
 This file lives at `docs/BACKLOG.md`. Each session reads this file, then `STATE.md`, does only that day's scope, then commits and pushes.
 
+The backlog has 60 days. Days 1 to 30 built v0.1.0. Days 31 to 60 build v0.2 and continue straight on from day 30: a session whose last `DONE` entry in `STATE.md` says `Completed day: 30` works on day 31.
+
 **Stack (fixed):** TypeScript (strict), Node 22, PostgreSQL 16, pnpm workspaces, Vitest, Docker Compose.
 **Monorepo packages:** `packages/core`, `packages/worker`, `packages/api`, `packages/cli`, `apps/ui`, `examples/`.
 
@@ -63,7 +65,7 @@ If the day's scope is not finished, do not push broken code to `main`. Instead:
 
 ---
 
-## SECTION B: THE 30-DAY BACKLOG
+## SECTION B: THE BACKLOG, DAYS 1-30 (v0.1)
 
 ### PHASE 1: FOUNDATION (Days 1-3)
 
