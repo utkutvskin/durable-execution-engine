@@ -494,8 +494,8 @@ Days 31 to 60 are planned from the review in `docs/REVIEW.md`. Read the section 
 - A nightly CI workflow runs the suite.
 - Update `docs/CHAOS_REPORT.md` and `CHANGELOG.md`.
 - Tag `v0.1.1` and push the tag.
-- Push the missing `v0.1.0` tag as well, if the owner has not.
-  **Done when:** Each scenario, old and new, runs 10 seeded repetitions against the engine runtime with zero invariant violations. The nightly workflow has run once green. `git ls-remote --tags origin` lists `v0.1.1`.
+- If the session cannot push tags (see the `docs/DEFERRED.md` entry on the release tag), write the exact tag commands for `v0.1.1` into `docs/DEFERRED.md` and `STATE.md` instead of retrying.
+  **Done when:** Each scenario, old and new, runs 10 seeded repetitions against the engine runtime with zero invariant violations. The nightly workflow has run once green. `v0.1.1` is either listed by `git ls-remote --tags origin` or recorded with its commit and commands for the owner.
   **Commit:** `test(chaos): drive the engine runtime`, `chore(release): v0.1.1`
 
 ---

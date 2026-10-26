@@ -36,7 +36,7 @@ The Dockerfile and the compose `engine` profile were written in a session withou
 
 ## The release tag and release object (day 30)
 
-`CHANGELOG.md` holds the release note. The annotated tag `v0.1.0` was created locally on the day 30 closing commit, but pushing it failed (`unexpected disconnect while reading sideband packet`, three attempts; branch pushes worked), and a GitHub release object was not created because the tools of the session can read releases but not create them. To close this: from a machine that can push tags, run `git fetch origin && git tag -a v0.1.0 <closing commit of day 30> -m v0.1.0 && git push origin v0.1.0`, then create the release in GitHub and paste the `0.1.0` section of `CHANGELOG.md`.
+`CHANGELOG.md` holds the release note. The release now includes the Apache-2.0 licence (ADR-0041), so `v0.1.0` belongs on commit `67c63c9` (`chore(repo): license under apache-2.0`), not on the day 30 closing commit. The agent sessions cannot publish it: the session git proxy rejects tag pushes (day 30: `unexpected disconnect while reading sideband packet`; again after the review: `the remote end hung up unexpectedly`, five attempts, while branch pushes succeeded), and their GitHub tools cannot create tags or releases. To close this: from a machine that can push tags, run `git fetch origin && git tag -a v0.1.0 67c63c9 -m v0.1.0 && git push origin v0.1.0`, then create the release in GitHub from that tag and paste the `0.1.0` section of `CHANGELOG.md`.
 
 ## Production entry points of the cli (day 30)
 
