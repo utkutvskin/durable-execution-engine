@@ -134,21 +134,24 @@ export async function devCommand(
         io.stderr(`engine error: ${error instanceof Error ? error.message : String(error)}`);
       },
     });
-    await writeDevState(io.cwd, {
-      apiUrl: environment.url,
-      apiKey: environment.apiKey,
-      namespace: environment.namespace,
-    });
-    io.stdout(`api and ui listening on ${environment.url} (ui at ${environment.url}/ui/)`);
-    io.stdout(`namespace ${environment.namespace}, api key ${environment.apiKey}`);
-    io.stdout(`workflows: ${module.workflows.map((entry) => entry.workflowType).join(", ")}`);
-    io.stdout("api address and key saved to .wf/dev.json, try `wf run list`");
-    if (booleanFlag(parsed, "verbose")) {
-      io.stdout("verbose output is on");
+    try {
+      await writeDevState(io.cwd, {
+        apiUrl: environment.url,
+        apiKey: environment.apiKey,
+        namespace: environment.namespace,
+      });
+      io.stdout(`api and ui listening on ${environment.url} (ui at ${environment.url}/ui/)`);
+      io.stdout(`namespace ${environment.namespace}, api key ${environment.apiKey}`);
+      io.stdout(`workflows: ${module.workflows.map((entry) => entry.workflowType).join(", ")}`);
+      io.stdout("api address and key saved to .wf/dev.json, try `wf run list`");
+      if (booleanFlag(parsed, "verbose")) {
+        io.stdout("verbose output is on");
+      }
+      await (hooks.shutdown ?? untilSignal)();
+      io.stdout("stopping");
+    } finally {
+      await environment.stop();
     }
-    await (hooks.shutdown ?? untilSignal)();
-    io.stdout("stopping");
-    await environment.stop();
     return 0;
   } finally {
     await pool.end();

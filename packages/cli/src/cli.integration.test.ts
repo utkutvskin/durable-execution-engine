@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -131,6 +132,30 @@ describe("wf against a real database", () => {
       stop();
       expect(await running).toBe(0);
       expect(dev.out.at(-1)).toBe("stopping");
+    });
+
+    it("stops the api and the engine when the dev state cannot be written", async () => {
+      await writeFile(path.join(directory, ".wf"), "not a directory");
+      const probe = createServer();
+      await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
+      const address = probe.address();
+      const port = typeof address === "object" && address !== null ? address.port : 0;
+      await new Promise<void>((resolve) => {
+        probe.close(() => {
+          resolve();
+        });
+      });
+      const dev = captureIo(directory, { DATABASE_URL: urlForSchema(database.schema) });
+      const code = await main(
+        ["dev", "--port", String(port), "--example", "payment-saga"],
+        dev.io,
+        {
+          shutdown: () => new Promise<void>(() => undefined),
+        },
+      );
+      expect(code).not.toBe(0);
+      await expect(fetch(`http://127.0.0.1:${String(port)}/health`)).rejects.toThrow();
+      expect(dev.err.filter((line) => line.startsWith("engine error"))).toEqual([]);
     });
 
     it("refuses a run command with a wrong api key", async () => {

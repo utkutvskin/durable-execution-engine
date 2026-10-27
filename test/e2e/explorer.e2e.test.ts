@@ -34,7 +34,7 @@ const STEP_QUEUE = "default/steps";
 const BROWSER = planBrowser({ env: process.env });
 
 if (BROWSER.mode === "skip") {
-  console.warn(`explorer e2e skipped: ${BROWSER.message}`);
+  console.warn(`explorer e2e skipped: ${BROWSER.message}`); // eslint-disable-line no-console -- the skip notice must be visible
 }
 
 const approval = defineWorkflow("approval", async (ctx, input: { item: string }) => {

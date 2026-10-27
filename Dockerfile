@@ -13,6 +13,7 @@ RUN pnpm install --frozen-lockfile --prod \
 FROM node:22-slim AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
+RUN chown node:node /app
 COPY --from=build --chown=node:node /app /app
 USER node
 EXPOSE 8080
