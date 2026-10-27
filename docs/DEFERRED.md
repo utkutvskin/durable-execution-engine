@@ -45,3 +45,7 @@ The Dockerfile and the compose `engine` profile were written in a session withou
 ## The quick start was verified on a checkout, not in a clean container (day 30)
 
 The steps of the README were run from a fresh `git clone` of the pushed commit in an empty directory with a fresh `pnpm install` against the local Postgres, and the same flow is covered by the test of the `hello` example. They were not run in a container image of a clean machine, because no Docker daemon was available. To close this: run the README steps in a `node:22` container with a Postgres service.
+
+## Real-time pacing in polling test loops (day 31)
+
+The `setTimeout(resolve, 10)` and `setTimeout(resolve, 25)` calls that remain in `packages/worker/src/engine/engine.integration.test.ts`, `examples/etl-pipeline/src/etl-pipeline.integration.test.ts`, `examples/payment-saga/src/payment-saga.integration.test.ts` and `packages/cli/src/cli.integration.test.ts` are not waits for a clock: each one yields between two polls of a run that a real engine loop is advancing, while the test moves a shiftable fake clock. They bound how fast the test polls, not how long it waits, and the loops end on the run status. To close this: give the engine a manual tick (`runOnce`) so the tests drive the loops instead of polling, then delete the yields. The other `setTimeout` matches in tests are fakes or assertions about the sandbox and are not waits. `examples/hello` no longer waits on real time: it polls the run history for `timer_started`.

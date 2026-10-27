@@ -24,7 +24,11 @@ describe("hello", () => {
     current = await startTestEnvironment({ workflows, steps }, { clock });
     const { client } = current.environment;
     const runId = await client.start("hello", { name: "ada" });
-    await new Promise<void>((resolve) => setTimeout(resolve, 300));
+    await expect
+      .poll(async () =>
+        (await client.history(runId)).some((item) => item.event.type === "timer_started"),
+      )
+      .toBe(true);
     expect((await client.describe(runId)).status).toBe("RUNNING");
     clock.shift(1_001);
     const run = await client.waitForClose(runId);
