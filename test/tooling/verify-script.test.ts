@@ -25,4 +25,10 @@ describe("root package.json", () => {
     expect(typecheckIndex).toBeGreaterThan(lintIndex);
     expect(testIndex).toBeGreaterThan(typecheckIndex);
   });
+
+  it("checks formatting before anything else in verify", () => {
+    const verify = rootPackageJson.scripts["verify"] ?? "";
+    expect(verify.startsWith("pnpm run format:check")).toBe(true);
+    expect(rootPackageJson.scripts["format:check"]).toBe("prettier --check .");
+  });
 });

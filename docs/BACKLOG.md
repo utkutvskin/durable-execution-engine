@@ -26,7 +26,7 @@ The backlog has 60 days. Days 1 to 30 built v0.1.0. Days 31 to 60 build v0.2 and
 2. Each of that day's "Done when" items must have a test or a runnable command that proves it. An item without proof does not count as complete.
 3. Update `STATE.md`: the completed day, the files added, the technical decisions taken, the blocker if there is one, the note handed off to tomorrow.
 4. If a new architectural decision was taken, add it to `docs/DECISIONS.md` in ADR format (Context / Decision / Consequence).
-5. Make the commits, push to `main`. No `day-NN` tag: this repository does not use daily tags, `STATE.md`'s `Completed day` field and the commit history are the record of progress. This does not apply to the release tags: `v0.1.0` on day 30, `v0.1.1` on day 40 and `v0.2.0` on day 60.
+5. Make the commits, push to `main`. Then read the CI result of the pushed commit through the GitHub tools (the workflow runs of the repository). A red run is a `BLOCKER` in `STATE.md`, and it is the first task of the next session. No `day-NN` tag: this repository does not use daily tags, `STATE.md`'s `Completed day` field and the commit history are the record of progress. This does not apply to the release tags: `v0.1.0` on day 30, `v0.1.1` on day 40 and `v0.2.0` on day 60.
 
 ### A3. Commit rules
 

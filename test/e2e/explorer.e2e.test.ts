@@ -3,6 +3,7 @@ import { chromium, type Browser, type Page } from "playwright-core";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   commandToEvent,
+  ConcurrencyError,
   createAttemptLog,
   createDeadLetterQueue,
   createPool,
@@ -26,10 +27,15 @@ import {
   createIsolatedDatabase,
   type IsolatedSchema,
 } from "../../packages/core/src/db/test-harness.js";
+import { planBrowser } from "./browser.js";
 import { createUiHandler } from "../../apps/ui/src/server.js";
 
 const STEP_QUEUE = "default/steps";
-const CHROMIUM = process.env["PLAYWRIGHT_CHROMIUM_PATH"] ?? "/opt/pw-browsers/chromium";
+const BROWSER = planBrowser({ env: process.env });
+
+if (BROWSER.mode === "skip") {
+  console.warn(`explorer e2e skipped: ${BROWSER.message}`);
+}
 
 const approval = defineWorkflow("approval", async (ctx, input: { item: string }) => {
   const reserved = await ctx.step<string>("reserve", input);
@@ -39,7 +45,7 @@ const approval = defineWorkflow("approval", async (ctx, input: { item: string })
     : ctx.step<string>("release", { reserved });
 });
 
-describe("run explorer in a browser", () => {
+describe.skipIf(BROWSER.mode === "skip")("run explorer in a browser", () => {
   let database: IsolatedSchema;
   let api: ApiHandler & { server: import("node:http").Server };
   let baseUrl: string;
@@ -100,12 +106,19 @@ describe("run explorer in a browser", () => {
           sources,
         );
         taskCounter += 1;
-        await recorder.recordWorkflowTaskResult({
-          runId: run.id,
-          taskKey: `e2e-${String(taskCounter)}`,
-          expectedSeq: events.length,
-          events: decision.commands.map(commandToEvent),
-        });
+        try {
+          await recorder.recordWorkflowTaskResult({
+            runId: run.id,
+            taskKey: `e2e-${String(taskCounter)}`,
+            expectedSeq: events.length,
+            events: decision.commands.map(commandToEvent),
+          });
+        } catch (error) {
+          if (error instanceof ConcurrencyError) {
+            continue;
+          }
+          throw error;
+        }
         for (const command of decision.commands) {
           if (command.type === "schedule_step") {
             await queue.enqueue({
@@ -144,6 +157,9 @@ describe("run explorer in a browser", () => {
   }
 
   beforeAll(async () => {
+    if (BROWSER.mode === "fail") {
+      throw new Error(BROWSER.message);
+    }
     database = await createIsolatedDatabase();
     store = createPostgresEventStore(database.pool);
     queue = createTaskQueue(database.pool);
@@ -178,7 +194,7 @@ describe("run explorer in a browser", () => {
     const issued = await api.apiKeys.issue("shop");
     key = issued.key;
     namespaceId = issued.namespaceId;
-    browser = await chromium.launch({ executablePath: CHROMIUM, args: ["--no-sandbox"] });
+    browser = await chromium.launch({ executablePath: BROWSER.path, args: ["--no-sandbox"] });
   }, 60_000);
 
   afterAll(async () => {
@@ -206,13 +222,13 @@ describe("run explorer in a browser", () => {
     const runId = await startRun();
     await signIn();
     await openRun(runId);
-    expect(await timelineItem("run_started").count()).toBe(1);
+    await expect.poll(() => timelineItem("run_started").count()).toBe(1);
     expect(await timelineItem("step_completed").count()).toBe(0);
     await page.evaluate("globalThis.survivesWithoutReload = true");
     await pump();
     await timelineItem("step_completed").first().waitFor();
-    expect(await page.getByTestId("run-status").textContent()).toBe("RUNNING");
-    expect(await page.getByTestId("live-indicator").textContent()).toBe("live");
+    await expect.poll(() => page.getByTestId("run-status").textContent()).toBe("RUNNING");
+    await expect.poll(() => page.getByTestId("live-indicator").textContent()).toBe("live");
     expect(await page.evaluate("globalThis.survivesWithoutReload")).toBe(true);
   }, 30_000);
 
@@ -258,9 +274,9 @@ describe("run explorer in a browser", () => {
     await timelineItem("cancel_requested").first().waitFor();
     await pump();
     await page.locator("[data-testid=run-status]", { hasText: "CANCELLED" }).waitFor();
-    expect(await page.getByTestId("cancel-button").isDisabled()).toBe(true);
-    expect(await page.getByTestId("signal-send").isDisabled()).toBe(true);
-    expect(await page.getByTestId("live-indicator").textContent()).toBe("closed");
+    await expect.poll(() => page.getByTestId("cancel-button").isDisabled()).toBe(true);
+    await expect.poll(() => page.getByTestId("signal-send").isDisabled()).toBe(true);
+    await expect.poll(() => page.getByTestId("live-indicator").textContent()).toBe("closed");
   }, 30_000);
 
   it("shows the input, the error and escapes markup in run data", async () => {
@@ -270,7 +286,7 @@ describe("run explorer in a browser", () => {
     expect(await page.getByTestId("input-viewer").textContent()).toContain(
       "<img src=x onerror=window.pwned=1>",
     );
-    expect(await page.locator("img").count()).toBe(0);
+    await expect.poll(() => page.locator("img").count()).toBe(0);
     expect(await page.getByTestId("error-viewer").textContent()).toBe("null");
     await database.pool.query(
       "update workflow_runs set status = 'FAILED', error = $2::jsonb, closed_at = now() where id = $1",

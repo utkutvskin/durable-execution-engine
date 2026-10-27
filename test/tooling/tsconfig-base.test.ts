@@ -18,4 +18,8 @@ describe("tsconfig.base.json", () => {
     expect(compilerOptions["noUncheckedIndexedAccess"]).toBe(true);
     expect(compilerOptions["exactOptionalPropertyTypes"]).toBe(true);
   });
+
+  it("rejects syntax that Node cannot strip, so the cli cannot crash at runtime", () => {
+    expect(tsconfigBase.compilerOptions["erasableSyntaxOnly"]).toBe(true);
+  });
 });
