@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 31: green CI and honest verification
+
+- **Status:** DONE
+- **Completed day:** 31
+- **Files added or changed:** `.github/workflows/ci.yml` (actions at `checkout@v7`, `setup-node@v7`, `pnpm/action-setup@v6`; browser install and `PLAYWRIGHT_CHROMIUM_PATH` in the `verify` job; the `docker` job waits on `/ready` and prints the `/ready` response and `docker logs` on failure), `test/e2e/browser.ts` and `browser.test.ts` (new: `planBrowser`), `test/e2e/explorer.e2e.test.ts` (skip with a message locally, fail in CI, waiting assertions, `pump()` retries on `ConcurrencyError`), `vitest.config.ts` (`testTimeout` 30 s, `hookTimeout` 60 s), `tsconfig.base.json` (`erasableSyntaxOnly`), `package.json` (`format:check` first in `verify`), `packages/cli/src/commands/process.ts` and `cli.integration.test.ts` (`wf dev` stops the api and engine on any failure after start), `Dockerfile` (`/app` owned by `node`), `examples/hello/src/hello.integration.test.ts` (polls history for `timer_started` instead of a 300 ms sleep), `test/tooling/` (`ci-workflow`, `verify-script`, `tsconfig-base`, new `vitest-config` and `dockerfile` tests), `docs/BACKLOG.md` (A2 step 5 reads the CI result), `docs/DEFERRED.md`
+- **Technical decisions:** none needing an ADR. No new dependency.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green locally (114 test files, 820 tests, 13 of them new today) and **CI run 42 on `5a0061a` is green in all three jobs (`verify`, `examples`, `docker`), read back from GitHub.** The baseline `verify` of the session was green locally while CI on `main` was red since day 26, as the review said. **The `docker` failure was a real bug, not the health loop alone:** `wf dev` wrote `.wf/dev.json` into `/app`, which the image left owned by root, so the write failed, the `finally` ended the pool and the api server and engine loops kept running against a closed pool (`/health` 200, `/ready` 503, endless `engine error: Cannot use a pool after calling end on the pool`). I reproduced the symptom locally with a file named `.wf` in the working directory, wrote the red test first, and fixed both the cause (`chown node:node /app`) and the failure path (`environment.stop()` in a `finally`). The ownership hypothesis was inferred from the symptom and is confirmed only by the green `docker` job, since this container has no Docker daemon. **Flake:** before the fix the e2e file failed 4 of 20 consecutive runs (`live-indicator` read `live` instead of `closed`, an immediate `textContent()`); after it 20 of 20 passed. The `count()` and `pump()` fixes were made from reading the code and were not seen failing. **Real-time waits:** only `examples/hello` was converted; the `setTimeout(resolve, 10)` pacing in the engine, payment saga, etl and cli integration tests is named in `docs/DEFERRED.md` with its reason (a manual engine tick would remove it). The `v0.1.0` tag is on `origin` per the owner. Day 32 (deterministic context values and a tighter sandbox) is next; read `docs/REVIEW.md` section 2, items 1 to 4 first.
+
+---
+
 ## Day 30: documentation, packaging and v0.1.0
 
 - **Status:** DONE
