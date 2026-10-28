@@ -25,6 +25,7 @@ import {
   guardAgainstForbiddenApis,
   runUnguarded,
   waitForMacrotask,
+  WorkflowActiveAfterQuiescenceError,
 } from "./sandbox.js";
 import type { ClockSource, RandomSource } from "./sources.js";
 
@@ -140,13 +141,14 @@ export function drainToQuiescence(): Promise<void> {
 
 /**
  * Whether `error` means the decision itself cannot be trusted
- * (`NonDeterminismError`, `ForbiddenApiError`,
+ * (`NonDeterminismError`, `ForbiddenApiError`, `WorkflowActiveAfterQuiescenceError`,
  * `VersionMismatchError`) rather than the workflow failing.
  */
 export function isIntegrityError(error: unknown): error is Error {
   return (
     error instanceof NonDeterminismError ||
     error instanceof ForbiddenApiError ||
+    error instanceof WorkflowActiveAfterQuiescenceError ||
     error instanceof VersionMismatchError
   );
 }

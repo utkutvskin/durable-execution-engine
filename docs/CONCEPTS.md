@@ -30,12 +30,12 @@ A workflow function is not suspended in memory. When it needs to continue after 
 
 For replay to reach the same place every time, workflow code must be deterministic:
 
-- Use `ctx.now()`, `ctx.random()` and `ctx.uuid()` instead of `Date.now()`, `Math.random()` and random identifiers. They are recorded on the first run and returned from the history after that.
-- Use `ctx.sleep()` instead of `setTimeout`.
+- Use `ctx.now()`, `ctx.random()` and `ctx.uuid()` instead of `Date.now()`, `new Date()`, `performance.now()`, `Math.random()` and `crypto.randomUUID()`. `ctx.now()` is recorded: the first time a call is reached, the engine writes a `time_recorded` event holding the time of the event that triggered the decision, and every replay answers the nth call from the nth such event. `ctx.random()` and `ctx.uuid()` are not recorded: they come from a generator seeded by the run id and a counter of value calls, so a replay of the same code draws the same values. `new Date(value)` with an argument is fine; only reading the current time is refused.
+- Use `ctx.sleep()` instead of `setTimeout`, `setInterval` and `setImmediate`.
 - Do not read files, call the network or touch a database from workflow code. Put that in a step.
 - Do not depend on iteration order of anything that is not ordered, or on module state that changes between runs.
 
-The engine enforces part of this. Inside a decision, `Date.now`, `Math.random` and `setTimeout` throw a `ForbiddenApiError`. It also checks every call against the history: if the code asks for a different step type, or different input, than the one recorded at that position, the replay stops with a `NonDeterminismError` and writes nothing. A change like that needs a patch, see Versioning below.
+The engine enforces part of this. Inside a decision, `Date.now`, `new Date()` without an argument, `Date()`, `performance.now`, `Math.random`, `crypto.randomUUID`, `setTimeout`, `setInterval` and `setImmediate` throw a `ForbiddenApiError`. If workflow code is still waiting on something that is not a `ctx` call when the decision goes quiet (a timer it started with a saved reference to `setTimeout`, a file read), the decision fails with a `WorkflowActiveAfterQuiescenceError` instead of leaving the run waiting forever. The engine also checks every call against the history: if the code asks for a different step type, or different input, than the one recorded at that position, the replay stops with a `NonDeterminismError` and writes nothing. Inputs are compared as the event log stores them (canonical JSON), so an input holding `undefined`, a `Date`, `NaN` or `-0` replays cleanly. A change like that needs a patch, see Versioning below.
 
 Parallel work is deterministic too. `ctx.all`, `ctx.allSettled` and `ctx.select` decide by the order of events in the history, not by which promise happened to settle first.
 

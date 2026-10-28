@@ -7,6 +7,7 @@ import type { WorkflowHandler } from "./context.js";
 import { runDecisionLoop, type DecisionResult } from "./decision-loop.js";
 import { NonDeterminismError } from "./errors.js";
 import type { LiveSession } from "./live-session.js";
+import { WorkflowActiveAfterQuiescenceError } from "./sandbox.js";
 import { systemClock } from "./sources.js";
 
 type Mode = "cold" | "sticky";
@@ -155,5 +156,22 @@ describe("seeded values", () => {
       time: "2026-05-06T07:08:09.000Z",
     });
     expect(decision).toMatchObject({ outcome: "completed", result: "2026-05-06T07:08:09.000Z" });
+  });
+});
+
+describe.each<Mode>(["cold", "sticky"])("late workflow activity on the %s path", (mode) => {
+  it("fails the decision when workflow code waits on a timer that is not ctx.sleep", async () => {
+    const realSetTimeout = globalThis.setTimeout;
+    let handle: ReturnType<typeof setTimeout> | undefined;
+    const late: WorkflowHandler = async (ctx) => {
+      await new Promise<void>((resolve) => {
+        handle = realSetTimeout(resolve, 5_000);
+      });
+      return ctx.step("after", {});
+    };
+    await expect(drive(mode, late, "run-late")).rejects.toBeInstanceOf(
+      WorkflowActiveAfterQuiescenceError,
+    );
+    clearTimeout(handle);
   });
 });
