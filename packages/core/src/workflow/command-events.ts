@@ -28,6 +28,8 @@ export function commandToEvent(command: WorkflowCommand): WorkflowEvent {
       return command.buildId === undefined
         ? { type: "patch_recorded", patchId: command.patchId }
         : { type: "patch_recorded", patchId: command.patchId, buildId: command.buildId };
+    case "record_time":
+      return { type: "time_recorded", time: command.time };
     case "complete_run":
       return { type: "run_completed", result: command.result };
     case "fail_run":

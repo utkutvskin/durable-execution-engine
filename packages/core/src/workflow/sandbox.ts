@@ -29,6 +29,7 @@ function forbid(api: string): never {
 const systemDateNow = Date.now;
 const systemMathRandom = Math.random;
 const systemSetTimeout = globalThis.setTimeout;
+const systemSetImmediate = globalThis.setImmediate;
 
 const guardedContext = new AsyncLocalStorage<true>();
 
@@ -87,4 +88,23 @@ export async function guardAgainstForbiddenApis<TResult>(
       restoreGlobals();
     }
   }
+}
+
+/**
+ * Runs `read` outside the forbidden API guard, so engine code called from
+ * inside a decision (a `ClockSource`, a `RandomSource`) can use the real
+ * globals the workflow code itself may not.
+ */
+export function runUnguarded<TResult>(read: () => TResult): TResult {
+  return guardedContext.exit(read);
+}
+
+/**
+ * Waits for one macrotask boundary using the real `setImmediate`, which can
+ * be refused inside a guarded call chain.
+ */
+export function waitForMacrotask(): Promise<void> {
+  return new Promise((resolve) => {
+    systemSetImmediate(resolve);
+  });
 }

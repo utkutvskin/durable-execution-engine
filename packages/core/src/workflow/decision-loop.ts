@@ -1,4 +1,3 @@
-import { isDeepStrictEqual } from "node:util";
 import type { WorkflowEvent } from "../event-store/events.js";
 import type { WorkflowCommand } from "./commands.js";
 import type {
@@ -18,8 +17,15 @@ import {
   NonDeterminismError,
   VersionMismatchError,
 } from "./errors.js";
+import { sameEncoding } from "./canonical.js";
+import { createContextValues } from "./context-values.js";
 import { fulfilledValues, runParallel } from "./parallel.js";
-import { ForbiddenApiError, guardAgainstForbiddenApis } from "./sandbox.js";
+import {
+  ForbiddenApiError,
+  guardAgainstForbiddenApis,
+  runUnguarded,
+  waitForMacrotask,
+} from "./sandbox.js";
 import type { ClockSource, RandomSource } from "./sources.js";
 
 /**
@@ -31,7 +37,20 @@ import type { ClockSource, RandomSource } from "./sources.js";
  */
 export interface DecisionLoopOptions {
   readonly clock: ClockSource;
-  readonly random: RandomSource;
+  /**
+   * Overrides the generator behind `ctx.random()` and `ctx.uuid()`. Left
+   * out, they come from a generator seeded by `runId` and a per-run
+   * counter, which replays the same values on every decision.
+   */
+  readonly random?: RandomSource;
+  /** The run the decision belongs to; seeds `ctx.random()` and `ctx.uuid()`. */
+  readonly runId?: string;
+  /**
+   * When the event that triggered the decision was written. `ctx.now()`
+   * answers with it for a call that has no recorded time yet; `clock` is the
+   * fallback.
+   */
+  readonly triggeredAt?: Date;
   readonly maxChildren?: number;
   readonly historyWarningThreshold?: number;
   readonly buildId?: string;
@@ -116,14 +135,13 @@ export function reconstructError(error: {
  * there is no callback left behind for a later tick to leak.
  */
 export function drainToQuiescence(): Promise<void> {
-  return new Promise((resolve) => {
-    setImmediate(resolve);
-  });
+  return waitForMacrotask();
 }
 
 /**
  * Whether `error` means the decision itself cannot be trusted
- * (`NonDeterminismError`, `ForbiddenApiError`, `VersionMismatchError`) rather than the workflow failing.
+ * (`NonDeterminismError`, `ForbiddenApiError`,
+ * `VersionMismatchError`) rather than the workflow failing.
  */
 export function isIntegrityError(error: unknown): error is Error {
   return (
@@ -172,6 +190,12 @@ function createReplayContext(
       event.type === "child_started",
   ).length;
   const patchDecisions = new Map<string, boolean>();
+  const values = createContextValues(
+    options,
+    history.flatMap((event) => (event.type === "time_recorded" ? [event.time] : [])),
+    () => options.triggeredAt,
+    (command) => newCommands.push(command),
+  );
 
   function decidePatch(patchId: string): boolean {
     consultedPatches.add(patchId);
@@ -251,7 +275,7 @@ function createReplayContext(
       );
       if (
         started !== undefined &&
-        (started.workflowType !== workflowType || !isDeepStrictEqual(started.input, input))
+        (started.workflowType !== workflowType || !sameEncoding(started.input, input))
       ) {
         throw new NonDeterminismError(
           childId,
@@ -326,7 +350,7 @@ function createReplayContext(
         );
         if (
           scheduled !== undefined &&
-          (scheduled.stepType !== stepType || !isDeepStrictEqual(scheduled.input, input))
+          (scheduled.stepType !== stepType || !sameEncoding(scheduled.input, input))
         ) {
           throw new NonDeterminismError(
             stepId,
@@ -379,7 +403,9 @@ function createReplayContext(
           (event) => event.type === "timer_started" && event.timerId === timerId,
         );
         if (!alreadyStarted) {
-          const fireAt = new Date(options.clock.now().getTime() + durationMs).toISOString();
+          const fireAt = new Date(
+            runUnguarded(() => options.clock.now()).getTime() + durationMs,
+          ).toISOString();
           newCommands.push({ type: "start_timer", timerId, fireAt });
         }
 
@@ -448,15 +474,9 @@ function createReplayContext(
       deprecatePatch(patchId: string): void {
         decidePatch(patchId);
       },
-      now(): Date {
-        return options.clock.now();
-      },
-      random(): number {
-        return options.random.random();
-      },
-      uuid(): string {
-        return options.random.uuid();
-      },
+      now: values.now,
+      random: values.random,
+      uuid: values.uuid,
     };
   }
 

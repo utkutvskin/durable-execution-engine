@@ -135,7 +135,6 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
     }),
     decisionOptions: {
       clock,
-      random,
       ...(options.buildId === undefined ? {} : { buildId: options.buildId }),
     },
   });
@@ -208,6 +207,7 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
       return;
     }
     const stored = await store.read(task.runId);
+    const triggeredAt = stored.at(-1)?.createdAt;
     const history = stored.map((entry) => entry.event);
     const started = history[0];
     if (started?.type !== "run_started") {
@@ -222,6 +222,7 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
       definition.handler as unknown as WorkflowHandler,
       started.input,
       history,
+      triggeredAt,
     );
     const events = decision.commands.map(commandToEvent);
     let recorded;

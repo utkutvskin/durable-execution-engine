@@ -103,6 +103,7 @@ const PRESENTATIONS: Readonly<Record<string, Presentation>> = {
     summary: (e) => `${text(e["childId"])}: ${errorText(e["error"])}`,
   },
   patch_recorded: { label: "patch recorded", tone: "neutral", summary: (e) => text(e["patchId"]) },
+  time_recorded: { label: "time recorded", tone: "neutral", summary: (e) => text(e["time"]) },
 };
 
 /**

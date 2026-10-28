@@ -437,4 +437,91 @@ describe("engine runtime against postgres", () => {
     expect(finished.map((entry) => entry.status)).toEqual(runIds.map(() => "COMPLETED"));
     expect(errors).toEqual([]);
   });
+
+  describe("values read from the workflow context", () => {
+    const record = defineStep<unknown, { ok: boolean }>("record", {
+      handler: () => ({ ok: true }),
+    });
+    const valuesFlow = defineWorkflow("values-flow", async (ctx) => {
+      for (let index = 0; index < 5; index += 1) {
+        await ctx.step("record", {
+          index,
+          id: ctx.uuid(),
+          roll: ctx.random(),
+          at: ctx.now(),
+        });
+      }
+      return "done";
+    });
+
+    async function scheduledInputs(runId: string): Promise<{ id: string; at: string }[]> {
+      const result = await pool.query<{ input: { id: string; at: string } }>(
+        `select payload -> 'input' as input from run_events
+         where run_id = $1 and payload ->> 'type' = 'step_scheduled' order by sequence_number`,
+        [runId],
+      );
+      return result.rows.map((entry) => entry.input);
+    }
+
+    it("completes a run that feeds uuid, random and now into five steps on the sticky path", async () => {
+      boot([valuesFlow], [record]);
+      const runId = await start("values-flow");
+      const finished = await settled(runId);
+      expect(finished).toMatchObject({ status: "COMPLETED", result: "done" });
+      const inputs = await scheduledInputs(runId);
+      expect(inputs).toHaveLength(5);
+      expect(new Set(inputs.map((input) => input.id)).size).toBe(5);
+      expect((await eventTypes(runId)).filter((type) => type === "time_recorded")).toHaveLength(5);
+      expect(errors).toEqual([]);
+    });
+
+    it("completes the same run when every decision replays the history from the top", async () => {
+      engine = startEngine({
+        pool,
+        workflows: [valuesFlow],
+        steps: [record],
+        clock: { now: () => new Date() },
+        stickyTimeoutMs: 1,
+        pollIntervalMs: 5,
+        loopIntervalMs: 20,
+        concurrency: 4,
+        stalledRunGraceMs: 60_000,
+        shutdownTimeoutMs: 2_000,
+        onDecision: (decision) => {
+          decisions.push(decision.outcome);
+        },
+        onError: (error) => {
+          errors.push(error);
+        },
+      });
+      const decisions: string[] = [];
+      const runId = await start("values-flow");
+      const finished = await settled(runId);
+      expect(finished).toMatchObject({ status: "COMPLETED", result: "done" });
+      expect(decisions.filter((outcome) => outcome === "suspended").length).toBeGreaterThanOrEqual(
+        5,
+      );
+      expect(await scheduledInputs(runId)).toHaveLength(5);
+      expect(errors).toEqual([]);
+    });
+
+    it("records as the time of a call the time an earlier event of the run was written", async () => {
+      boot([valuesFlow], [record]);
+      const runId = await start("values-flow");
+      await settled(runId);
+      const events = await pool.query<{ type: string; time: string | null; written: Date }>(
+        `select payload ->> 'type' as type, payload ->> 'time' as time, created_at as written
+         from run_events where run_id = $1 order by sequence_number`,
+        [runId],
+      );
+      const markers = events.rows.filter((entry) => entry.type === "time_recorded");
+      expect(markers).toHaveLength(5);
+      for (const marker of markers) {
+        const earlier = events.rows
+          .slice(0, events.rows.indexOf(marker))
+          .map((entry) => entry.written.toISOString());
+        expect(earlier).toContain(marker.time);
+      }
+    });
+  });
 });

@@ -49,6 +49,7 @@ export interface StickyDecider {
     handler: WorkflowHandler<TInput, TResult>,
     input: TInput,
     history: readonly WorkflowEvent[],
+    triggeredAt?: Date,
   ): Promise<StickyDecision>;
   invalidate(runId: string): void;
   flush(): void;
@@ -92,12 +93,18 @@ export function createStickyDecider(options: StickyDeciderOptions): StickyDecide
     handler: WorkflowHandler<TInput, TResult>,
     input: TInput,
     history: readonly WorkflowEvent[],
+    triggeredAt: Date | undefined,
   ): Promise<StickyDecision> {
+    const replayOptions: DecisionLoopOptions = {
+      ...decisionOptions,
+      runId,
+      ...(triggeredAt === undefined ? {} : { triggeredAt }),
+    };
     if (!uncacheable.has(handler)) {
-      const session = createLiveSession(handler, input, decisionOptions);
+      const session = createLiveSession(handler, input, replayOptions);
       fullReplays += 1;
       replayedEvents += history.length;
-      const advanced = await session.advance(history);
+      const advanced = await session.advance(history, triggeredAt);
       if (advanced.status === "decided") {
         if (isOpen(advanced.decision)) {
           cache.set(runId, session);
@@ -108,7 +115,7 @@ export function createStickyDecider(options: StickyDeciderOptions): StickyDecide
     }
     fullReplays += 1;
     replayedEvents += history.length;
-    const decision = await runDecisionLoop(handler, input, history, decisionOptions);
+    const decision = await runDecisionLoop(handler, input, history, replayOptions);
     return { decision, source: "replay" };
   }
 
@@ -118,6 +125,7 @@ export function createStickyDecider(options: StickyDeciderOptions): StickyDecide
       handler: WorkflowHandler<TInput, TResult>,
       input: TInput,
       history: readonly WorkflowEvent[],
+      triggeredAt?: Date,
     ): Promise<StickyDecision> {
       const cached = cache.get(runId);
       if (cached === undefined) {
@@ -125,7 +133,7 @@ export function createStickyDecider(options: StickyDeciderOptions): StickyDecide
       } else {
         const before = cached.eventCount;
         try {
-          const advanced = await cached.advance(history);
+          const advanced = await cached.advance(history, triggeredAt);
           if (advanced.status === "decided") {
             cacheHits += 1;
             incrementalEvents += history.length - before;
@@ -145,7 +153,7 @@ export function createStickyDecider(options: StickyDeciderOptions): StickyDecide
         cache.delete(runId);
       }
       try {
-        return await replayFromScratch(runId, handler, input, history);
+        return await replayFromScratch(runId, handler, input, history, triggeredAt);
       } catch (error: unknown) {
         cache.delete(runId);
         throw error;

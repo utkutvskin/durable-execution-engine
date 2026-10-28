@@ -10,8 +10,10 @@ import {
   type DecisionLoopOptions,
   type DecisionResult,
 } from "./decision-loop.js";
+import { sameEncoding } from "./canonical.js";
+import { createContextValues } from "./context-values.js";
 import { NonDeterminismError } from "./errors.js";
-import { guardAgainstForbiddenApis } from "./sandbox.js";
+import { guardAgainstForbiddenApis, runUnguarded } from "./sandbox.js";
 
 /**
  * What `LiveSession.advance` reports. `decided` carries the decision for the
@@ -39,8 +41,12 @@ export type LiveAdvance =
 export interface LiveSession {
   /** How many history events the session has consumed. */
   readonly eventCount: number;
-  /** Feeds `history` (the whole history, oldest first) and decides. */
-  advance(history: readonly WorkflowEvent[]): Promise<LiveAdvance>;
+  /**
+   * Feeds `history` (the whole history, oldest first) and decides.
+   * `triggeredAt` is when the event that triggered the decision was written;
+   * `ctx.now()` answers with it.
+   */
+  advance(history: readonly WorkflowEvent[], triggeredAt?: Date): Promise<LiveAdvance>;
 }
 
 interface Waiter {
@@ -58,6 +64,7 @@ function isSupportedEvent(event: WorkflowEvent): boolean {
     case "timer_started":
     case "timer_fired":
     case "signal_received":
+    case "time_recorded":
       return true;
     default:
       return false;
@@ -82,6 +89,8 @@ export function createLiveSession<TInput, TResult>(
   const signalConsumption = new Map<string, number>();
   const waiters = new Map<string, Waiter[]>();
   const queryHandlers = new Map<string, QueryHandler>();
+  const recordedTimes: string[] = [];
+  let triggeredAt: Date | undefined;
   let commands: WorkflowCommand[] = [];
   let emitted: readonly WorkflowCommand[] = [];
   let stepSequence = 0;
@@ -141,6 +150,9 @@ export function createLiveSession<TInput, TResult>(
         firedTimers.add(event.timerId);
         notify(`timer:${event.timerId}`);
         break;
+      case "time_recorded":
+        recordedTimes.push(event.time);
+        break;
       case "signal_received": {
         const list = signals.get(event.signalName) ?? [];
         list.push(event.payload);
@@ -167,6 +179,13 @@ export function createLiveSession<TInput, TResult>(
     return new Promise<TValue>(() => undefined);
   }
 
+  const values = createContextValues(
+    options,
+    recordedTimes,
+    () => triggeredAt,
+    (command) => commands.push(command),
+  );
+
   const context: WorkflowContext = {
     startChild: () => {
       flags.unsupported = true;
@@ -186,7 +205,7 @@ export function createLiveSession<TInput, TResult>(
       const scheduled = scheduledSteps.get(stepId);
       if (
         scheduled !== undefined &&
-        (scheduled.stepType !== stepType || !isDeepStrictEqual(scheduled.input, stepInput))
+        (scheduled.stepType !== stepType || !sameEncoding(scheduled.input, stepInput))
       ) {
         throw new NonDeterminismError(
           stepId,
@@ -214,7 +233,9 @@ export function createLiveSession<TInput, TResult>(
       timerSequence += 1;
       const timerId = `timer-${String(timerSequence)}`;
       if (!firedTimers.has(timerId) && !startedTimers.has(timerId)) {
-        const fireAt = new Date(options.clock.now().getTime() + durationMs).toISOString();
+        const fireAt = new Date(
+          runUnguarded(() => options.clock.now()).getTime() + durationMs,
+        ).toISOString();
         commands.push({ type: "start_timer", timerId, fireAt });
       }
       return pendingPromise<undefined>(`timer:${timerId}`, (resolve) => {
@@ -247,12 +268,17 @@ export function createLiveSession<TInput, TResult>(
     deprecatePatch: () => {
       flags.unsupported = true;
     },
-    now: () => options.clock.now(),
-    random: () => options.random.random(),
-    uuid: () => options.random.uuid(),
+    now: values.now,
+    random: values.random,
+    uuid: values.uuid,
   };
 
   function emittedAreRecorded(slice: readonly WorkflowEvent[]): boolean {
+    const emittedTimes = emitted.filter((command) => command.type === "record_time").length;
+    const recordedNow = slice.filter((event) => event.type === "time_recorded").length;
+    if (recordedNow < emittedTimes) {
+      return false;
+    }
     return emitted.every((command) => {
       if (command.type === "schedule_step") {
         return slice.some(
@@ -294,7 +320,8 @@ export function createLiveSession<TInput, TResult>(
       return history.length;
     },
 
-    async advance(full: readonly WorkflowEvent[]): Promise<LiveAdvance> {
+    async advance(full: readonly WorkflowEvent[], trigger?: Date): Promise<LiveAdvance> {
+      triggeredAt = trigger;
       const seen = history.length;
       if (finished || flags.unsupported || full.length < seen) {
         return { status: "diverged" };

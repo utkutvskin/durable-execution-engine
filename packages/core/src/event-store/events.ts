@@ -207,6 +207,16 @@ export const patchRecordedEventSchema = z.object({
 });
 
 /**
+ * A `ctx.now()` call reached the frontier of the run for the first time and
+ * was answered with `time`, the time of the event that triggered the
+ * decision. Replays answer the nth call from the nth of these events.
+ */
+export const timeRecordedEventSchema = z.object({
+  type: z.literal("time_recorded"),
+  time: z.iso.datetime(),
+});
+
+/**
  * Every event kind that can be appended to a run's event log, discriminated
  * on `type`. This is the closed set `EventStore.append` validates against:
  * a payload that does not match one of these shapes is rejected before it
@@ -232,6 +242,7 @@ export const workflowEventSchema = z.discriminatedUnion("type", [
   childCompletedEventSchema,
   childFailedEventSchema,
   patchRecordedEventSchema,
+  timeRecordedEventSchema,
 ]);
 
 /**

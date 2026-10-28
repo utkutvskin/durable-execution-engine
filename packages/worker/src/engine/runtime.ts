@@ -33,6 +33,8 @@ export interface EngineOptions {
   readonly workflows: readonly AnyWorkflowDefinition[];
   readonly steps: readonly AnyStepDefinition[];
   readonly buildId?: string;
+  readonly maxCachedRuns?: number;
+  readonly stickyTimeoutMs?: number;
   readonly concurrency?: number;
   readonly pollIntervalMs?: number;
   readonly visibilityTimeoutMs?: number;
@@ -88,6 +90,8 @@ export function startEngine(options: EngineOptions): Engine {
     ...clockOption,
     ...(options.random === undefined ? {} : { random: options.random }),
     ...(options.buildId === undefined ? {} : { buildId: options.buildId }),
+    ...(options.maxCachedRuns === undefined ? {} : { maxCachedRuns: options.maxCachedRuns }),
+    ...(options.stickyTimeoutMs === undefined ? {} : { stickyTimeoutMs: options.stickyTimeoutMs }),
     ...(options.tracing === undefined ? {} : { tracing: options.tracing }),
     ...(options.onDecision === undefined ? {} : { onDecision: options.onDecision }),
   });

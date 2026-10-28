@@ -41,6 +41,15 @@ export interface RecordPatchCommand {
 }
 
 /**
+ * A `ctx.now()` call was answered with `time` (an ISO 8601 string), the time
+ * of the event that triggered the decision.
+ */
+export interface RecordTimeCommand {
+  readonly type: "record_time";
+  readonly time: string;
+}
+
+/**
  * The run finished successfully with the given result.
  */
 export interface CompleteRunCommand {
@@ -77,7 +86,7 @@ export interface ContinueAsNewCommand {
 /**
  * Every command kind a workflow decision can produce, discriminated on
  * `type`. A decision produces zero or more `ScheduleStepCommand`,
- * `StartTimerCommand`, `StartChildCommand` and `RecordPatchCommand` entries, followed by at most one of
+ * `StartTimerCommand`, `StartChildCommand`, `RecordPatchCommand` and `RecordTimeCommand` entries, followed by at most one of
  * `CompleteRunCommand`, `FailRunCommand`, `CancelRunCommand` or
  * `ContinueAsNewCommand`.
  */
@@ -86,6 +95,7 @@ export type WorkflowCommand =
   | StartTimerCommand
   | StartChildCommand
   | RecordPatchCommand
+  | RecordTimeCommand
   | CompleteRunCommand
   | FailRunCommand
   | CancelRunCommand
