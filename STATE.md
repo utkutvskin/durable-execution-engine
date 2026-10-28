@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 32: deterministic context values and a tighter sandbox
+
+- **Status:** DONE
+- **Completed day:** 32
+- **Files added or changed:** `packages/core/src/workflow/` (new: `canonical.ts`, `seeded-random.ts`, `context-values.ts`, `deterministic-values.test.ts`; changed: `decision-loop.ts`, `live-session.ts`, `sandbox.ts`, `sandbox.test.ts`, `commands.ts`, `command-events.ts`), `packages/core/src/event-store/events.ts` (`time_recorded`), `packages/core/src/sticky/sticky-decider.ts` (`triggeredAt`, `runId` per decision), `packages/worker/src/engine/task-handler.ts`, `runtime.ts` (`maxCachedRuns`, `stickyTimeoutMs`) and `engine.integration.test.ts`, `apps/ui/src/client/timeline.ts`, `docs/CONCEPTS.md`, `docs/DECISIONS.md` (ADR-0042), `docs/DEFERRED.md`
+- **Technical decisions:** ADR-0042 in `docs/DECISIONS.md`. No new dependency.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (115 test files, 851 tests, 31 of them new today). The baseline `verify` of the session was green. **Reproduced first:** a workflow that feeds `ctx.uuid()` into a step input failed its second decision with `NonDeterminismError`; the red test is `deterministic-values.test.ts`. **Fixed:** `ctx.now()` is a recorded `time_recorded` event holding the `created_at` of the last event the worker read; `ctx.random()` and `ctx.uuid()` come from a SHA-256 generator of run id and call counter (ADR-0042); step and child inputs are compared by canonical (sorted key) codec encoding, which fixes `undefined`, `Date`, `NaN` and `-0`; the sandbox also refuses `new Date()`, `Date()`, `performance.now`, `crypto.randomUUID`, `setInterval` and `setImmediate`, each with a test that it works outside a decision; a decision whose workflow code still waits on a non-ctx timer or request fails with `WorkflowActiveAfterQuiescenceError` (async_hooks resource tracking per decision). Proven by test: a run feeding uuid, random and now into five step inputs completes against real Postgres through the sticky path and with every decision forced to replay from the top (`stickyTimeoutMs: 1`), and the same at unit level on both paths with the system clock; the recorded times are `created_at` values of earlier events of the run. **Things to know:** a bug I made and the tests caught: `performance.now` and `randomUUID` lose `this` when patched without `Reflect.apply` (the payment saga example failed); `engine.random` and the `random` of `createEngineTaskHandler` now only feed step retry jitter, decisions no longer use them; every `ctx.now()` call adds one event. The limits (saved references to the globals, the reach of the quiescence check) are in `docs/DEFERRED.md`. CI of the pushed commit is read after the push, below. Day 33 (replay in history order and complete command matching) is next; read `docs/REVIEW.md` section 2, items 3 and 5 first.
+
+---
+
 ## Day 31: green CI and honest verification
 
 - **Status:** DONE
