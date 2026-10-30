@@ -320,7 +320,10 @@ function createReplayContext(
       const childId = `child-${String(childSequence)}`;
       const parentClosePolicy = childOptions?.parentClosePolicy ?? "cancel";
 
-      const recorded = matcher.issue({ kind: "child", id: childId, workflowType, input });
+      const recorded = matcher.issue(
+        { kind: "child", id: childId, workflowType, input },
+        cancelled,
+      );
       if (!recorded) {
         if (cancelled) {
           throw new CancelledError();
@@ -383,7 +386,7 @@ function createReplayContext(
         stepSequence += 1;
         const stepId = `step-${String(stepSequence)}`;
 
-        const recorded = matcher.issue({ kind: "step", id: stepId, stepType, input });
+        const recorded = matcher.issue({ kind: "step", id: stepId, stepType, input }, cancelled);
 
         const finishedIndex = history.findIndex(
           (event) =>
@@ -419,7 +422,7 @@ function createReplayContext(
       sleep(durationMs: number): Promise<void> {
         timerSequence += 1;
         const timerId = `timer-${String(timerSequence)}`;
-        const recorded = matcher.issue({ kind: "timer", id: timerId, durationMs });
+        const recorded = matcher.issue({ kind: "timer", id: timerId, durationMs }, cancelled);
 
         const firedIndex = history.findIndex(
           (event) => event.type === "timer_fired" && event.timerId === timerId,

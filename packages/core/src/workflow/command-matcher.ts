@@ -99,9 +99,11 @@ export interface CommandMatcher {
    * Registers the next command the code issues. Returns `true` when the
    * history already holds it and `false` when it is new. Throws
    * `NonDeterminismError` when the history holds a different command at that
-   * position.
+   * position. With `whileCancelling`, a call that does not match the recorded
+   * command is not counted: a cancelled run skips the commands it would have
+   * issued next, and gets `false` for them.
    */
-  issue(shape: CommandShape): boolean;
+  issue(shape: CommandShape, whileCancelling?: boolean): boolean;
   /**
    * Throws `NonDeterminismError` when the history holds commands the code
    * has not issued.
@@ -120,10 +122,13 @@ export function createCommandMatcher(): CommandMatcher {
     record(shapes) {
       recorded.push(...shapes);
     },
-    issue(shape) {
+    issue(shape, whileCancelling = false) {
       const position = issued;
-      issued += 1;
       const expected = recorded[position];
+      if (whileCancelling && (expected === undefined || !sameCommand(expected, shape))) {
+        return false;
+      }
+      issued += 1;
       if (expected === undefined) {
         return false;
       }

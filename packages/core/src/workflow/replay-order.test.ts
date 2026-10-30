@@ -182,4 +182,24 @@ describe("complete command matching", () => {
     const decision = await coldDecide(sleeper, [runStarted, timer]);
     expect(decision.outcome).toBe("suspended");
   });
+
+  it("does not count a sleep that a cancelled run never started", async () => {
+    const waiting: WorkflowHandler = async (ctx) => {
+      ctx.onCancel(async (compensation) => {
+        await compensation.step("release", {});
+      });
+      await ctx.step("reserve", {});
+      await ctx.sleep(1000);
+    };
+    const history = [
+      runStarted,
+      scheduled("step-1", "reserve"),
+      completed("step-1"),
+      { type: "cancel_requested" } as const,
+      scheduled("step-2", "release"),
+      completed("step-2"),
+    ];
+    const decision = await coldDecide(waiting, history);
+    expect(decision.outcome).toBe("cancelled");
+  });
 });
