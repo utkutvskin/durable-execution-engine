@@ -56,3 +56,7 @@ The `setTimeout(resolve, 10)` and `setTimeout(resolve, 25)` calls that remain in
 - The check for workflow code that is still active after quiescence follows the async resources (timers, file and network requests) created inside the decision's call chain. It does not see a non-`ctx` promise that is already settled and will only resume later through another decision's context, nor work done by a native callback that does not propagate async context.
 - Every `ctx.now()` call adds a `time_recorded` event, so code that reads the time in a loop lengthens its history. A cheaper form (one marker per decision) is possible but would tie the answer of a call to the decision it was first reached in.
 - `ctx.random()` and `ctx.uuid()` depend on the order of value calls in the workflow (ADR-0042); a code change that reorders them changes later values and is not detected, because nothing about them is recorded.
+
+## Command matching limits (day 33)
+
+Cancellation is still read from the whole history: once a `cancel_requested` event exists, a wait for a command the history does not hold rejects at the call, not at the position of the cancel event. A cancel that arrived between two commands is therefore replayed as if it came first. The property test generates steps, sleeps, signals and signal-reacting branches, not `ctx.select`, `ctx.all`, children, patches or cancellation, which the live session does not resume; the cold replay of those is covered by the existing decision tests only.
