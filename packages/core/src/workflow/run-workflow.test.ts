@@ -54,7 +54,12 @@ describe("runWorkflowInMemory", () => {
 
     const expectedCommands: WorkflowCommand[] = [
       { type: "schedule_step", stepId: "step-1", stepType: "charge-card", input: { amount: 42 } },
-      { type: "start_timer", timerId: "timer-1", fireAt: "2026-01-01T00:01:00.000Z" },
+      {
+        type: "start_timer",
+        timerId: "timer-1",
+        fireAt: "2026-01-01T00:01:00.000Z",
+        durationMs: 60_000,
+      },
       {
         type: "schedule_step",
         stepId: "step-2",

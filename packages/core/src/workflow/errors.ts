@@ -1,7 +1,10 @@
 /**
  * Thrown by `runDecisionLoop` when a replay's `ctx.step()` call disagrees
  * with the `step_scheduled` event already recorded in history for the same
- * `stepId`, either on `stepType` or on `input`. A `stepId` is assigned
+ * `stepId`, either on `stepType` or on `input`, or when any other command
+ * (a timer with another duration, a child, a patch, a step where history
+ * holds a sleep) disagrees with the one recorded at its position, or when
+ * history holds commands the code no longer issues. A `stepId` is assigned
  * purely from call order, so this only happens when the workflow code that
  * produced the history and the workflow code doing the replay would not
  * have made the same decision at that point: the two are running different
@@ -17,12 +20,14 @@ export class NonDeterminismError extends Error {
     stepId: string,
     expected: { readonly stepType: string; readonly input: unknown },
     found: { readonly stepType: string; readonly input: unknown },
+    detail?: string,
   ) {
     super(
-      `non-deterministic replay at "${stepId}": history recorded step type ` +
-        `"${expected.stepType}" with input ${JSON.stringify(expected.input)}, ` +
-        `but the workflow code now calls step type "${found.stepType}" with input ` +
-        JSON.stringify(found.input),
+      detail ??
+        `non-deterministic replay at "${stepId}": history recorded step type ` +
+          `"${expected.stepType}" with input ${JSON.stringify(expected.input)}, ` +
+          `but the workflow code now calls step type "${found.stepType}" with input ` +
+          JSON.stringify(found.input),
     );
     this.name = "NonDeterminismError";
     this.stepId = stepId;

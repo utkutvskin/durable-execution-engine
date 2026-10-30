@@ -15,7 +15,12 @@ export function commandToEvent(command: WorkflowCommand): WorkflowEvent {
         input: command.input,
       };
     case "start_timer":
-      return { type: "timer_started", timerId: command.timerId, fireAt: command.fireAt };
+      return {
+        type: "timer_started",
+        timerId: command.timerId,
+        fireAt: command.fireAt,
+        durationMs: command.durationMs,
+      };
     case "start_child":
       return {
         type: "child_started",

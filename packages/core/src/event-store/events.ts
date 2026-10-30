@@ -123,11 +123,14 @@ export const stepAttemptFailedEventSchema = z.object({
 
 /**
  * A durable timer was started, due to fire at `fireAt` (an ISO-8601 string).
+ * `durationMs` is the duration the workflow asked for; histories written
+ * before it was recorded do not hold it.
  */
 export const timerStartedEventSchema = z.object({
   type: z.literal("timer_started"),
   timerId: z.string().min(1),
   fireAt: z.string().min(1),
+  durationMs: z.number().optional(),
 });
 
 /**

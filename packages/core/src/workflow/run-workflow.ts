@@ -164,7 +164,7 @@ function createInMemoryContext(
       timerSequence += 1;
       const timerId = `timer-${String(timerSequence)}`;
       const fireAt = new Date(options.clock.now().getTime() + durationMs).toISOString();
-      commands.push({ type: "start_timer", timerId, fireAt });
+      commands.push({ type: "start_timer", timerId, fireAt, durationMs });
       return Promise.resolve();
     },
     waitForSignal<TPayload>(signalName: string): Promise<TPayload> {

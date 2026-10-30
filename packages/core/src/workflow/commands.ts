@@ -11,12 +11,14 @@ export interface ScheduleStepCommand {
 }
 
 /**
- * A durable timer was started, due to fire at `fireAt` (an ISO-8601 string).
+ * A durable timer was started, due to fire at `fireAt` (an ISO-8601 string)
+ * after the `durationMs` the workflow asked for.
  */
 export interface StartTimerCommand {
   readonly type: "start_timer";
   readonly timerId: string;
   readonly fireAt: string;
+  readonly durationMs: number;
 }
 
 /**

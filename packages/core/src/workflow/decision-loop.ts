@@ -17,7 +17,7 @@ import {
   NonDeterminismError,
   VersionMismatchError,
 } from "./errors.js";
-import { sameEncoding } from "./canonical.js";
+import { createCommandMatcher, recordedCommandOf } from "./command-matcher.js";
 import { createContextValues } from "./context-values.js";
 import { fulfilledValues, runParallel } from "./parallel.js";
 import {
@@ -157,13 +157,6 @@ function neverSettles<TValue>(): Promise<TValue> {
   return new Promise<TValue>(() => undefined);
 }
 
-function findEvent<TEvent extends WorkflowEvent>(
-  history: readonly WorkflowEvent[],
-  predicate: (event: WorkflowEvent) => event is TEvent,
-): TEvent | undefined {
-  return history.find(predicate);
-}
-
 function createReplayContext(
   history: readonly WorkflowEvent[],
   options: DecisionLoopOptions,
@@ -173,7 +166,12 @@ function createReplayContext(
   inFlightSteps: Set<string>,
   continuation: { requested?: { readonly input: unknown } },
   consultedPatches: Set<string>,
-): { readonly workflowContext: WorkflowContext; readonly compensationContext: WorkflowContext } {
+): {
+  readonly workflowContext: WorkflowContext;
+  readonly compensationContext: WorkflowContext;
+  readonly feedHistory: () => Promise<void>;
+  readonly assertAllCommandsIssued: () => void;
+} {
   const cancelRequested = history.some((event) => event.type === "cancel_requested");
   let stepSequence = 0;
   let timerSequence = 0;
@@ -182,6 +180,10 @@ function createReplayContext(
   const cancelledPromises = new WeakSet<Promise<unknown>>();
   const signalSequences = new Map<string, number>();
   const completionPositions = new WeakMap<Promise<unknown>, number>();
+  const deliveries = new Map<number, (() => void)[]>();
+  let fedUpTo = -1;
+  const matcher = createCommandMatcher();
+  matcher.record(history.flatMap((event) => recordedCommandOf(event) ?? []));
   const recordedPatchIds = new Set(
     history.flatMap((event) => (event.type === "patch_recorded" ? [event.patchId] : [])),
   );
@@ -207,10 +209,12 @@ function createReplayContext(
     }
     let useNewPath: boolean;
     if (recordedPatchIds.has(patchId)) {
+      matcher.issue({ kind: "patch", id: patchId });
       useNewPath = true;
     } else if (stepSequence + timerSequence + childSequence < recordedCommandCount) {
       useNewPath = false;
     } else {
+      matcher.issue({ kind: "patch", id: patchId });
       useNewPath = true;
       newCommands.push(
         options.buildId === undefined
@@ -222,9 +226,55 @@ function createReplayContext(
     return useNewPath;
   }
 
-  function completedAt<TValue>(promise: Promise<TValue>, historyIndex: number): Promise<TValue> {
+  function completedAt<TValue>(
+    historyIndex: number,
+    outcome:
+      | { readonly fulfilled: true; readonly value: TValue }
+      | { readonly fulfilled: false; readonly error: Error },
+  ): Promise<TValue> {
+    const promise = new Promise<TValue>((resolve, reject) => {
+      const release = (): void => {
+        if (outcome.fulfilled) {
+          resolve(outcome.value);
+        } else {
+          reject(outcome.error);
+        }
+      };
+      if (historyIndex <= fedUpTo) {
+        release();
+        return;
+      }
+      const queued = deliveries.get(historyIndex);
+      if (queued === undefined) {
+        deliveries.set(historyIndex, [release]);
+      } else {
+        queued.push(release);
+      }
+    });
+    promise.catch(() => undefined);
     completionPositions.set(promise, historyIndex);
     return promise;
+  }
+
+  async function feedHistory(): Promise<void> {
+    for (;;) {
+      let next: number | undefined;
+      for (const index of deliveries.keys()) {
+        if (next === undefined || index < next) {
+          next = index;
+        }
+      }
+      if (next === undefined) {
+        return;
+      }
+      fedUpTo = next;
+      const releases = deliveries.get(next) ?? [];
+      deliveries.delete(next);
+      for (const release of releases) {
+        release();
+      }
+      await drainToQuiescence();
+    }
   }
 
   function rejectedByCancellation<TValue>(): Promise<TValue> {
@@ -270,22 +320,8 @@ function createReplayContext(
       const childId = `child-${String(childSequence)}`;
       const parentClosePolicy = childOptions?.parentClosePolicy ?? "cancel";
 
-      const started = findEvent(
-        history,
-        (event): event is Extract<WorkflowEvent, { type: "child_started" }> =>
-          event.type === "child_started" && event.childId === childId,
-      );
-      if (
-        started !== undefined &&
-        (started.workflowType !== workflowType || !sameEncoding(started.input, input))
-      ) {
-        throw new NonDeterminismError(
-          childId,
-          { stepType: started.workflowType, input: started.input },
-          { stepType: workflowType, input },
-        );
-      }
-      if (started === undefined) {
+      const recorded = matcher.issue({ kind: "child", id: childId, workflowType, input });
+      if (!recorded) {
         if (cancelled) {
           throw new CancelledError();
         }
@@ -300,10 +336,12 @@ function createReplayContext(
       const finished = history[finishedIndex];
       let result: Promise<TResult>;
       if (finished?.type === "child_completed") {
-        result = completedAt(Promise.resolve(finished.result as TResult), finishedIndex);
+        result = completedAt(finishedIndex, { fulfilled: true, value: finished.result as TResult });
       } else if (finished?.type === "child_failed") {
-        result = completedAt(Promise.reject(reconstructError(finished.error)), finishedIndex);
-        result.catch(() => undefined);
+        result = completedAt(finishedIndex, {
+          fulfilled: false,
+          error: reconstructError(finished.error),
+        });
       } else if (cancelled) {
         result = rejectedByCancellation<TResult>();
       } else {
@@ -345,21 +383,7 @@ function createReplayContext(
         stepSequence += 1;
         const stepId = `step-${String(stepSequence)}`;
 
-        const scheduled = findEvent(
-          history,
-          (event): event is Extract<WorkflowEvent, { type: "step_scheduled" }> =>
-            event.type === "step_scheduled" && event.stepId === stepId,
-        );
-        if (
-          scheduled !== undefined &&
-          (scheduled.stepType !== stepType || !sameEncoding(scheduled.input, input))
-        ) {
-          throw new NonDeterminismError(
-            stepId,
-            { stepType: scheduled.stepType, input: scheduled.input },
-            { stepType, input },
-          );
-        }
+        const recorded = matcher.issue({ kind: "step", id: stepId, stepType, input });
 
         const finishedIndex = history.findIndex(
           (event) =>
@@ -368,13 +392,19 @@ function createReplayContext(
         );
         const finished = history[finishedIndex];
         if (finished?.type === "step_completed") {
-          return completedAt(Promise.resolve(finished.result as TResult), finishedIndex);
+          return completedAt(finishedIndex, {
+            fulfilled: true,
+            value: finished.result as TResult,
+          });
         }
         if (finished?.type === "step_failed") {
-          return completedAt(Promise.reject(reconstructError(finished.error)), finishedIndex);
+          return completedAt(finishedIndex, {
+            fulfilled: false,
+            error: reconstructError(finished.error),
+          });
         }
 
-        if (scheduled === undefined) {
+        if (!recorded) {
           if (cancelled) {
             return Promise.reject(new CancelledError());
           }
@@ -389,26 +419,24 @@ function createReplayContext(
       sleep(durationMs: number): Promise<void> {
         timerSequence += 1;
         const timerId = `timer-${String(timerSequence)}`;
+        const recorded = matcher.issue({ kind: "timer", id: timerId, durationMs });
 
         const firedIndex = history.findIndex(
           (event) => event.type === "timer_fired" && event.timerId === timerId,
         );
         if (firedIndex >= 0) {
-          return completedAt(Promise.resolve(), firedIndex);
+          return completedAt(firedIndex, { fulfilled: true, value: undefined });
         }
 
         if (cancelled) {
           return Promise.reject(new CancelledError());
         }
 
-        const alreadyStarted = history.some(
-          (event) => event.type === "timer_started" && event.timerId === timerId,
-        );
-        if (!alreadyStarted) {
+        if (!recorded) {
           const fireAt = new Date(
             runUnguarded(() => options.clock.now()).getTime() + durationMs,
           ).toISOString();
-          newCommands.push({ type: "start_timer", timerId, fireAt });
+          newCommands.push({ type: "start_timer", timerId, fireAt, durationMs });
         }
 
         return neverSettles();
@@ -427,7 +455,10 @@ function createReplayContext(
         });
         const delivered = history[deliveredIndex];
         if (delivered?.type === "signal_received") {
-          return completedAt(Promise.resolve(delivered.payload as TPayload), deliveredIndex);
+          return completedAt(deliveredIndex, {
+            fulfilled: true,
+            value: delivered.payload as TPayload,
+          });
         }
         if (cancelled) {
           return Promise.reject(new CancelledError());
@@ -482,7 +513,14 @@ function createReplayContext(
     };
   }
 
-  return { workflowContext: buildContext(true), compensationContext: buildContext(false) };
+  return {
+    workflowContext: buildContext(true),
+    compensationContext: buildContext(false),
+    feedHistory,
+    assertAllCommandsIssued: () => {
+      matcher.assertAllIssued();
+    },
+  };
 }
 
 /**
@@ -499,6 +537,7 @@ export interface ReplayOutcome<TResult> {
   readonly queryHandlers: ReadonlyMap<string, QueryHandler>;
   readonly continuation: { readonly input: unknown } | undefined;
   readonly unconsultedPatches: readonly string[];
+  readonly unissuedCommand: Error | undefined;
   readonly cancellation:
     | { readonly requested: false }
     | { readonly requested: true; readonly reason?: string; readonly compensated: boolean };
@@ -521,16 +560,17 @@ export async function replayHistory<TInput, TResult>(
   const inFlightSteps = new Set<string>();
   const continuation: { requested?: { readonly input: unknown } } = {};
   const consultedPatches = new Set<string>();
-  const { workflowContext, compensationContext } = createReplayContext(
-    history,
-    options,
-    commands,
-    queryHandlers,
-    compensations,
-    inFlightSteps,
-    continuation,
-    consultedPatches,
-  );
+  const { workflowContext, compensationContext, feedHistory, assertAllCommandsIssued } =
+    createReplayContext(
+      history,
+      options,
+      commands,
+      queryHandlers,
+      compensations,
+      inFlightSteps,
+      continuation,
+      consultedPatches,
+    );
   const cancelEvent = history.find(
     (event): event is Extract<WorkflowEvent, { type: "cancel_requested" }> =>
       event.type === "cancel_requested",
@@ -567,12 +607,21 @@ export async function replayHistory<TInput, TResult>(
       });
 
     await drainToQuiescence();
+    await feedHistory();
 
     if (cancelEvent !== undefined && (handlerDone || inFlightSteps.size === 0)) {
       void runCompensations();
       await drainToQuiescence();
+      await feedHistory();
     }
   });
+
+  let unissuedCommand: Error | undefined;
+  try {
+    assertAllCommandsIssued();
+  } catch (reason: unknown) {
+    unissuedCommand = toError(reason);
+  }
 
   const unconsultedPatches = [
     ...new Set(
@@ -590,6 +639,7 @@ export async function replayHistory<TInput, TResult>(
       queryHandlers,
       continuation: continuation.requested,
       unconsultedPatches,
+      unissuedCommand,
       cancellation: { requested: false },
     };
   }
@@ -599,6 +649,7 @@ export async function replayHistory<TInput, TResult>(
     queryHandlers,
     continuation: continuation.requested,
     unconsultedPatches,
+    unissuedCommand,
     cancellation: {
       requested: true,
       ...(cancelEvent.reason === undefined ? {} : { reason: cancelEvent.reason }),
@@ -638,15 +689,14 @@ async function decide<TInput, TResult>(
   history: readonly WorkflowEvent[],
   options: DecisionLoopOptions,
 ): Promise<DecisionResult<TResult>> {
-  const { settled, commands, cancellation, continuation, unconsultedPatches } = await replayHistory(
-    handler,
-    input,
-    history,
-    options,
-  );
+  const { settled, commands, cancellation, continuation, unconsultedPatches, unissuedCommand } =
+    await replayHistory(handler, input, history, options);
   throwOnVersionMismatch(history, unconsultedPatches, options);
   if (settled?.outcome === "failed" && isIntegrityError(settled.error)) {
     throw settled.error;
+  }
+  if (unissuedCommand !== undefined) {
+    throw unissuedCommand;
   }
   if (cancellation.requested) {
     if (!cancellation.compensated) {

@@ -74,14 +74,24 @@ describe("select", () => {
     const result = await runDecisionLoop(raceWorkflow.handler, {}, [started], sources);
     expect(result.outcome).toBe("suspended");
     expect(result.commands).toEqual([
-      { type: "start_timer", timerId: "timer-1", fireAt: "2026-01-01T00:01:00.000Z" },
+      {
+        type: "start_timer",
+        timerId: "timer-1",
+        fireAt: "2026-01-01T00:01:00.000Z",
+        durationMs: 60_000,
+      },
     ]);
   });
 
   it("picks the signal when it was recorded before the timer fired", async () => {
     const history: WorkflowEvent[] = [
       { type: "run_started", workflowType: "race", input: {} },
-      { type: "timer_started", timerId: "timer-1", fireAt: "2026-01-01T00:01:00.000Z" },
+      {
+        type: "timer_started",
+        timerId: "timer-1",
+        fireAt: "2026-01-01T00:01:00.000Z",
+        durationMs: 60_000,
+      },
       { type: "signal_received", signalName: "approve", payload: "yes" },
       { type: "timer_fired", timerId: "timer-1" },
     ];
@@ -92,7 +102,12 @@ describe("select", () => {
   it("picks the timer when it fired before the signal was recorded", async () => {
     const history: WorkflowEvent[] = [
       { type: "run_started", workflowType: "race", input: {} },
-      { type: "timer_started", timerId: "timer-1", fireAt: "2026-01-01T00:01:00.000Z" },
+      {
+        type: "timer_started",
+        timerId: "timer-1",
+        fireAt: "2026-01-01T00:01:00.000Z",
+        durationMs: 60_000,
+      },
       { type: "timer_fired", timerId: "timer-1" },
       { type: "signal_received", signalName: "approve", payload: "late" },
     ];
@@ -103,7 +118,12 @@ describe("select", () => {
   it("picks the same branch on every replay of one history", async () => {
     const history: WorkflowEvent[] = [
       { type: "run_started", workflowType: "race", input: {} },
-      { type: "timer_started", timerId: "timer-1", fireAt: "2026-01-01T00:01:00.000Z" },
+      {
+        type: "timer_started",
+        timerId: "timer-1",
+        fireAt: "2026-01-01T00:01:00.000Z",
+        durationMs: 60_000,
+      },
       { type: "timer_fired", timerId: "timer-1" },
       { type: "signal_received", signalName: "approve", payload: "late" },
     ];

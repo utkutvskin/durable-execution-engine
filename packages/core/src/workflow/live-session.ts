@@ -10,9 +10,8 @@ import {
   type DecisionLoopOptions,
   type DecisionResult,
 } from "./decision-loop.js";
-import { sameEncoding } from "./canonical.js";
+import { createCommandMatcher, recordedCommandOf } from "./command-matcher.js";
 import { createContextValues } from "./context-values.js";
-import { NonDeterminismError } from "./errors.js";
 import { guardAgainstForbiddenApis, runUnguarded } from "./sandbox.js";
 
 /**
@@ -81,9 +80,8 @@ export function createLiveSession<TInput, TResult>(
   options: DecisionLoopOptions,
 ): LiveSession {
   const history: WorkflowEvent[] = [];
-  const scheduledSteps = new Map<string, Extract<WorkflowEvent, { type: "step_scheduled" }>>();
+  const matcher = createCommandMatcher();
   const finishedSteps = new Map<string, WorkflowEvent>();
-  const startedTimers = new Set<string>();
   const firedTimers = new Set<string>();
   const signals = new Map<string, unknown[]>();
   const signalConsumption = new Map<string, number>();
@@ -119,10 +117,10 @@ export function createLiveSession<TInput, TResult>(
     }
   }
 
-  function notify(key: string): void {
+  function notify(key: string): boolean {
     const pending = waiters.get(key);
     if (pending === undefined) {
-      return;
+      return false;
     }
     const remaining = pending.filter((waiter) => !waiter.tryResolve());
     if (remaining.length === 0) {
@@ -130,38 +128,37 @@ export function createLiveSession<TInput, TResult>(
     } else {
       waiters.set(key, remaining);
     }
+    return remaining.length < pending.length;
   }
 
-  function ingest(event: WorkflowEvent): void {
+  function index(event: WorkflowEvent): void {
     history.push(event);
+    const command = recordedCommandOf(event);
+    if (command !== undefined) {
+      matcher.record([command]);
+    }
+    if (event.type === "time_recorded") {
+      recordedTimes.push(event.time);
+    }
+  }
+
+  function deliver(event: WorkflowEvent): boolean {
     switch (event.type) {
-      case "step_scheduled":
-        scheduledSteps.set(event.stepId, event);
-        break;
       case "step_completed":
       case "step_failed":
         finishedSteps.set(event.stepId, event);
-        notify(`step:${event.stepId}`);
-        break;
-      case "timer_started":
-        startedTimers.add(event.timerId);
-        break;
+        return notify(`step:${event.stepId}`);
       case "timer_fired":
         firedTimers.add(event.timerId);
-        notify(`timer:${event.timerId}`);
-        break;
-      case "time_recorded":
-        recordedTimes.push(event.time);
-        break;
+        return notify(`timer:${event.timerId}`);
       case "signal_received": {
         const list = signals.get(event.signalName) ?? [];
         list.push(event.payload);
         signals.set(event.signalName, list);
-        notify(`signal:${event.signalName}`);
-        break;
+        return notify(`signal:${event.signalName}`);
       }
       default:
-        break;
+        return false;
     }
   }
 
@@ -202,18 +199,8 @@ export function createLiveSession<TInput, TResult>(
     step<TResult>(stepType: string, stepInput: unknown): Promise<TResult> {
       stepSequence += 1;
       const stepId = `step-${String(stepSequence)}`;
-      const scheduled = scheduledSteps.get(stepId);
-      if (
-        scheduled !== undefined &&
-        (scheduled.stepType !== stepType || !sameEncoding(scheduled.input, stepInput))
-      ) {
-        throw new NonDeterminismError(
-          stepId,
-          { stepType: scheduled.stepType, input: scheduled.input },
-          { stepType, input: stepInput },
-        );
-      }
-      if (scheduled === undefined) {
+      const recorded = matcher.issue({ kind: "step", id: stepId, stepType, input: stepInput });
+      if (!recorded) {
         commands.push({ type: "schedule_step", stepId, stepType, input: stepInput });
       }
       return pendingPromise<TResult>(`step:${stepId}`, (resolve, reject) => {
@@ -232,11 +219,12 @@ export function createLiveSession<TInput, TResult>(
     sleep(durationMs: number): Promise<void> {
       timerSequence += 1;
       const timerId = `timer-${String(timerSequence)}`;
-      if (!firedTimers.has(timerId) && !startedTimers.has(timerId)) {
+      const recorded = matcher.issue({ kind: "timer", id: timerId, durationMs });
+      if (!recorded) {
         const fireAt = new Date(
           runUnguarded(() => options.clock.now()).getTime() + durationMs,
         ).toISOString();
-        commands.push({ type: "start_timer", timerId, fireAt });
+        commands.push({ type: "start_timer", timerId, fireAt, durationMs });
       }
       return pendingPromise<undefined>(`timer:${timerId}`, (resolve) => {
         if (!firedTimers.has(timerId)) {
@@ -342,7 +330,7 @@ export function createLiveSession<TInput, TResult>(
 
       await guardAgainstForbiddenApis(async () => {
         for (const event of slice) {
-          ingest(event);
+          index(event);
         }
         if (!started) {
           started = true;
@@ -356,6 +344,11 @@ export function createLiveSession<TInput, TResult>(
           );
         }
         await drainToQuiescence();
+        for (const event of slice) {
+          if (deliver(event)) {
+            await drainToQuiescence();
+          }
+        }
       });
 
       if (hasUnsupportedFeature()) {
@@ -364,6 +357,12 @@ export function createLiveSession<TInput, TResult>(
       if (settled?.outcome === "failed" && isIntegrityError(settled.error)) {
         finished = true;
         throw settled.error;
+      }
+      try {
+        matcher.assertAllIssued();
+      } catch (reason: unknown) {
+        finished = true;
+        throw reason;
       }
       const decision = buildDecision();
       emitted = commands;

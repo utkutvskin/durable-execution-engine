@@ -43,7 +43,12 @@ const historyThroughFirstStep: readonly WorkflowEvent[] = [
 
 const historyThroughTimer: readonly WorkflowEvent[] = [
   ...historyThroughFirstStep,
-  { type: "timer_started", timerId: "timer-1", fireAt: "2026-01-01T00:01:00.000Z" },
+  {
+    type: "timer_started",
+    timerId: "timer-1",
+    fireAt: "2026-01-01T00:01:00.000Z",
+    durationMs: 60_000,
+  },
   { type: "timer_fired", timerId: "timer-1" },
 ];
 
@@ -151,7 +156,12 @@ describe("runDecisionLoop", () => {
     );
 
     const expected: WorkflowCommand[] = [
-      { type: "start_timer", timerId: "timer-1", fireAt: "2026-01-01T00:01:00.000Z" },
+      {
+        type: "start_timer",
+        timerId: "timer-1",
+        fireAt: "2026-01-01T00:01:00.000Z",
+        durationMs: 60_000,
+      },
     ];
     for (const outcome of runs) {
       expect(outcome).toEqual({ outcome: "suspended", commands: expected });
@@ -202,14 +212,24 @@ describe("runDecisionLoop", () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
 
     expect(commandsSeenAtReturn).toEqual([
-      { type: "start_timer", timerId: "timer-1", fireAt: "2026-01-01T00:01:00.000Z" },
+      {
+        type: "start_timer",
+        timerId: "timer-1",
+        fireAt: "2026-01-01T00:01:00.000Z",
+        durationMs: 60_000,
+      },
     ]);
   });
 
   it("does not repeat a command for a timer that is already started but not yet fired", async () => {
     const timerInFlightHistory: readonly WorkflowEvent[] = [
       ...historyThroughFirstStep,
-      { type: "timer_started", timerId: "timer-1", fireAt: "2026-01-01T00:01:00.000Z" },
+      {
+        type: "timer_started",
+        timerId: "timer-1",
+        fireAt: "2026-01-01T00:01:00.000Z",
+        durationMs: 60_000,
+      },
     ];
 
     const outcome = await runDecisionLoop(

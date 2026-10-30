@@ -169,7 +169,12 @@ describe("sticky decider", () => {
     };
     const first = await turn();
     expect(first.commands).toEqual([
-      { type: "start_timer", timerId: "timer-1", fireAt: "2026-01-01T00:00:01.000Z" },
+      {
+        type: "start_timer",
+        timerId: "timer-1",
+        fireAt: "2026-01-01T00:00:01.000Z",
+        durationMs: 1000,
+      },
     ]);
     history.push({ type: "signal_received", signalName: "approve", payload: "a" });
     expect((await turn()).outcome).toBe("suspended");
