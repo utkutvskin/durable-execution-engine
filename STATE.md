@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 33: replay in history order and complete command matching
+
+- **Status:** DONE
+- **Completed day:** 33
+- **Files added or changed:** `packages/core/src/workflow/` (new: `command-matcher.ts`, `replay-order.test.ts`, `replay-equivalence.test.ts`; changed: `decision-loop.ts`, `live-session.ts`, `commands.ts`, `command-events.ts`, `run-workflow.ts`, `errors.ts` and the tests that assert `start_timer`), `packages/core/src/event-store/events.ts` (`durationMs` on `timer_started`), `packages/core/src/sticky/sticky-decider.test.ts`, `test/fixtures/histories/ship-order-suspended-after-charge.json`, `docs/CONCEPTS.md`, `docs/DECISIONS.md` (ADR-0043), `docs/DEFERRED.md`, `package.json`, `pnpm-lock.yaml`
+- **Technical decisions:** ADR-0043 in `docs/DECISIONS.md`. **New dev dependency `fast-check`** (the property test the backlog names; a generator and shrinker are not worth writing by hand).
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (117 test files, 865 tests, 14 of them new today). The baseline `verify` of the session was green. **Reproduced first:** `replay-order.test.ts` was red for a signal handled in `.then()` (cold replay raised `NonDeterminismError`), a changed timer duration, a step swapped for a sleep, a sleep swapped for a step and a removed trailing step (cold and sticky). **Fixed:** the cold replay and the live session start the handler, then deliver result events one at a time in history order with a microtask drain after each event that settles a wait; commands are matched by a new `CommandMatcher` (step with canonical input, timer with `durationMs`, child, patch) as one ordered sequence, and recorded commands the code did not issue raise `NonDeterminismError`. `timer_started` now stores `durationMs` (optional, old histories compare by id). **Proven:** `replay-equivalence.test.ts` runs 500 generated workflows (steps, sleeps, awaited and watched signals, branches on a watched signal, random event orders, step failures) and checks that cold replay, an incrementally fed sticky session and a fresh session decide the same; I checked that it fails on the code before the fix (counterexample: a watched signal, a sleep, a branch on the signal). **A bug the full suite caught, not the new tests:** a saga cancelled before its approval timer was started failed forever with `NonDeterminismError` because the skipped `ctx.sleep` consumed a matcher position; `issue(shape, whileCancelling)` now does not count a call that fails to match while cancelling (test `does not count a sleep that a cancelled run never started`). **Things to know:** my second commit `fd5e699` already contains the property test file without `fast-check` in `package.json` (that arrived in the next commit), so that one commit alone does not install; the pushed head is correct. Cancellation is still read from the whole history, and the property test does not generate select, all, children, patches or cancellation (`docs/DEFERRED.md`). CI of the pushed commit is read after the push, below. Day 34 (one terminal result per step and atomic step enqueue) is next; read `docs/REVIEW.md` section 2, item 6 and section 3 first.
+
+---
+
 ## Day 32: deterministic context values and a tighter sandbox
 
 - **Status:** DONE
