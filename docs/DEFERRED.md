@@ -64,4 +64,3 @@ The recorder creates the `STEP_TASK` of a `step_scheduled` event in the same tra
 ## Read-only database paths still return clients after any error (day 34)
 
 `withClient` and `withTransaction` destroy a client only when its rollback also fails. The read-only paths that do not open a transaction (the invariant checker, the projection read) destroy the client on any error, which is safe but discards healthy connections after an ordinary SQL error. To close this: classify the error by its code and destroy the client only for connection errors.
-
