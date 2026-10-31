@@ -1,4 +1,4 @@
-import type { Pool } from "@dee/core";
+import { rollbackQuietly, type Pool } from "@dee/core";
 
 /**
  * A query the engine runs on its hot path, with the parameters to run it
@@ -234,8 +234,8 @@ export async function explainQuery(pool: Pool, query: HotQuery): Promise<QueryPl
         .map((node) => node["Relation Name"] ?? ""),
     };
   } finally {
-    await client.query("rollback").catch(() => undefined);
-    client.release();
+    const usable = await rollbackQuietly(client);
+    client.release(!usable);
   }
 }
 

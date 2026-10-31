@@ -5,6 +5,7 @@ import { systemClock, type ClockSource } from "../workflow/sources.js";
 import { noopTracing, type TraceSpan, type Tracing } from "../observability/tracing.js";
 import { createMonotonicClock } from "../timers/monotonic-clock.js";
 import { cronTimesBetween, nextCronTime, parseCron, InvalidScheduleError } from "./cron.js";
+import { rollbackQuietly } from "../db/transaction.js";
 
 /**
  * What to do when a schedule fires while a run it started earlier is still
@@ -220,6 +221,7 @@ export function createScheduleManager(
     work: (client: PoolClient, spans: TraceSpan[]) => Promise<T>,
   ): Promise<T> {
     const client = await pool.connect();
+    let broken = false;
     const spans: TraceSpan[] = [];
     try {
       await client.query("begin");
@@ -230,10 +232,10 @@ export function createScheduleManager(
       }
       return result;
     } catch (error) {
-      await client.query("rollback").catch(() => undefined);
+      broken = !(await rollbackQuietly(client));
       throw error;
     } finally {
-      client.release();
+      client.release(broken);
     }
   }
 

@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { withTransaction } from "../db/transaction.js";
 import type { SerializedError } from "../workflow/error-serialization.js";
 import { systemClock, type ClockSource } from "../workflow/sources.js";
 
@@ -41,6 +42,15 @@ export interface AddDeadLetterInput {
 }
 
 /**
+ * Identifies one delivery of a task: the task and the lease token of that
+ * delivery.
+ */
+export interface TaskLease {
+  readonly taskId: string;
+  readonly leaseToken: string;
+}
+
+/**
  * Filters for `DeadLetterQueue.list`. Requeued entries are left out unless
  * `includeRequeued` is true.
  */
@@ -59,6 +69,15 @@ export interface DeadLetterQueue {
    * entry waiting is not stored twice; the existing id is returned.
    */
   add(input: AddDeadLetterInput): Promise<string>;
+
+  /**
+   * Stores a dead letter and acks the step task that exhausted its attempts
+   * in one transaction, so a crash cannot leave the entry stored with the
+   * task still deliverable, or the task gone with no entry. Resolves the
+   * entry id, or `undefined` when `lease` is no longer the task's current
+   * lease, in which case nothing is stored.
+   */
+  addAndAck(input: AddDeadLetterInput, lease: TaskLease): Promise<string | undefined>;
 
   list(options?: ListDeadLettersOptions): Promise<DeadLetter[]>;
 
@@ -108,6 +127,43 @@ function withAttemptOffset(payload: unknown, attemptOffset: number): unknown {
   return { ...base, attemptOffset };
 }
 
+interface Queryable {
+  query: Pool["query"];
+}
+
+async function insertDeadLetter(db: Queryable, input: AddDeadLetterInput): Promise<string> {
+  const inserted = await db.query<{ id: string }>(
+    `insert into dead_letters
+       (namespace_id, run_id, step_id, queue_name, payload, attempts, error, reason)
+     values ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8)
+     on conflict (run_id, step_id) where requeued_at is null do nothing
+     returning id`,
+    [
+      input.namespaceId,
+      input.runId,
+      input.stepId,
+      input.queueName,
+      JSON.stringify(input.payload ?? {}),
+      input.attempts,
+      JSON.stringify(input.error),
+      input.reason,
+    ],
+  );
+  const created = inserted.rows[0];
+  if (created !== undefined) {
+    return created.id;
+  }
+  const existing = await db.query<{ id: string }>(
+    "select id from dead_letters where run_id = $1 and step_id = $2 and requeued_at is null",
+    [input.runId, input.stepId],
+  );
+  const row = existing.rows[0];
+  if (row === undefined) {
+    throw new Error(`dead letter for step "${input.stepId}" vanished during insert`);
+  }
+  return row.id;
+}
+
 /**
  * Creates a `DeadLetterQueue` over `pool`. `clock` supplies the requeue
  * time and the visibility of the requeued task.
@@ -120,36 +176,22 @@ export function createDeadLetterQueue(
 
   return {
     async add(input: AddDeadLetterInput): Promise<string> {
-      const inserted = await pool.query<{ id: string }>(
-        `insert into dead_letters
-           (namespace_id, run_id, step_id, queue_name, payload, attempts, error, reason)
-         values ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8)
-         on conflict (run_id, step_id) where requeued_at is null do nothing
-         returning id`,
-        [
-          input.namespaceId,
-          input.runId,
-          input.stepId,
-          input.queueName,
-          JSON.stringify(input.payload ?? {}),
-          input.attempts,
-          JSON.stringify(input.error),
-          input.reason,
-        ],
-      );
-      const created = inserted.rows[0];
-      if (created !== undefined) {
-        return created.id;
-      }
-      const existing = await pool.query<{ id: string }>(
-        "select id from dead_letters where run_id = $1 and step_id = $2 and requeued_at is null",
-        [input.runId, input.stepId],
-      );
-      const row = existing.rows[0];
-      if (row === undefined) {
-        throw new Error(`dead letter for step "${input.stepId}" vanished during insert`);
-      }
-      return row.id;
+      return insertDeadLetter(pool, input);
+    },
+
+    async addAndAck(input: AddDeadLetterInput, lease: TaskLease): Promise<string | undefined> {
+      return withTransaction(pool, async (client) => {
+        const acked = await client.query(
+          `update tasks set state = 'COMPLETED', lease_token = null, leased_by = null,
+               leased_by_version = null, updated_at = $3
+           where id = $1 and lease_token = $2 and state = 'LEASED'`,
+          [lease.taskId, lease.leaseToken, clock.now()],
+        );
+        if (acked.rowCount !== 1) {
+          return undefined;
+        }
+        return insertDeadLetter(client, input);
+      });
     },
 
     async list(listOptions: ListDeadLettersOptions = {}): Promise<DeadLetter[]> {
@@ -172,16 +214,13 @@ export function createDeadLetterQueue(
     },
 
     async requeue(id: string): Promise<string | undefined> {
-      const client = await pool.connect();
-      try {
-        await client.query("begin");
+      return withTransaction(pool, async (client) => {
         const locked = await client.query<DeadLetterRow>(
           "select * from dead_letters where id = $1 and requeued_at is null for update",
           [id],
         );
         const row = locked.rows[0];
         if (row === undefined) {
-          await client.query("rollback");
           return undefined;
         }
         const now = clock.now();
@@ -198,14 +237,8 @@ export function createDeadLetterQueue(
           ],
         );
         await client.query("update dead_letters set requeued_at = $2 where id = $1", [id, now]);
-        await client.query("commit");
         return task.rows[0]?.id;
-      } catch (error) {
-        await client.query("rollback").catch(() => undefined);
-        throw error;
-      } finally {
-        client.release();
-      }
+      });
     },
   };
 }

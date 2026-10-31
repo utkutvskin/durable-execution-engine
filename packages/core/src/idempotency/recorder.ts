@@ -1,4 +1,7 @@
 import type { Pool, PoolClient } from "pg";
+import { withClient, withTransaction } from "../db/transaction.js";
+import { enqueueStepTaskOnClient } from "../queue/step-task-enqueue.js";
+import { systemClock, type ClockSource } from "../workflow/sources.js";
 import { jsonCodec, type Codec } from "../event-store/codec.js";
 import {
   appendEventsOnClient,
@@ -133,6 +136,14 @@ async function lockRunStatusOnly(client: PoolClient, runId: string): Promise<Run
   return result.rows[0]?.status;
 }
 
+async function readNamespaceId(client: PoolClient, runId: string): Promise<string> {
+  const result = await client.query<{ namespace_id: string }>(
+    "select namespace_id from workflow_runs where id = $1",
+    [runId],
+  );
+  return result.rows[0]?.namespace_id ?? "";
+}
+
 function toStepEvent(input: RecordStepResultInput): WorkflowEvent {
   if (input.outcome.status === "completed") {
     return workflowEventSchema.parse({
@@ -166,6 +177,7 @@ function toOutcome(row: StepResultRow): StepOutcome {
 export interface ResultRecorderOptions {
   readonly queueName?: string;
   readonly tracing?: Tracing;
+  readonly clock?: ClockSource;
 }
 
 /**
@@ -184,21 +196,26 @@ export function createResultRecorder(
   recorderOptions: ResultRecorderOptions = {},
 ): ResultRecorder {
   const tracing = recorderOptions.tracing ?? noopTracing;
+  const clock = recorderOptions.clock ?? systemClock;
   return {
     async recordStepResult(input: RecordStepResultInput): Promise<RecordedStepResult> {
       const event = toStepEvent(input);
-      const client = await pool.connect();
-      try {
-        await client.query("begin");
+      return withTransaction(pool, async (client) => {
         const status = await lockRunStatusOnly(client, input.runId);
         if (status !== undefined && isTerminalState(status)) {
-          await client.query("commit");
           return { recorded: false, outcome: input.outcome };
         }
-        const inserted = await client.query(
+        const existing = await client.query<StepResultRow>(
+          "select result, error from step_results where run_id = $1 and step_id = $2",
+          [input.runId, input.stepId],
+        );
+        const first = existing.rows[0];
+        if (first !== undefined) {
+          return { recorded: false, outcome: toOutcome(first) };
+        }
+        await client.query(
           `insert into step_results (run_id, step_id, attempt_key, result, error)
-           values ($1, $2, $3, $4::jsonb, $5::jsonb)
-           on conflict (run_id, step_id, attempt_key) do nothing`,
+           values ($1, $2, $3, $4::jsonb, $5::jsonb)`,
           [
             input.runId,
             input.stepId,
@@ -209,38 +226,18 @@ export function createResultRecorder(
             input.outcome.status === "failed" ? JSON.stringify(input.outcome.error) : null,
           ],
         );
-        if (inserted.rowCount === 0) {
-          const existing = await client.query<StepResultRow>(
-            `select result, error from step_results
-             where run_id = $1 and step_id = $2 and attempt_key = $3`,
-            [input.runId, input.stepId, input.attemptKey],
-          );
-          const row = existing.rows[0];
-          if (row === undefined) {
-            throw new Error(`step result for "${input.stepId}" vanished during recording`);
-          }
-          await client.query("commit");
-          return { recorded: false, outcome: toOutcome(row) };
-        }
         const currentSeq = await readCurrentSequenceOnClient(client, input.runId);
         await appendEventsOnClient(client, codec, input.runId, currentSeq, [event]);
-        await client.query("commit");
         return { recorded: true, outcome: input.outcome };
-      } catch (error) {
-        await client.query("rollback").catch(() => undefined);
-        throw error;
-      } finally {
-        client.release();
-      }
+      });
     },
 
     async recordWorkflowTaskResult(
       input: RecordWorkflowTaskResultInput,
     ): Promise<RecordedWorkflowTaskResult> {
       const events = input.events.map((event) => workflowEventSchema.parse(event));
-      const client = await pool.connect();
-      const pendingSpans: TraceSpan[] = [];
-      try {
+      return withClient(pool, async (client) => {
+        const pendingSpans: TraceSpan[] = [];
         await client.query("begin");
         const status = await lockRunStatus(client, input.runId);
         const runTrace = await client.query<{ traceparent: string | null }>(
@@ -312,6 +309,17 @@ export function createResultRecorder(
           if (event.type === "run_continued_as_new") {
             await createContinuedRunOnClient(client, codec, input.runId, event);
           }
+          if (event.type === "step_scheduled" && recorderOptions.queueName !== undefined) {
+            await enqueueStepTaskOnClient(client, {
+              namespaceId: await readNamespaceId(client, input.runId),
+              runId: input.runId,
+              queueName: recorderOptions.queueName,
+              stepId: event.stepId,
+              stepType: event.stepType,
+              input: event.input,
+              now: clock.now(),
+            });
+          }
           if (event.type === "timer_started") {
             await insertTimerOnClient(client, {
               runId: input.runId,
@@ -345,12 +353,7 @@ export function createResultRecorder(
           span.end();
         }
         return { recorded: true, firstSequenceNumber, lastSequenceNumber };
-      } catch (error) {
-        await client.query("rollback").catch(() => undefined);
-        throw error;
-      } finally {
-        client.release();
-      }
+      });
     },
   };
 }

@@ -4,6 +4,7 @@ import { jsonCodec, type Codec } from "../event-store/codec.js";
 import { systemClock, type ClockSource } from "../workflow/sources.js";
 import { noopTracing, type Tracing } from "../observability/tracing.js";
 import { createMonotonicClock } from "./monotonic-clock.js";
+import { rollbackQuietly } from "../db/transaction.js";
 
 /**
  * What `TimerScheduler.schedule` needs: the run and timer id the decision
@@ -136,6 +137,7 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
 
   async function fireNext(now: Date): Promise<FiredTimer | "cancelled" | undefined> {
     const client = await pool.connect();
+    let broken = false;
     try {
       await client.query("begin");
       const due = await client.query<DueTimerRow>(
@@ -207,10 +209,10 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
         taskId: task.rows[0]?.id ?? "",
       };
     } catch (error) {
-      await client.query("rollback").catch(() => undefined);
+      broken = !(await rollbackQuietly(client));
       throw error;
     } finally {
-      client.release();
+      client.release(broken);
     }
   }
 
@@ -235,10 +237,14 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
   return {
     async schedule(input: ScheduleTimerInput): Promise<boolean> {
       const client = await pool.connect();
+      let broken = false;
       try {
         return await insertTimerOnClient(client, input);
+      } catch (error) {
+        broken = true;
+        throw error;
       } finally {
-        client.release();
+        client.release(broken);
       }
     },
 

@@ -8,6 +8,7 @@ import {
 import type { ClockSource, RandomSource } from "../workflow/sources.js";
 import { runQuery } from "../workflow/query.js";
 import type { WorkflowRegistry } from "../workflow/workflow-registry.js";
+import { rollbackQuietly } from "../db/transaction.js";
 
 /**
  * Raised when a signal or query names a run that does not exist.
@@ -102,6 +103,7 @@ export function createRunInteractions(
       payload: unknown = null,
     ): Promise<SignalReceipt> {
       const client = await pool.connect();
+      let broken = false;
       try {
         await client.query("begin");
         const run = await client.query<RunRow>(
@@ -132,10 +134,10 @@ export function createRunInteractions(
         await client.query("commit");
         return { sequenceNumber: stored?.sequenceNumber ?? currentSeq + 1 };
       } catch (error) {
-        await client.query("rollback").catch(() => undefined);
+        broken = !(await rollbackQuietly(client));
         throw error;
       } finally {
-        client.release();
+        client.release(broken);
       }
     },
 

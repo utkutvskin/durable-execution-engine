@@ -137,4 +137,72 @@ describe("dead letter queue", () => {
       ),
     ).rejects.toThrow();
   });
+
+  describe("addAndAck", () => {
+    async function leased() {
+      await queue.enqueue({
+        namespaceId,
+        runId,
+        queueName: "default/steps",
+        taskType: "STEP_TASK",
+        payload: { stepId: "charge-card" },
+      });
+      const [task] = await queue.dequeue({
+        queueName: "default/steps",
+        visibilityTimeoutMs: 30_000,
+      });
+      if (task === undefined) {
+        throw new Error("no task leased");
+      }
+      return task;
+    }
+
+    async function taskState(id: string): Promise<string | undefined> {
+      const result = await database.pool.query<{ state: string }>(
+        "select state from tasks where id = $1",
+        [id],
+      );
+      return result.rows[0]?.state;
+    }
+
+    it("stores the dead letter and completes the task together", async () => {
+      const task = await leased();
+
+      const id = await deadLetters.addAndAck(entry(), {
+        taskId: task.id,
+        leaseToken: task.leaseToken,
+      });
+
+      expect(id).toBeDefined();
+      expect(await deadLetters.get(id ?? "")).toBeDefined();
+      expect(await taskState(task.id)).toBe("COMPLETED");
+    });
+
+    it("stores nothing when the lease is no longer current", async () => {
+      const task = await leased();
+
+      const id = await deadLetters.addAndAck(entry(), {
+        taskId: task.id,
+        leaseToken: "00000000-0000-0000-0000-000000000000",
+      });
+
+      expect(id).toBeUndefined();
+      expect(await deadLetters.list()).toEqual([]);
+      expect(await taskState(task.id)).toBe("LEASED");
+    });
+
+    it("leaves the task leased when storing the dead letter fails", async () => {
+      const task = await leased();
+
+      await expect(
+        deadLetters.addAndAck(
+          { ...entry(), reason: "NOT_A_REASON" as never },
+          { taskId: task.id, leaseToken: task.leaseToken },
+        ),
+      ).rejects.toThrow();
+
+      expect(await taskState(task.id)).toBe("LEASED");
+      expect(await deadLetters.list()).toEqual([]);
+    });
+  });
 });

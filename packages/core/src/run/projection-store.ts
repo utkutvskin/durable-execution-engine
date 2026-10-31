@@ -4,6 +4,7 @@ import { readEventsOnClient, type EventStore } from "../event-store/event-store.
 import { readSnapshotOnClient } from "../compaction/snapshot.js";
 import { RUN_STATES, type RunState } from "./state-machine.js";
 import { createInitialProjection, foldRunEvents, type RunProjection } from "./projection.js";
+import { rollbackQuietly } from "../db/transaction.js";
 
 interface RunRow {
   status: string;
@@ -80,10 +81,14 @@ async function observeStart(
   startFrom: StartFrom,
 ): Promise<RunProjection> {
   const client = await pool.connect();
+  let broken = false;
   try {
     return await startFrom(await readRunRow(client, runId, false), client);
+  } catch (error) {
+    broken = true;
+    throw error;
   } finally {
-    client.release();
+    client.release(broken);
   }
 }
 
@@ -97,6 +102,7 @@ async function foldInto(
     const observed = await observeStart(pool, runId, startFrom);
     const events = await store.read(runId, observed.lastSequenceNumber);
     const client = await pool.connect();
+    let broken = false;
     try {
       await client.query("begin");
       const start = await startFrom(await lockRunRow(client, runId), client);
@@ -109,10 +115,10 @@ async function foldInto(
       await client.query("commit");
       return next;
     } catch (error) {
-      await client.query("rollback").catch(() => undefined);
+      broken = !(await rollbackQuietly(client));
       throw error;
     } finally {
-      client.release();
+      client.release(broken);
     }
   }
 }

@@ -3,6 +3,7 @@ import { jsonCodec, type Codec } from "../event-store/codec.js";
 import { appendEventsOnClient, readCurrentSequenceOnClient } from "../event-store/event-store.js";
 import { workflowEventSchema } from "../event-store/events.js";
 import type { SerializedError } from "../workflow/error-serialization.js";
+import { rollbackQuietly } from "../db/transaction.js";
 
 /**
  * What `AttemptLog.recordFailure` needs. `retryAt` is when the next attempt
@@ -50,6 +51,7 @@ export function createAttemptLog(pool: Pool, codec: Codec = jsonCodec): AttemptL
         retryAt: input.retryAt === null ? null : input.retryAt.toISOString(),
       });
       const client = await pool.connect();
+      let broken = false;
       try {
         await client.query("begin");
         await client.query("select 1 from workflow_runs where id = $1 for update", [input.runId]);
@@ -68,10 +70,10 @@ export function createAttemptLog(pool: Pool, codec: Codec = jsonCodec): AttemptL
         await client.query("commit");
         return true;
       } catch (error) {
-        await client.query("rollback").catch(() => undefined);
+        broken = !(await rollbackQuietly(client));
         throw error;
       } finally {
-        client.release();
+        client.release(broken);
       }
     },
 

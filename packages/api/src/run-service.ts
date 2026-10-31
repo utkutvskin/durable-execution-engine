@@ -16,6 +16,7 @@ import {
   type RunControl,
   type RunInteractions,
   type WorkflowEvent,
+  rollbackQuietly,
 } from "@dee/core";
 
 /**
@@ -364,6 +365,7 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
 
   async function insertRun(namespaceId: string, input: StartRunInput): Promise<string | undefined> {
     const client = await pool.connect();
+    let broken = false;
     const span = tracing.startSpan("workflow.start", {
       parent: input.traceparent,
       kind: "server",
@@ -407,10 +409,10 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
       span.end();
       return runId;
     } catch (error) {
-      await client.query("rollback").catch(() => undefined);
+      broken = !(await rollbackQuietly(client));
       throw error;
     } finally {
-      client.release();
+      client.release(broken);
     }
   }
 

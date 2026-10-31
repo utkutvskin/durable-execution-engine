@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 import { systemClock, type ClockSource } from "../workflow/sources.js";
 import { createRecoveryMetrics, type RecoveryMetrics } from "./metrics.js";
+import { rollbackQuietly } from "../db/transaction.js";
 
 /**
  * A task whose lease expired without an ack, nack or heartbeat, and that the
@@ -275,6 +276,7 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
   ): Promise<StalledRun[]> {
     assertNonNegativeInteger("graceMs", recoverOptions.graceMs);
     const client = await pool.connect();
+    let broken = false;
     try {
       await client.query("begin");
       const lock = await client.query<{ locked: boolean }>(
@@ -306,10 +308,10 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
       await client.query("commit");
       return result.rows.map(toStalledRun);
     } catch (error) {
-      await client.query("rollback");
+      broken = !(await rollbackQuietly(client));
       throw error;
     } finally {
-      client.release();
+      client.release(broken);
     }
   }
 

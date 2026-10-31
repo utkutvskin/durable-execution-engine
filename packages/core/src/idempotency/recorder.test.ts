@@ -93,13 +93,14 @@ describe("result recorder", () => {
     expect(history.map((stored) => stored.event.type)).toEqual(["step_failed"]);
   });
 
-  it("treats a different attempt key as a separate result", async () => {
+  it("refuses a second terminal result of a step recorded under another attempt key", async () => {
     await deliverStep({ count: 0 }, "attempt-1");
     const retry = await deliverStep({ count: 1 }, "attempt-2");
 
-    expect(retry.recorded).toBe(true);
-    expect(await countRows("step_results")).toBe(2);
-    expect(await store.read(runId)).toHaveLength(2);
+    expect(retry.recorded).toBe(false);
+    expect(retry.outcome).toEqual({ status: "completed", result: { charged: 1 } });
+    expect(await countRows("step_results")).toBe(1);
+    expect(await store.read(runId)).toHaveLength(1);
   });
 
   it("lets two different steps finishing at once both append without a sequence clash", async () => {
@@ -207,5 +208,78 @@ describe("result recorder", () => {
         [runId],
       ),
     ).rejects.toMatchObject({ code: "23505" });
+  });
+
+  describe("step tasks created with the step_scheduled event", () => {
+    const scheduled = {
+      type: "step_scheduled",
+      stepId: "step-1",
+      stepType: "charge",
+      input: { amount: 5 },
+    } as const;
+
+    async function stepTasks(): Promise<{ payload: unknown; queue_name: string }[]> {
+      const result = await database.pool.query<{ payload: unknown; queue_name: string }>(
+        "select payload, queue_name from tasks where run_id = $1 and task_type = 'STEP_TASK'",
+        [runId],
+      );
+      return result.rows;
+    }
+
+    beforeEach(async () => {
+      await database.pool.query("delete from tasks");
+      recorder = createResultRecorder(database.pool, undefined, { queueName: "default" });
+    });
+
+    it("creates the step task in the same transaction as the event", async () => {
+      await recorder.recordWorkflowTaskResult({
+        runId,
+        taskKey: "wt-1",
+        expectedSeq: 0,
+        events: [scheduled],
+      });
+
+      expect(await stepTasks()).toEqual([
+        {
+          queue_name: "default",
+          payload: { stepId: "step-1", stepType: "charge", input: { amount: 5 } },
+        },
+      ]);
+    });
+
+    it("creates no step task when the decision is rejected as stale", async () => {
+      await store.append(runId, 0, [{ type: "run_started", workflowType: "w", input: {} }]);
+
+      await expect(
+        recorder.recordWorkflowTaskResult({
+          runId,
+          taskKey: "wt-stale",
+          expectedSeq: 0,
+          events: [scheduled],
+        }),
+      ).rejects.toBeInstanceOf(ConcurrencyError);
+
+      expect(await stepTasks()).toEqual([]);
+    });
+
+    it("creates one step task however often the same decision is delivered", async () => {
+      const input = { runId, taskKey: "wt-1", expectedSeq: 0, events: [scheduled] };
+      await recorder.recordWorkflowTaskResult(input);
+      await recorder.recordWorkflowTaskResult(input);
+
+      expect(await stepTasks()).toHaveLength(1);
+    });
+
+    it("creates no step task when the recorder has no queue", async () => {
+      recorder = createResultRecorder(database.pool);
+      await recorder.recordWorkflowTaskResult({
+        runId,
+        taskKey: "wt-1",
+        expectedSeq: 0,
+        events: [scheduled],
+      });
+
+      expect(await stepTasks()).toEqual([]);
+    });
   });
 });

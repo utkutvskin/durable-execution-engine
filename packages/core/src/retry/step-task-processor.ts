@@ -85,7 +85,10 @@ export interface StepTaskProcessor {
    * `step_failed` so the workflow sees the failure. Exhausting the attempts
    * parks the step in the dead letter queue and leaves the run waiting on
    * it, to be requeued by an operator. A step with a recorded result is
-   * acked without running again.
+   * acked without running again. The recorder, under the run's lock, is what
+   * guarantees one terminal result per step: an attempt that finishes after
+   * another attempt recorded its result changes nothing and reports
+   * `already_recorded`.
    */
   process(task: LeasedTask): Promise<StepTaskOutcome>;
 }
@@ -169,14 +172,19 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
 
       try {
         const result = await executeTraced(definition, payload.stepType, payload.input, span);
-        await options.recorder.recordStepResult({
+        const recorded = await options.recorder.recordStepResult({
           runId,
           stepId,
           attemptKey: `attempt-${String(attempt)}`,
           outcome: { status: "completed", result },
         });
         const acked = await options.queue.ack(task.id, task.leaseToken);
-        return acked ? { status: "completed", attempt } : { status: "lease_lost" };
+        if (!acked) {
+          return { status: "lease_lost" };
+        }
+        return recorded.recorded
+          ? { status: "completed", attempt }
+          : { status: "already_recorded" };
       } catch (thrown) {
         const error = serializeError(thrown);
         const decision = decideRetry(policy, attempt - payload.attemptOffset, error, random);
@@ -192,26 +200,31 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
 
         await options.attempts.recordFailure({ runId, stepId, attempt, error, retryAt: null });
         if (decision.reason === "NON_RETRYABLE") {
-          await options.recorder.recordStepResult({
+          const recorded = await options.recorder.recordStepResult({
             runId,
             stepId,
             attemptKey: `attempt-${String(attempt)}`,
             outcome: { status: "failed", error },
           });
           await options.queue.ack(task.id, task.leaseToken);
-          return { status: "failed", attempt };
+          return recorded.recorded ? { status: "failed", attempt } : { status: "already_recorded" };
         }
-        const deadLetterId = await options.deadLetters.add({
-          namespaceId: task.namespaceId,
-          runId,
-          stepId,
-          queueName: task.queueName,
-          payload: task.payload,
-          attempts: attempt,
-          error,
-          reason: "MAX_ATTEMPTS_EXHAUSTED",
-        });
-        await options.queue.ack(task.id, task.leaseToken);
+        const deadLetterId = await options.deadLetters.addAndAck(
+          {
+            namespaceId: task.namespaceId,
+            runId,
+            stepId,
+            queueName: task.queueName,
+            payload: task.payload,
+            attempts: attempt,
+            error,
+            reason: "MAX_ATTEMPTS_EXHAUSTED",
+          },
+          { taskId: task.id, leaseToken: task.leaseToken },
+        );
+        if (deadLetterId === undefined) {
+          return { status: "lease_lost" };
+        }
         return { status: "dead_lettered", attempt, deadLetterId };
       }
     },

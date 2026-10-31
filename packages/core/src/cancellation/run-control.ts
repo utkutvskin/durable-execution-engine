@@ -5,6 +5,7 @@ import { appendEventsOnClient, readCurrentSequenceOnClient } from "../event-stor
 import { RunNotFoundError } from "../signals/signal-service.js";
 import { closeRunIfTerminal } from "./close-run.js";
 import { requestCancellationOnClient } from "./request-cancellation.js";
+import { rollbackQuietly } from "../db/transaction.js";
 
 /**
  * Raised when a run that already reached a terminal state is cancelled or
@@ -82,6 +83,7 @@ export function createRunControl(pool: Pool, options: RunControlOptions): RunCon
     body: (row: LockedRun, client: PoolClient) => Promise<TResult>,
   ): Promise<TResult> {
     const client = await pool.connect();
+    let broken = false;
     try {
       await client.query("begin");
       const row = await lockRunWithParent(client, runId);
@@ -95,10 +97,10 @@ export function createRunControl(pool: Pool, options: RunControlOptions): RunCon
       await client.query("commit");
       return outcome;
     } catch (error) {
-      await client.query("rollback").catch(() => undefined);
+      broken = !(await rollbackQuietly(client));
       throw error;
     } finally {
-      client.release();
+      client.release(broken);
     }
   }
 

@@ -89,7 +89,10 @@ export type {
   ResultRecorder,
   StepOutcome,
 } from "./idempotency/recorder.js";
-export { createPool } from "./db/pool.js";
+export { createPool, DEFAULT_ACQUIRE_TIMEOUT_MS } from "./db/pool.js";
+export { rollbackQuietly, withClient, withTransaction } from "./db/transaction.js";
+export { enqueueStepTaskOnClient } from "./queue/step-task-enqueue.js";
+export type { StepTaskEnqueueInput } from "./queue/step-task-enqueue.js";
 export type { CreatePoolOptions } from "./db/pool.js";
 export { DEFAULT_POISON_THRESHOLD, createJanitor } from "./recovery/janitor.js";
 export type {

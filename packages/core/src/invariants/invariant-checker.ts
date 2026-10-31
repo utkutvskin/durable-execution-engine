@@ -333,6 +333,7 @@ export function createInvariantChecker(pool: Pool, store: EventStore): Invariant
     );
     const violations: InvariantViolation[] = [];
     const client = await pool.connect();
+    let broken = false;
     try {
       for (const row of runs.rows) {
         const snapshot = await readSnapshotOnClient(client, row.id);
@@ -389,8 +390,11 @@ export function createInvariantChecker(pool: Pool, store: EventStore): Invariant
           );
         }
       }
+    } catch (error) {
+      broken = true;
+      throw error;
     } finally {
-      client.release();
+      client.release(broken);
     }
     return { violations, runsChecked: runs.rows.length };
   }

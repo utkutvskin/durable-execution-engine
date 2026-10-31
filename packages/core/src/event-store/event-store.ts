@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from "pg";
 import { jsonCodec, type Codec } from "./codec.js";
 import { ConcurrencyError } from "./errors.js";
 import { workflowEventSchema, type WorkflowEvent } from "./events.js";
+import { rollbackQuietly } from "../db/transaction.js";
 
 /**
  * A single event as stored in and returned from the event log: the
@@ -171,6 +172,8 @@ export function createPostgresEventStore(pool: Pool, codec: Codec = jsonCodec): 
       const validatedEvents = events.map((event) => workflowEventSchema.parse(event));
 
       const client = await pool.connect();
+
+      let broken = false;
       try {
         await client.query("begin");
         const stored = await appendEventsOnClient(
@@ -183,7 +186,7 @@ export function createPostgresEventStore(pool: Pool, codec: Codec = jsonCodec): 
         await client.query("commit");
         return stored;
       } catch (error) {
-        await client.query("rollback").catch(() => undefined);
+        broken = !(await rollbackQuietly(client));
         if (error instanceof ConcurrencyError) {
           throw error;
         }
@@ -192,7 +195,7 @@ export function createPostgresEventStore(pool: Pool, codec: Codec = jsonCodec): 
         }
         throw error;
       } finally {
-        client.release();
+        client.release(broken);
       }
     },
 

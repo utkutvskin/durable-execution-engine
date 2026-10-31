@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Pool, PoolClient } from "pg";
+import { rollbackQuietly } from "./transaction.js";
 
 /**
  * A single up/down migration pair, identified by the shared filename prefix
@@ -76,6 +77,7 @@ export async function migrateUp(
 ): Promise<string[]> {
   const migrations = await loadMigrations(migrationsDir);
   const client = await pool.connect();
+  let broken = false;
   const applied: string[] = [];
   try {
     await ensureMigrationsTable(client);
@@ -90,13 +92,13 @@ export async function migrateUp(
         await client.query("insert into schema_migrations (id) values ($1)", [migration.id]);
         await client.query("commit");
       } catch (error) {
-        await client.query("rollback");
+        broken = !(await rollbackQuietly(client));
         throw error;
       }
       applied.push(migration.id);
     }
   } finally {
-    client.release();
+    client.release(broken);
   }
   return applied;
 }
@@ -115,6 +117,7 @@ export async function migrateDown(
   const migrations = await loadMigrations(migrationsDir);
   const byId = new Map(migrations.map((migration) => [migration.id, migration]));
   const client = await pool.connect();
+  let broken = false;
   const reverted: string[] = [];
   try {
     await ensureMigrationsTable(client);
@@ -133,13 +136,13 @@ export async function migrateDown(
         await client.query("delete from schema_migrations where id = $1", [id]);
         await client.query("commit");
       } catch (error) {
-        await client.query("rollback");
+        broken = !(await rollbackQuietly(client));
         throw error;
       }
       reverted.push(id);
     }
   } finally {
-    client.release();
+    client.release(broken);
   }
   return reverted;
 }

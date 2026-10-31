@@ -5,6 +5,7 @@ import { createInitialProjection, foldRunEvents } from "../run/projection.js";
 import { RUN_STATES, type RunState } from "../run/state-machine.js";
 import type { ClockSource } from "../workflow/sources.js";
 import { readSnapshotOnClient, serializeProjection, type RunSnapshot } from "./snapshot.js";
+import { rollbackQuietly } from "../db/transaction.js";
 
 /**
  * How long a closed run keeps its full history, and how much of it survives
@@ -96,6 +97,7 @@ export function createHistoryCompactor(
 
   async function compactRun(runId: string): Promise<CompactionResult> {
     const client = await pool.connect();
+    let broken = false;
     try {
       await client.query("begin");
       const run = await client.query<{ status: string }>(
@@ -141,10 +143,10 @@ export function createHistoryCompactor(
         },
       };
     } catch (error) {
-      await client.query("rollback").catch(() => undefined);
+      broken = !(await rollbackQuietly(client));
       throw error;
     } finally {
-      client.release();
+      client.release(broken);
     }
   }
 
