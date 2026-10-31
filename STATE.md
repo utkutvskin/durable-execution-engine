@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 34: one terminal result per step and atomic step enqueue
+
+- **Status:** DONE
+- **Completed day:** 34
+- **Files added or changed:** `packages/core/migrations/0017_one_step_result.{up,down}.sql` (new), `packages/core/src/db/transaction.ts` (new: `withClient`, `withTransaction`, `rollbackQuietly`) and `transaction.test.ts`, `packages/core/src/db/pool.ts` (`acquireTimeoutMillis`, default 30 s), `packages/core/src/queue/step-task-enqueue.ts` (new), `packages/core/src/idempotency/recorder.ts` (`recordStepResult` checks under the run lock, `step_scheduled` creates its step task, new `clock` option) with `recorder.test.ts` and the new `terminal-step-result.test.ts`, `packages/core/src/retry/dead-letters.ts` (`addAndAck`) and `step-task-processor.ts`, `packages/core/src/db/migrator.test.ts`, `packages/worker/src/engine/task-handler.ts` (`ensureStepTasks` on one client), `engine.integration.test.ts`, new `engine.pool.integration.test.ts`, every other `pool.connect()` site (`attempt-log`, `event-store`, `history-compactor`, `schedule-manager`, `timer-scheduler`, `signal-service`, `projection-store`, `run-control`, `janitor`, `invariant-checker`, `migrator`, `api/run-service`, `bench/hot-queries`), `docs/DECISIONS.md` (ADR-0044), `docs/DEFERRED.md`
+- **Technical decisions:** ADR-0044 in `docs/DECISIONS.md`. No new dependency.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (120 test files, 883 tests, 18 of them new today). The baseline `verify` of the session was green. **Done:** `step_results` has a unique index on `(run_id, step_id)` (migration 0017 first deletes later duplicates); `recordStepResult` looks for any result of the step under the run lock and returns it with `recorded: false`, so a slow attempt 1 finishing after attempt 2 changes nothing (`terminal-step-result.test.ts`: one terminal event, cold and sticky replay agree, also for a first failure followed by a late success and for 8 attempts at once). The `STEP_TASK` is inserted in the transaction of its `step_scheduled` event (test: a handler whose `onDecision` throws right after recording still leaves a ready step task; a stale decision leaves none); `ensureStepTasks` no longer takes a second client. Dead-lettering and the ack are `addAndAck`, one transaction, nothing stored when the lease is gone. All 20 `pool.connect()` sites release with a flag; a client whose rollback fails is destroyed (test: backend killed mid-work, the next query runs on a different backend pid). 50 runs complete on a pool of 3 with 6 workers and no engine error. **Things to know:** the old test "treats a different attempt key as a separate result" asserted the bug and was rewritten to the new rule; the first terminal result wins even if a later attempt would have differed. The read-only sites (invariant checker, projection read) destroy the client on any error, which is safe but wasteful (`docs/DEFERRED.md`). The recorder creates step tasks only with a `queueName`; the chaos world, chaos flow and benchmark harness build it without one and enqueue themselves. The pool acquire timeout was proven with a 50 ms timeout against a held connection, which waits in real time. The `docs/DEFERRED.md` entry about step tasks outside the decision transaction is closed. CI of the pushed commit is read after the push, below. Day 35 (poison tasks, quarantine and idle runs) is next; read `docs/REVIEW.md` section 3, items 1 to 3 first.
+
+---
+
 ## Day 33: replay in history order and complete command matching
 
 - **Status:** DONE

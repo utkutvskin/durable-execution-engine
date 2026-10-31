@@ -26,10 +26,6 @@ Code that takes a client with `pool.connect()` releases it with `client.release(
 
 The payment gateway and the warehouse of the examples are in memory, so the demos prove the workflows, the compensation, the retries and the idempotence of the steps, not an integration. Nothing deploys the examples as a separate worker process; `wf worker --module examples/payment-saga/src/index.ts` is the way to run one. To close this: add a gateway implementation over a real sandbox API and a warehouse over a second Postgres schema, and run the demos against them.
 
-## Step tasks are enqueued outside the decision's transaction (day 29)
-
-The engine records a workflow decision and then enqueues the `STEP_TASK` of each scheduled step in a second transaction. A crash in between delays the step by the stalled run grace period (60 seconds by default) until the janitor sends a workflow task, which recreates the missing step task. No work is lost and no step runs twice because of it, but the delay is visible. To close this: have the recorder enqueue the `STEP_TASK` of a `step_scheduled` event in the same transaction as the event.
-
 ## The image was not built and is not published (day 30)
 
 The Dockerfile and the compose `engine` profile were written in a session without a Docker daemon. The build steps were reproduced outside Docker (see ADR-0040), but `docker build` has not run, and the image is not pushed anywhere. The `docker` job in CI builds it and runs a smoke test against a Postgres service. To close this: read the first CI result of that job, then add a tag triggered workflow that pushes the image to a registry.
@@ -60,3 +56,12 @@ The `setTimeout(resolve, 10)` and `setTimeout(resolve, 25)` calls that remain in
 ## Command matching limits (day 33)
 
 Cancellation is still read from the whole history: once a `cancel_requested` event exists, a wait for a command the history does not hold rejects at the call, not at the position of the cancel event. A cancel that arrived between two commands is therefore replayed as if it came first. The property test generates steps, sleeps, signals and signal-reacting branches, not `ctx.select`, `ctx.all`, children, patches or cancellation, which the live session does not resume; the cold replay of those is covered by the existing decision tests only.
+
+## Step tasks of a lost step are healed only by a workflow task (day 34)
+
+The recorder creates the `STEP_TASK` of a `step_scheduled` event in the same transaction as the event, so a crash no longer delays a step. If a step task row is lost by other means (an operator deleting it, a manual prune), only the next workflow task of the run recreates it, through the check on a suspended decision, and a run waiting only on that step gets such a task from the janitor after the stalled run grace. The recorder also creates no task when it is built without a `queueName`; the chaos harness and the benchmark build it that way and enqueue themselves. To close this: give the janitor a check for open steps without a task.
+
+## Read-only database paths still return clients after any error (day 34)
+
+`withClient` and `withTransaction` destroy a client only when its rollback also fails. The read-only paths that do not open a transaction (the invariant checker, the projection read) destroy the client on any error, which is safe but discards healthy connections after an ordinary SQL error. To close this: classify the error by its code and destroy the client only for connection errors.
+
