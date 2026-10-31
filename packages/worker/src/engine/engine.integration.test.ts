@@ -354,6 +354,33 @@ describe("engine runtime against postgres", () => {
     expect(await eventTypes(runId)).toEqual(["run_started", "step_scheduled"]);
   });
 
+  it("has the step task ready the moment the decision is recorded, even if the worker dies right after", async () => {
+    const echo = defineStep<{ value: string }, string>("echo", { handler: ({ value }) => value });
+    const flow = defineWorkflow("echo-flow", (ctx) => ctx.step<string>("echo", { value: "hi" }));
+    const queue = createTaskQueue(pool, { clock });
+    const handler = createEngineTaskHandler({
+      pool,
+      queue,
+      queueName: "default",
+      workflows: [flow],
+      steps: [echo],
+      clock,
+      onDecision: () => {
+        throw new Error("worker died after recording the decision");
+      },
+    });
+    const runId = await start("echo-flow");
+    const [task] = await queue.dequeue({ queueName: "default", visibilityTimeoutMs: 30_000 });
+
+    await expect(handler(task as never, { signal: new AbortController().signal })).rejects.toThrow(
+      "worker died",
+    );
+
+    const ready = await queue.dequeue({ queueName: "default", visibilityTimeoutMs: 30_000 });
+    expect(ready.map((entry) => entry.taskType)).toEqual(["STEP_TASK"]);
+    expect(ready[0]?.runId).toBe(runId);
+  });
+
   it("lets workflow tasks of one run race without failing and records one decision", async () => {
     const echo = defineStep<{ value: string }, string>("echo", { handler: ({ value }) => value });
     const flow = defineWorkflow("echo-flow", (ctx) => ctx.step<string>("echo", { value: "hi" }));

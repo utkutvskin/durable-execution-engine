@@ -8,9 +8,11 @@ import {
   createRunCache,
   createStepTaskProcessor,
   createStickyDecider,
+  enqueueStepTaskOnClient,
   isTerminalState,
   systemClock,
   systemRandomSource,
+  withTransaction,
   type ClockSource,
   type EventStore,
   type LeasedTask,
@@ -106,8 +108,10 @@ function openStepIds(events: readonly WorkflowEvent[]): WorkflowEvent[] {
  *
  * A `WORKFLOW_TASK` replays the run's history through the workflow code
  * (through a per-process cache of live sessions), records the decision and
- * makes sure every scheduled step that has no result has a `STEP_TASK`, which
- * also heals step tasks lost to a crash between the two writes. A
+ * makes sure every scheduled step that has no result has a `STEP_TASK`. The
+ * recorder already creates the step task in the transaction of the
+ * `step_scheduled` event; the check on a suspended decision heals only step
+ * tasks lost by other means, such as a task row removed by an operator. A
  * `STEP_TASK` runs the step with its retry policy and timeout, records the
  * result and enqueues a `WORKFLOW_TASK` so the run moves on. Tasks of closed
  * runs are acknowledged without effect, and redelivered tasks change
@@ -121,6 +125,7 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
   const store: EventStore = createPostgresEventStore(options.pool);
   const recorder = createResultRecorder(options.pool, undefined, {
     queueName: options.queueName,
+    clock,
     ...(options.tracing === undefined ? {} : { tracing: options.tracing }),
   });
   const workflows = new Map(options.workflows.map((entry) => [entry.workflowType, entry]));
@@ -168,36 +173,23 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
     if (pending.length === 0) {
       return;
     }
-    const client = await options.pool.connect();
-    try {
-      await client.query("begin");
+    await withTransaction(options.pool, async (client) => {
       await client.query("select pg_advisory_xact_lock(hashtext($1))", [`steps:${runId}`]);
       for (const event of pending) {
         if (event.type !== "step_scheduled") {
           continue;
         }
-        const existing = await client.query(
-          `select 1 from tasks
-           where run_id = $1 and task_type = 'STEP_TASK' and payload ->> 'stepId' = $2 limit 1`,
-          [runId, event.stepId],
-        );
-        if (existing.rowCount === 0) {
-          await options.queue.enqueue({
-            namespaceId,
-            runId,
-            queueName: options.queueName,
-            taskType: "STEP_TASK",
-            payload: { stepId: event.stepId, stepType: event.stepType, input: event.input },
-          });
-        }
+        await enqueueStepTaskOnClient(client, {
+          namespaceId,
+          runId,
+          queueName: options.queueName,
+          stepId: event.stepId,
+          stepType: event.stepType,
+          input: event.input,
+          now: clock.now(),
+        });
       }
-      await client.query("commit");
-    } catch (error) {
-      await client.query("rollback").catch(() => undefined);
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   async function handleWorkflowTask(task: LeasedTask): Promise<void> {
