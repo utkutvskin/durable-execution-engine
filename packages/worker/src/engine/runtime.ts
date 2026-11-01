@@ -13,7 +13,7 @@ import { createWorkerIdentity } from "../identity.js";
 import { startJanitorLoop, type JanitorLoop } from "../janitor-loop.js";
 import { startScheduleLoop, type ScheduleLoop } from "../schedule-loop.js";
 import { startTimerLoop, type TimerLoop } from "../timer-loop.js";
-import { createWorker, type StopResult, type Worker } from "../worker.js";
+import { createWorker, type NackBackoff, type StopResult, type Worker } from "../worker.js";
 import {
   createEngineTaskHandler,
   type AnyStepDefinition,
@@ -24,8 +24,11 @@ import {
 /**
  * Configuration of `startEngine`. The loops run every `loopIntervalMs`
  * (default 1000); the janitor reclaims leases and recovers runs that made no
- * progress for `stalledRunGraceMs` (default 60000). `onError` receives every
- * error the engine survives.
+ * progress for `stalledRunGraceMs` (default 60000). A task whose handler
+ * fails is redelivered after `nackBackoff` (default 250 ms doubling up to
+ * 30 s, from `task.attempts`) and quarantined after `maxHandlerAttempts`
+ * failed deliveries (default 8) or `poisonThreshold` lost leases (default 3).
+ * `onError` receives every error the engine survives.
  */
 export interface EngineOptions {
   readonly pool: Pool;
@@ -41,6 +44,9 @@ export interface EngineOptions {
   readonly loopIntervalMs?: number;
   readonly stalledRunGraceMs?: number;
   readonly shutdownTimeoutMs?: number;
+  readonly nackBackoff?: NackBackoff;
+  readonly maxHandlerAttempts?: number;
+  readonly poisonThreshold?: number;
   readonly clock?: ClockSource;
   readonly random?: RandomSource;
   readonly tracing?: Tracing;
@@ -75,7 +81,9 @@ export function startEngine(options: EngineOptions): Engine {
   const loopIntervalMs = options.loopIntervalMs ?? 1000;
   const onError = options.onError ?? ((): void => undefined);
   const clockOption = options.clock === undefined ? {} : { clock: options.clock };
-  const queue = createTaskQueue(options.pool, clockOption);
+  const poisonOption =
+    options.poisonThreshold === undefined ? {} : { poisonThreshold: options.poisonThreshold };
+  const queue = createTaskQueue(options.pool, { ...clockOption, ...poisonOption });
   const schedules = createScheduleManager(options.pool, {
     queueName,
     ...clockOption,
@@ -104,6 +112,8 @@ export function startEngine(options: EngineOptions): Engine {
     maxPollIntervalMs: 500,
     visibilityTimeoutMs: options.visibilityTimeoutMs ?? 30_000,
     shutdownTimeoutMs: options.shutdownTimeoutMs ?? 10_000,
+    nackBackoff: options.nackBackoff ?? { initialMs: 250, maxMs: 30_000 },
+    maxHandlerAttempts: options.maxHandlerAttempts ?? 8,
     identity: createWorkerIdentity({ version: options.buildId ?? "dev" }),
     onError,
   });
@@ -118,7 +128,7 @@ export function startEngine(options: EngineOptions): Engine {
     onError,
   });
   const janitorLoop: JanitorLoop = startJanitorLoop({
-    janitor: createJanitor(options.pool, clockOption),
+    janitor: createJanitor(options.pool, { ...clockOption, ...poisonOption }),
     intervalMs: loopIntervalMs,
     stalledRuns: { queueName, graceMs: options.stalledRunGraceMs ?? 60_000 },
     onError,

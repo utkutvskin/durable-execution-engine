@@ -425,7 +425,7 @@ describe("engine runtime against postgres", () => {
     expect(reports).toHaveLength(8);
   });
 
-  it("refuses a workflow task of a type the worker does not know", async () => {
+  it("parks a workflow task of a type the worker does not know", async () => {
     const queue = createTaskQueue(pool, { clock });
     const handler = createEngineTaskHandler({
       pool,
@@ -437,9 +437,14 @@ describe("engine runtime against postgres", () => {
     });
     await start("mystery");
     const [task] = await queue.dequeue({ queueName: "default", visibilityTimeoutMs: 30_000 });
-    await expect(
-      handler(task as never, { signal: new AbortController().signal }),
-    ).rejects.toBeInstanceOf(UnknownWorkflowError);
+    const failure: unknown = await handler(task as never, {
+      signal: new AbortController().signal,
+    }).catch((error: unknown) => error);
+    expect(failure).toMatchObject({
+      name: "ParkTaskError",
+      message: 'UnknownWorkflowError: no workflow registered for type "mystery"',
+    });
+    expect((failure as Error).cause).toBeInstanceOf(UnknownWorkflowError);
   });
 
   it("lets steps read the clock while other runs are being decided", async () => {

@@ -4,13 +4,14 @@
  */
 export const packageName = "@dee/worker";
 
-export { LeaseLostError, ShutdownTimeoutError } from "./errors.js";
+export { LeaseLostError, ParkTaskError, ShutdownTimeoutError } from "./errors.js";
 export { installShutdownHandlers } from "./shutdown.js";
 export type { ProcessLike } from "./shutdown.js";
 export { systemTimers } from "./timers.js";
 export type { Timers } from "./timers.js";
-export { createWorker } from "./worker.js";
+export { createWorker, nackDelayFor } from "./worker.js";
 export type {
+  NackBackoff,
   SettledTask,
   StopResult,
   TaskContext,

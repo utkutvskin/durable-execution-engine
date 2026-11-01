@@ -25,3 +25,15 @@ export class ShutdownTimeoutError extends Error {
     this.taskId = taskId;
   }
 }
+
+/**
+ * Thrown by a task handler to say that redelivering the task cannot help until
+ * an operator acts, for example deploys a build that knows the workflow. The
+ * worker quarantines the task at once with the message as the reason.
+ */
+export class ParkTaskError extends Error {
+  constructor(reason: string, options?: { readonly cause?: unknown }) {
+    super(reason, options);
+    this.name = "ParkTaskError";
+  }
+}

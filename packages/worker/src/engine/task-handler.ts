@@ -10,6 +10,9 @@ import {
   createStickyDecider,
   enqueueStepTaskOnClient,
   isTerminalState,
+  markRunWaiting,
+  NonDeterminismError,
+  VersionMismatchError,
   systemClock,
   systemRandomSource,
   withTransaction,
@@ -27,8 +30,10 @@ import {
   type Tracing,
   type WorkflowDefinition,
   type WorkflowEvent,
+  type WaitingOn,
   type WorkflowHandler,
 } from "@dee/core";
+import { ParkTaskError } from "../errors.js";
 import type { TaskHandler } from "../worker.js";
 
 /**
@@ -76,7 +81,10 @@ export interface DecisionReport {
 
 /**
  * Raised when a run's workflow type has no definition in the worker, so no
- * worker of this build can decide the run.
+ * worker of this build can decide the run. The handler parks the task (see
+ * `ParkTaskError`), as it does for `NonDeterminismError` and
+ * `VersionMismatchError`: the run is not failed, an operator deploys the
+ * right build and releases the task.
  */
 export class UnknownWorkflowError extends Error {
   constructor(workflowType: string) {
@@ -192,6 +200,35 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
     });
   }
 
+  async function waitingOnFor(
+    runId: string,
+    events: readonly WorkflowEvent[],
+  ): Promise<WaitingOn | null> {
+    const open = openStepIds(events);
+    if (open.length === 0) {
+      return "external";
+    }
+    const result = await options.pool.query<{ step_id: string }>(
+      "select step_id from dead_letters where run_id = $1 and requeued_at is null",
+      [runId],
+    );
+    const deadLettered = new Set(result.rows.map((row) => row.step_id));
+    const allDeadLettered = open.every(
+      (event) => event.type === "step_scheduled" && deadLettered.has(event.stepId),
+    );
+    return allDeadLettered ? "dead_letter" : null;
+  }
+
+  async function markWaiting(
+    runId: string,
+    outcome: string,
+    all: readonly WorkflowEvent[],
+    recordedCount: number,
+  ): Promise<void> {
+    const waitingOn = outcome === "suspended" ? await waitingOnFor(runId, all) : null;
+    await markRunWaiting(options.pool, { runId, waitingOn, progressed: recordedCount > 0 });
+  }
+
   async function handleWorkflowTask(task: LeasedTask): Promise<void> {
     const run = await readRun(task.runId);
     if (run === undefined || isTerminalState(run.status)) {
@@ -247,6 +284,9 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
       outcome: decision.outcome,
       recordedEvents: recorded.recorded ? events.length : 0,
     });
+    if (recorded.recorded) {
+      await markWaiting(task.runId, decision.outcome, [...history, ...events], events.length);
+    }
     if (decision.outcome === "suspended") {
       await ensureStepTasks(run.namespace_id, task.runId, [...history, ...events]);
     }
@@ -269,11 +309,31 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
     }
   }
 
+  function parkReason(error: unknown): string | undefined {
+    if (
+      error instanceof UnknownWorkflowError ||
+      error instanceof NonDeterminismError ||
+      error instanceof VersionMismatchError
+    ) {
+      return `${error.name}: ${error.message}`;
+    }
+    return undefined;
+  }
+
   return async (task) => {
     if (task.taskType === "STEP_TASK") {
       await handleStepTask(task);
       return;
     }
-    await handleWorkflowTask(task);
+    try {
+      await handleWorkflowTask(task);
+    } catch (error) {
+      const reason = parkReason(error);
+      if (reason === undefined) {
+        throw error;
+      }
+      decider.invalidate(task.runId);
+      throw new ParkTaskError(reason, { cause: error });
+    }
   };
 }

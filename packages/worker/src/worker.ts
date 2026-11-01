@@ -1,6 +1,6 @@
 import type { LeasedTask, TaskQueue } from "@dee/core";
 import type { WorkerIdentity } from "./identity.js";
-import { LeaseLostError, ShutdownTimeoutError } from "./errors.js";
+import { LeaseLostError, ParkTaskError, ShutdownTimeoutError } from "./errors.js";
 import { systemTimers, type Timers } from "./timers.js";
 
 /**
@@ -19,6 +19,24 @@ export interface TaskContext {
 export type TaskHandler = (task: LeasedTask, context: TaskContext) => Promise<void>;
 
 /**
+ * Exponential redelivery delay of a failed task: `initialMs` after the first
+ * delivery, doubled for each further one, never above `maxMs`.
+ */
+export interface NackBackoff {
+  readonly initialMs: number;
+  readonly maxMs: number;
+}
+
+/**
+ * The delay before a task that failed on its `attempts`th delivery is
+ * delivered again.
+ */
+export function nackDelayFor(attempts: number, backoff: NackBackoff): number {
+  const doublings = Math.min(Math.max(attempts - 1, 0), 30);
+  return Math.min(backoff.maxMs, backoff.initialMs * 2 ** doublings);
+}
+
+/**
  * Configuration for `createWorker`.
  *
  * - `concurrency`: how many tasks run at once (default 1).
@@ -33,7 +51,11 @@ export type TaskHandler = (task: LeasedTask, context: TaskContext) => Promise<vo
  * - `shutdownTimeoutMs`: how long `stop` waits for running tasks before
  *   dropping them (default 30000).
  * - `nackDelayMs`: the redelivery delay of a task whose handler threw
- *   (default 0).
+ *   (default 0). `nackBackoff` replaces it with a delay that doubles with
+ *   `task.attempts`.
+ * - `maxHandlerAttempts`: a task whose handler threw on this many deliveries
+ *   is quarantined instead of nacked (default 10). A handler that throws a
+ *   `ParkTaskError` quarantines its task at once.
  * - `pollBudget`: asked before each poll how many of the `free` slots to
  *   fill. Resolving `0` skips the poll and waits like an empty poll; a failing
  *   budget is reported to `onError` and the poll uses all free slots. See
@@ -57,6 +79,8 @@ export interface WorkerOptions {
   readonly heartbeatIntervalMs?: number;
   readonly shutdownTimeoutMs?: number;
   readonly nackDelayMs?: number;
+  readonly nackBackoff?: NackBackoff;
+  readonly maxHandlerAttempts?: number;
   readonly timers?: Timers;
   readonly identity?: WorkerIdentity;
   readonly pollBudget?: (free: number) => Promise<number>;
@@ -121,6 +145,8 @@ interface ResolvedOptions {
   readonly heartbeatIntervalMs: number;
   readonly shutdownTimeoutMs: number;
   readonly nackDelayMs: number;
+  readonly nackBackoff: NackBackoff | undefined;
+  readonly maxHandlerAttempts: number;
   readonly timers: Timers;
   readonly identity: WorkerIdentity | undefined;
   readonly pollBudget: ((free: number) => Promise<number>) | undefined;
@@ -179,6 +205,20 @@ function resolveOptions(options: WorkerOptions): ResolvedOptions {
       options.shutdownTimeoutMs ?? 30_000,
     ),
     nackDelayMs: requireNonNegativeInteger("nackDelayMs", options.nackDelayMs ?? 0),
+    nackBackoff:
+      options.nackBackoff === undefined
+        ? undefined
+        : {
+            initialMs: requirePositiveInteger(
+              "nackBackoff.initialMs",
+              options.nackBackoff.initialMs,
+            ),
+            maxMs: requirePositiveInteger("nackBackoff.maxMs", options.nackBackoff.maxMs),
+          },
+    maxHandlerAttempts: requirePositiveInteger(
+      "maxHandlerAttempts",
+      options.maxHandlerAttempts ?? 10,
+    ),
     timers: options.timers ?? systemTimers,
     identity: options.identity,
     pollBudget: options.pollBudget,
@@ -268,15 +308,41 @@ export function createWorker(options: WorkerOptions): Worker {
     }, config.heartbeatIntervalMs);
   }
 
-  async function settle(running: RunningTask, failed: boolean): Promise<void> {
+  async function settleFailure(running: RunningTask, error: unknown): Promise<void> {
+    const { task } = running;
+    if (error instanceof ParkTaskError) {
+      await config.queue.quarantine(task.id, task.leaseToken, error.message);
+      return;
+    }
+    if (task.attempts >= config.maxHandlerAttempts) {
+      const message = error instanceof Error ? error.message : String(error);
+      await config.queue.quarantine(
+        task.id,
+        task.leaseToken,
+        `handler failed ${String(task.attempts)} times: ${message}`,
+      );
+      return;
+    }
+    const delayMs =
+      config.nackBackoff === undefined
+        ? config.nackDelayMs
+        : nackDelayFor(task.attempts, config.nackBackoff);
+    await config.queue.nack(task.id, task.leaseToken, delayMs);
+  }
+
+  async function settle(
+    running: RunningTask,
+    failure: { readonly error: unknown } | undefined,
+  ): Promise<void> {
+    const failed = failure !== undefined;
     const leaseLost = running.controller.signal.aborted;
     stopHeartbeat(running);
     if (running.dropped || leaseLost) {
       return;
     }
     try {
-      if (failed) {
-        await config.queue.nack(running.task.id, running.task.leaseToken, config.nackDelayMs);
+      if (failure !== undefined) {
+        await settleFailure(running, failure.error);
       } else {
         await config.queue.ack(running.task.id, running.task.leaseToken);
       }
@@ -296,14 +362,14 @@ export function createWorker(options: WorkerOptions): Worker {
   }
 
   async function execute(running: RunningTask): Promise<void> {
-    let failed = false;
+    let failure: { readonly error: unknown } | undefined;
     try {
       await config.handler(running.task, { signal: running.controller.signal });
     } catch (error) {
-      failed = true;
+      failure = { error };
       config.onError(error);
     }
-    await settle(running, failed);
+    await settle(running, failure);
     inFlight.delete(running.task.id);
     wake?.();
   }
