@@ -45,7 +45,10 @@ export interface StalledRun {
 /**
  * Options for `Janitor.findStalledRuns` and `Janitor.recoverStalledRuns`. A
  * run counts as stalled only after its last event is `graceMs` old, so a
- * run between two tasks is not mistaken for a lost one.
+ * run between two tasks is not mistaken for a lost one. A run marked as
+ * waiting (see `markRunWaiting`) is never stalled, and a run recovered before
+ * waits `graceMs` doubled for every earlier recovery, up to
+ * `MAX_RECOVERY_BACKOFF_MS`, until a decision records progress.
  */
 export interface StalledRunOptions {
   readonly graceMs: number;
@@ -154,8 +157,17 @@ interface StalledRow {
 
 const STALLED_RUNS_LOCK_KEY = 7_201_201;
 
+/**
+ * The longest wait between two stalled run recoveries of the same run.
+ */
+export const MAX_RECOVERY_BACKOFF_MS = 3_600_000;
+
 const STALLED_PREDICATE = `
   r.status = 'RUNNING'
+  and r.waiting_on is null
+  and (r.last_recovered_at is null
+       or r.last_recovered_at + least($2 * power(2, least(r.recovery_count, 20)), ${String(MAX_RECOVERY_BACKOFF_MS)})
+          * interval '1 millisecond' <= $1::timestamptz)
   and coalesce((select max(e.created_at) from run_events e where e.run_id = r.id), r.created_at)
       <= $1::timestamptz - $2 * interval '1 millisecond'
   and not exists (
@@ -294,6 +306,13 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
            from workflow_runs r
            where ${STALLED_PREDICATE}
          ),
+         bumped as (
+           update workflow_runs
+           set recovery_count = workflow_runs.recovery_count + 1, last_recovered_at = $1
+           from stalled
+           where workflow_runs.id = stalled.id
+           returning workflow_runs.id
+         ),
          enqueued as (
            insert into tasks (namespace_id, run_id, queue_name, task_type, payload, visible_at)
            select namespace_id, id, $3, 'WORKFLOW_TASK', '{"reason":"stalled_run_recovery"}'::jsonb, $1
@@ -301,7 +320,9 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
            returning run_id
          )
          select stalled.id as run_id, stalled.namespace_id, stalled.workflow_type
-         from stalled join enqueued on enqueued.run_id = stalled.id
+         from stalled
+         join enqueued on enqueued.run_id = stalled.id
+         join bumped on bumped.id = stalled.id
          order by stalled.id`,
         [now, recoverOptions.graceMs, recoverOptions.queueName],
       );

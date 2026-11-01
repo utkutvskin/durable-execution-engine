@@ -94,7 +94,11 @@ export { rollbackQuietly, withClient, withTransaction } from "./db/transaction.j
 export { enqueueStepTaskOnClient } from "./queue/step-task-enqueue.js";
 export type { StepTaskEnqueueInput } from "./queue/step-task-enqueue.js";
 export type { CreatePoolOptions } from "./db/pool.js";
-export { DEFAULT_POISON_THRESHOLD, createJanitor } from "./recovery/janitor.js";
+export {
+  DEFAULT_POISON_THRESHOLD,
+  MAX_RECOVERY_BACKOFF_MS,
+  createJanitor,
+} from "./recovery/janitor.js";
 export type {
   Janitor,
   JanitorOptions,
@@ -105,6 +109,8 @@ export type {
   StalledRunOptions,
   SweepReport,
 } from "./recovery/janitor.js";
+export { markRunWaiting } from "./recovery/run-waiting.js";
+export type { RunWaitingMark, WaitingOn } from "./recovery/run-waiting.js";
 export { createRecoveryMetrics } from "./recovery/metrics.js";
 export type { RecoveryMetrics, RecoveryMetricsSnapshot } from "./recovery/metrics.js";
 export { resolveDatabaseUrl } from "./db/env.js";
