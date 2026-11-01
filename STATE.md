@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 35: poison tasks, quarantine and idle runs
+
+- **Status:** DONE
+- **Completed day:** 35
+- **Files added or changed:** `packages/core/migrations/0018_run_waiting_marker.{up,down}.sql` (new), `packages/core/src/queue/task-queue.ts` (`dequeue` counts and quarantines reclaimed leases, `quarantine`, `poisonThreshold`) with the new `task-quarantine.test.ts`, `packages/core/src/recovery/run-waiting.ts` (new: `markRunWaiting`), `janitor.ts` (waiting skip, recovery backoff, `MAX_RECOVERY_BACKOFF_MS`) with the new `waiting-runs.test.ts`, `packages/core/src/index.ts`, `packages/core/src/db/migrator.test.ts`, `packages/worker/src/worker.ts` (`nackBackoff`, `maxHandlerAttempts`, `nackDelayFor`), `errors.ts` (`ParkTaskError`), `engine/task-handler.ts` (park policy, waiting marker), `engine/runtime.ts` (`nackBackoff`, `maxHandlerAttempts`, `poisonThreshold`), `index.ts`, `test-support.ts`, new `poison-task.test.ts` and `engine/poison-tasks.integration.test.ts`, `engine/engine.integration.test.ts`, `docs/DECISIONS.md` (ADR-0045), `docs/DEFERRED.md`
+- **Technical decisions:** ADR-0045 in `docs/DECISIONS.md`. No new dependency.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (124 test files, 912 tests, 29 of them new today). The baseline `verify` of the session was green. **Done:** a failing handler is nacked with a delay that doubles from `task.attempts` (engine default 250 ms to 30 s, `nackBackoff`) and quarantined at `maxHandlerAttempts` (default 8); `dequeue` counts a taken expired lease as a reclaim and quarantines at `poisonThreshold` (default 3), so polling workers no longer bypass quarantine (test: three consumers rotate over a crashing task, it is delivered 3 times and parked); `NonDeterminismError`, `VersionMismatchError` and an unknown workflow type park the task through `ParkTaskError` and leave the run `RUNNING` (ADR-0045: park, not fail); after each recorded decision the run gets `waiting_on` (`external` or `dead_letter`) and the janitor skips marked runs (test: zero tasks over 10 simulated minutes of sweeps); a really stalled run is still recovered, and repeated recoveries back off by `graceMs * 2^recovery_count` up to an hour until a decision records events. **Things to know:** the "Done when" of a run waiting on a signal is proven at janitor level with a marked run plus a handler-level test that a signal-waiting decision sets the marker, not in one engine run over simulated minutes (the engine loops use real timers). `attempts` counts every delivery, so a nack for another reason also moves a task toward quarantine. Parked tasks have no API, CLI or UI surface yet, and a lost enqueue for a marked run is no longer healed (`docs/DEFERRED.md`). One test assertion bug of mine (a poll timer race in virtual time) was fixed by waiting for the poll timer before advancing. CI of the pushed commit is read after the push, below. Day 36 (queue routing, database time and step cancellation) is next; read `docs/REVIEW.md` section 3, items 4, 6, 7 and 8 first.
+
+---
+
 ## Day 34: one terminal result per step and atomic step enqueue
 
 - **Status:** DONE

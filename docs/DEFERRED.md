@@ -64,3 +64,7 @@ The recorder creates the `STEP_TASK` of a `step_scheduled` event in the same tra
 ## Read-only database paths still return clients after any error (day 34)
 
 `withClient` and `withTransaction` destroy a client only when its rollback also fails. The read-only paths that do not open a transaction (the invariant checker, the projection read) destroy the client on any error, which is safe but discards healthy connections after an ordinary SQL error. To close this: classify the error by its code and destroy the client only for connection errors.
+
+## Parked tasks and waiting runs have no operator surface (day 35)
+
+A task parked for a code or deployment error (`NonDeterminismError`, `VersionMismatchError`, an unknown workflow type) and a run marked `waiting_on` can be read only through `Janitor.listQuarantined` and the `workflow_runs` column. The API, the CLI and the UI do not list or release them, and no metric counts parked tasks by reason. A lost enqueue on a path that ends a wait (a signal, a child result) is no longer healed by the janitor for a marked run. To close this: an API route and CLI command for quarantined tasks, and a slow safety sweep of waiting runs.
