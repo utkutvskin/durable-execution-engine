@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { DEFAULT_POISON_THRESHOLD } from "../recovery/janitor.js";
 import { systemClock, type ClockSource } from "../workflow/sources.js";
 
 /**
@@ -50,6 +51,9 @@ export interface EnqueueInput {
  * can tell which worker an orphaned lease belonged to. When `stickyFor` is
  * set, workflow tasks of runs that another worker holds a live sticky claim on
  * (see `createStickyRouter`) are skipped; an expired claim no longer blocks.
+ *
+ * Taking a task whose lease expired counts as a reclaim. A task reclaimed
+ * for the `poisonThreshold`th time is quarantined instead of delivered.
  */
 export interface DequeueOptions {
   readonly queueName: string;
@@ -62,13 +66,16 @@ export interface DequeueOptions {
 
 /**
  * A postgres-backed task queue. Dequeue uses `FOR UPDATE SKIP LOCKED`, so
- * concurrent consumers never receive the same delivery.
+ * concurrent consumers never receive the same delivery. `quarantine` parks a
+ * leased task for an operator with a reason, and resolves `false` when the
+ * lease is no longer current.
  */
 export interface TaskQueue {
   enqueue(input: EnqueueInput): Promise<string>;
   dequeue(options: DequeueOptions): Promise<LeasedTask[]>;
   ack(taskId: string, leaseToken: string): Promise<boolean>;
   nack(taskId: string, leaseToken: string, delayMs?: number): Promise<boolean>;
+  quarantine(taskId: string, leaseToken: string, reason: string): Promise<boolean>;
   extend(taskId: string, leaseToken: string, visibilityTimeoutMs: number): Promise<boolean>;
 }
 
@@ -129,9 +136,11 @@ function assertNonNegativeInteger(name: string, value: number): void {
  */
 export function createTaskQueue(
   pool: Pool,
-  options: { readonly clock?: ClockSource } = {},
+  options: { readonly clock?: ClockSource; readonly poisonThreshold?: number } = {},
 ): TaskQueue {
   const clock = options.clock ?? systemClock;
+  const poisonThreshold = options.poisonThreshold ?? DEFAULT_POISON_THRESHOLD;
+  assertPositiveInteger("poisonThreshold", poisonThreshold);
 
   return {
     async enqueue(input: EnqueueInput): Promise<string> {
@@ -164,7 +173,9 @@ export function createTaskQueue(
       assertPositiveInteger("limit", limit);
       const result = await pool.query<TaskRow>(
         `with next as (
-           select id from tasks
+           select id, state = 'LEASED' as reclaimed,
+                  state = 'LEASED' and reclaim_count + 1 >= $8 as poisoned
+           from tasks
            where queue_name = $1 and state in ('PENDING', 'LEASED') and visible_at <= $2
              and ($7::text is null or task_type <> 'WORKFLOW_TASK' or not exists (
                select 1 from run_stickiness sticky
@@ -175,18 +186,30 @@ export function createTaskQueue(
            order by visible_at, created_at, id
            limit $4
            for update skip locked
+         ),
+         parked as (
+           update tasks
+           set state = 'QUARANTINED', lease_token = null, leased_by = null,
+               leased_by_version = null, leased_at = null,
+               reclaim_count = tasks.reclaim_count + 1, quarantined_at = $2,
+               quarantine_reason = 'lease lost ' || (tasks.reclaim_count + 1)::text || ' times',
+               updated_at = $2
+           from next
+           where tasks.id = next.id and next.poisoned
+           returning tasks.id
          )
          update tasks
          set state = 'LEASED',
              lease_token = gen_random_uuid(),
              attempts = tasks.attempts + 1,
+             reclaim_count = tasks.reclaim_count + case when next.reclaimed then 1 else 0 end,
              leased_by = $5,
              leased_by_version = $6,
              leased_at = $2,
              visible_at = $2::timestamptz + $3 * interval '1 millisecond',
              updated_at = $2
          from next
-         where tasks.id = next.id
+         where tasks.id = next.id and not next.poisoned
          returning tasks.id, namespace_id, run_id, queue_name, task_type, payload,
                    attempts, lease_token, visible_at`,
         [
@@ -197,6 +220,7 @@ export function createTaskQueue(
           dequeueOptions.workerId ?? null,
           dequeueOptions.workerVersion ?? null,
           dequeueOptions.stickyFor ?? null,
+          poisonThreshold,
         ],
       );
       return result.rows.map(toLeasedTask);
@@ -221,6 +245,18 @@ export function createTaskQueue(
              visible_at = $3::timestamptz + $4 * interval '1 millisecond', updated_at = $3
          where id = $1 and lease_token = $2 and state = 'LEASED'`,
         [taskId, leaseToken, now, delayMs],
+      );
+      return result.rowCount === 1;
+    },
+
+    async quarantine(taskId: string, leaseToken: string, reason: string): Promise<boolean> {
+      const result = await pool.query(
+        `update tasks
+         set state = 'QUARANTINED', lease_token = null, leased_by = null,
+             leased_by_version = null, leased_at = null, quarantined_at = $3,
+             quarantine_reason = $4, updated_at = $3
+         where id = $1 and lease_token = $2 and state = 'LEASED'`,
+        [taskId, leaseToken, clock.now(), reason],
       );
       return result.rowCount === 1;
     },

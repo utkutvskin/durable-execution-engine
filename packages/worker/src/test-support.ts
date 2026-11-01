@@ -60,10 +60,12 @@ export interface MemoryQueue extends TaskQueue {
   readonly acked: string[];
   readonly nacked: string[];
   readonly extended: string[];
+  readonly nackDelays: number[];
+  readonly quarantined: { readonly id: string; readonly reason: string }[];
   readonly dequeueLimits: number[];
   extendResult: boolean;
   dequeueError: Error | undefined;
-  add(count: number): void;
+  add(count: number, attempts?: number): void;
 }
 
 export function createMemoryQueue(): MemoryQueue {
@@ -73,10 +75,12 @@ export function createMemoryQueue(): MemoryQueue {
     acked: [],
     nacked: [],
     extended: [],
+    nackDelays: [],
+    quarantined: [],
     dequeueLimits: [],
     extendResult: true,
     dequeueError: undefined,
-    add(count: number): void {
+    add(count: number, attempts = 1): void {
       for (let index = 0; index < count; index += 1) {
         sequence += 1;
         pending.push({
@@ -86,7 +90,7 @@ export function createMemoryQueue(): MemoryQueue {
           queueName: "q",
           taskType: "STEP_TASK",
           payload: {},
-          attempts: 1,
+          attempts,
           leaseToken: `lease-${String(sequence)}`,
           visibleAt: new Date(0),
         });
@@ -106,8 +110,13 @@ export function createMemoryQueue(): MemoryQueue {
       queue.acked.push(taskId);
       return Promise.resolve(true);
     },
-    nack(taskId: string): Promise<boolean> {
+    nack(taskId: string, _leaseToken: string, delayMs = 0): Promise<boolean> {
       queue.nacked.push(taskId);
+      queue.nackDelays.push(delayMs);
+      return Promise.resolve(true);
+    },
+    quarantine(taskId: string, _leaseToken: string, reason: string): Promise<boolean> {
+      queue.quarantined.push({ id: taskId, reason });
       return Promise.resolve(true);
     },
     extend(taskId: string): Promise<boolean> {
