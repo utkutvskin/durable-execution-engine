@@ -68,12 +68,11 @@ export interface RunInteractions {
 }
 
 /**
- * Options for `createRunInteractions`. `queueName` is the queue the
- * `WORKFLOW_TASK` of a signal goes to. `clock` and `random` serve
+ * Options for `createRunInteractions`. The `WORKFLOW_TASK` of a signal goes
+ * to the queue of the run it is sent to. `clock` and `random` serve
  * `ctx.now()`, `ctx.random()` and `ctx.uuid()` while a query replays.
  */
 export interface RunInteractionsOptions {
-  readonly queueName: string;
   readonly workflows: WorkflowRegistry;
   readonly clock: ClockSource;
   readonly random: RandomSource;
@@ -84,6 +83,7 @@ interface RunRow {
   namespace_id: string;
   workflow_type: string;
   status: string;
+  queue_name: string;
 }
 
 /**
@@ -107,7 +107,7 @@ export function createRunInteractions(
       try {
         await client.query("begin");
         const run = await client.query<RunRow>(
-          "select namespace_id, workflow_type, status from workflow_runs where id = $1 for update",
+          "select namespace_id, workflow_type, status, queue_name from workflow_runs where id = $1 for update",
           [runId],
         );
         const row = run.rows[0];
@@ -127,7 +127,7 @@ export function createRunInteractions(
           [
             row.namespace_id,
             runId,
-            options.queueName,
+            row.queue_name,
             JSON.stringify({ reason: "signal", signalName }),
           ],
         );

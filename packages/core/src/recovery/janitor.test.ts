@@ -39,11 +39,11 @@ describe("janitor", () => {
     await database.pool.query("delete from workflow_runs");
   });
 
-  async function createRun(createdAt: Date, status = "RUNNING"): Promise<string> {
+  async function createRun(createdAt: Date, status = "RUNNING", queueName = "q"): Promise<string> {
     const result = await database.pool.query<{ id: string }>(
-      `insert into workflow_runs (namespace_id, workflow_type, status, created_at)
-       values ($1, 'ship-order', $2, $3) returning id`,
-      [namespaceId, status, createdAt],
+      `insert into workflow_runs (namespace_id, workflow_type, status, created_at, queue_name)
+       values ($1, 'ship-order', $2, $3, $4) returning id`,
+      [namespaceId, status, createdAt, queueName],
     );
     return result.rows[0]?.id ?? "";
   }
@@ -189,10 +189,10 @@ describe("janitor", () => {
     const janitor = createJanitor(database.pool, { clock });
     const runId = await createRun(START);
 
-    expect(await janitor.findStalledRuns({ graceMs: 60_000 })).toEqual([]);
+    expect(await janitor.findStalledRuns({ graceMs: 60_000, queueName: "q" })).toEqual([]);
 
     clock.advance(60_000);
-    expect(await janitor.findStalledRuns({ graceMs: 60_000 })).toEqual([
+    expect(await janitor.findStalledRuns({ graceMs: 60_000, queueName: "q" })).toEqual([
       { runId, namespaceId, workflowType: "ship-order" },
     ]);
   });
@@ -217,7 +217,7 @@ describe("janitor", () => {
 
     clock.advance(120_000);
 
-    expect(await janitor.findStalledRuns({ graceMs: 60_000 })).toEqual([]);
+    expect(await janitor.findStalledRuns({ graceMs: 60_000, queueName: "q" })).toEqual([]);
   });
 
   it("treats a run whose only task was acked as stalled", async () => {
@@ -236,7 +236,7 @@ describe("janitor", () => {
 
     clock.advance(60_000);
 
-    const stalled = await janitor.findStalledRuns({ graceMs: 30_000 });
+    const stalled = await janitor.findStalledRuns({ graceMs: 30_000, queueName: "q" });
     expect(stalled.map((run) => run.runId)).toEqual([runId]);
   });
 
@@ -244,7 +244,7 @@ describe("janitor", () => {
     const clock = movableClock();
     const first = createJanitor(database.pool, { clock });
     const second = createJanitor(database.pool, { clock });
-    const runId = await createRun(START);
+    const runId = await createRun(START, "RUNNING", "default/workflows");
     clock.advance(60_000);
     const options = { graceMs: 30_000, queueName: "default/workflows" };
 
@@ -259,7 +259,7 @@ describe("janitor", () => {
       [runId],
     );
     expect(tasks.rows).toEqual([{ task_type: "WORKFLOW_TASK", queue_name: "default/workflows" }]);
-    expect(await first.findStalledRuns({ graceMs: 30_000 })).toEqual([]);
+    expect(await first.findStalledRuns({ graceMs: 30_000, queueName: "q" })).toEqual([]);
   });
 
   it("sweeps leases and stalled runs together and records both in the metrics", async () => {
@@ -292,7 +292,9 @@ describe("janitor", () => {
 
   it("rejects a negative grace period", async () => {
     const janitor = createJanitor(database.pool);
-    await expect(janitor.findStalledRuns({ graceMs: -1 })).rejects.toThrow(RangeError);
+    await expect(janitor.findStalledRuns({ graceMs: -1, queueName: "q" })).rejects.toThrow(
+      RangeError,
+    );
   });
 
   describe("poison pill protection", () => {
@@ -421,7 +423,7 @@ describe("janitor", () => {
       }
       clock.advance(3_600_000);
 
-      expect(await janitor.findStalledRuns({ graceMs: 60_000 })).toEqual([]);
+      expect(await janitor.findStalledRuns({ graceMs: 60_000, queueName: "q" })).toEqual([]);
     });
 
     it("rejects a threshold that is not a positive integer", () => {

@@ -327,12 +327,11 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
   const tracing = options.tracing ?? noopTracing;
   const store = createPostgresEventStore(pool);
   const interactions: RunInteractions = createRunInteractions(pool, {
-    queueName: options.queueName,
     workflows: createWorkflowRegistry(),
     clock: systemClock,
     random: systemRandomSource,
   });
-  const control: RunControl = createRunControl(pool, { queueName: options.queueName });
+  const control: RunControl = createRunControl(pool);
   const deadLetters = createDeadLetterQueue(pool);
 
   async function assertOwned(namespaceId: string, runId: string): Promise<void> {
@@ -374,8 +373,9 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     try {
       await client.query("begin");
       const inserted = await client.query<{ id: string }>(
-        `insert into workflow_runs (namespace_id, workflow_type, input, idempotency_key, traceparent)
-         values ($1, $2, $3::jsonb, $4, $5)
+        `insert into workflow_runs
+           (namespace_id, workflow_type, input, idempotency_key, traceparent, queue_name)
+         values ($1, $2, $3::jsonb, $4, $5, $6)
          on conflict (namespace_id, idempotency_key) where idempotency_key is not null
          do nothing
          returning id`,
@@ -385,6 +385,7 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
           JSON.stringify(input.input ?? null),
           input.idempotencyKey ?? null,
           span.traceparent ?? null,
+          options.queueName,
         ],
       );
       const runId = inserted.rows[0]?.id;

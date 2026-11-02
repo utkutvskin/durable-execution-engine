@@ -4,7 +4,13 @@ import { appendEventsOnClient } from "../event-store/event-store.js";
 import { systemClock, type ClockSource } from "../workflow/sources.js";
 import { noopTracing, type TraceSpan, type Tracing } from "../observability/tracing.js";
 import { createMonotonicClock } from "../timers/monotonic-clock.js";
-import { cronTimesBetween, nextCronTime, parseCron, InvalidScheduleError } from "./cron.js";
+import {
+  cronTimesBetween,
+  nextCronTime,
+  parseCron,
+  InvalidScheduleError,
+  type CronSchedule,
+} from "./cron.js";
 import { rollbackQuietly } from "../db/transaction.js";
 
 /**
@@ -20,8 +26,18 @@ export type OverlapPolicy = "skip" | "buffer_one" | "allow_all";
 export type TriggerOutcome = "STARTED" | "SKIPPED" | "BUFFERED";
 
 /**
+ * What a schedule does with the triggers it missed while no engine was
+ * running: `latest_only` starts one run for the latest missed instant, `all`
+ * starts one for every missed instant, or only for those inside
+ * `catchUpWindowMs` when a window is set.
+ */
+export type CatchUpPolicy = "latest_only" | "all";
+
+/**
  * A schedule as stored. `nextFireAt` is `null` for a paused schedule that
- * never resumed and for an expression with no further match.
+ * never resumed and for an errored one. A schedule whose cron expression or
+ * time zone can no longer be evaluated is `ERRORED` with the reason in
+ * `error`; it starts nothing until it is resumed.
  */
 export interface ScheduleRecord {
   readonly id: string;
@@ -32,7 +48,11 @@ export interface ScheduleRecord {
   readonly workflowType: string;
   readonly input: unknown;
   readonly overlapPolicy: OverlapPolicy;
-  readonly state: "ACTIVE" | "PAUSED";
+  readonly state: "ACTIVE" | "PAUSED" | "ERRORED";
+  readonly queueName: string;
+  readonly catchUpPolicy: CatchUpPolicy;
+  readonly catchUpWindowMs: number | null;
+  readonly error: string | null;
   readonly nextFireAt: Date | null;
   readonly lastFiredAt: Date | null;
   readonly bufferedFor: Date | null;
@@ -41,7 +61,7 @@ export interface ScheduleRecord {
 /**
  * What `ScheduleManager.create` needs. `startAt` is the instant after which
  * the first trigger is looked for (default: now); a `startAt` in the past
- * makes the next tick start every trigger since then.
+ * makes the next tick catch up under `catchUpPolicy` (default `latest_only`).
  */
 export interface CreateScheduleInput {
   readonly namespaceId: string;
@@ -51,6 +71,8 @@ export interface CreateScheduleInput {
   readonly input?: unknown;
   readonly timeZone?: string;
   readonly overlapPolicy?: OverlapPolicy;
+  readonly catchUpPolicy?: CatchUpPolicy;
+  readonly catchUpWindowMs?: number;
   readonly startAt?: Date;
 }
 
@@ -73,8 +95,9 @@ export interface ScheduleTickReport {
 }
 
 /**
- * Options for `createScheduleManager`. `queueName` is the queue the
- * `WORKFLOW_TASK` of a started run goes to. `batchSize` bounds how many
+ * Options for `createScheduleManager`. `queueName` is the queue of the
+ * schedules this manager creates and serves: it starts only the schedules of
+ * its queue, and their runs and `WORKFLOW_TASK`s belong to it. `batchSize` bounds how many
  * triggers one tick handles (default 100).
  */
 export interface ScheduleManagerOptions {
@@ -156,7 +179,11 @@ interface ScheduleRow {
   workflow_type: string;
   input: unknown;
   overlap_policy: OverlapPolicy;
-  state: "ACTIVE" | "PAUSED";
+  state: "ACTIVE" | "PAUSED" | "ERRORED";
+  queue_name: string;
+  catch_up_policy: CatchUpPolicy;
+  catch_up_window_ms: string | null;
+  error: string | null;
   next_fire_at: Date | null;
   last_fired_at: Date | null;
   buffered_for: Date | null;
@@ -176,6 +203,10 @@ function toRecord(row: ScheduleRow): ScheduleRecord {
     input: row.input,
     overlapPolicy: row.overlap_policy,
     state: row.state,
+    queueName: row.queue_name,
+    catchUpPolicy: row.catch_up_policy,
+    catchUpWindowMs: row.catch_up_window_ms === null ? null : Number(row.catch_up_window_ms),
+    error: row.error,
     nextFireAt: row.next_fire_at,
     lastFiredAt: row.last_fired_at,
     bufferedFor: row.buffered_for,
@@ -189,15 +220,27 @@ function requireRow(row: ScheduleRow | undefined, id: string): ScheduleRow {
   return row;
 }
 
-function nextAfter(row: ScheduleRow, after: Date): Date | null {
-  try {
-    return nextCronTime(parseCron(row.cron_expression, row.time_zone), after);
-  } catch (error) {
-    if (error instanceof InvalidScheduleError) {
-      return null;
+function latestInstantUntil(schedule: CronSchedule, first: Date, now: Date): Date {
+  let latest = first;
+  for (;;) {
+    const next = nextCronTime(schedule, latest);
+    if (next.getTime() > now.getTime()) {
+      return latest;
     }
-    throw error;
+    latest = next;
   }
+}
+
+function catchUpInstant(row: ScheduleRow, schedule: CronSchedule, now: Date): Date {
+  const due = row.next_fire_at ?? now;
+  if (row.catch_up_policy === "latest_only") {
+    return latestInstantUntil(schedule, due, now);
+  }
+  if (row.catch_up_window_ms === null) {
+    return due;
+  }
+  const cutoff = now.getTime() - Number(row.catch_up_window_ms);
+  return due.getTime() < cutoff ? nextCronTime(schedule, new Date(cutoff - 1)) : due;
 }
 
 /**
@@ -253,8 +296,9 @@ export function createScheduleManager(
       },
     });
     const run = await client.query<{ id: string }>(
-      `insert into workflow_runs (namespace_id, workflow_type, input, schedule_id, traceparent)
-       values ($1, $2, $3::jsonb, $4, $5)
+      `insert into workflow_runs
+         (namespace_id, workflow_type, input, schedule_id, traceparent, queue_name)
+       values ($1, $2, $3::jsonb, $4, $5, $6)
        returning id`,
       [
         schedule.namespace_id,
@@ -262,6 +306,7 @@ export function createScheduleManager(
         JSON.stringify(schedule.input),
         schedule.id,
         span.traceparent ?? null,
+        schedule.queue_name,
       ],
     );
     spans.push(span);
@@ -276,7 +321,7 @@ export function createScheduleManager(
       [
         schedule.namespace_id,
         runId,
-        options.queueName,
+        schedule.queue_name,
         JSON.stringify({
           reason: "schedule",
           scheduleId: schedule.id,
@@ -355,13 +400,14 @@ export function createScheduleManager(
     return inTransaction(async (client, spans) => {
       const found = await client.query<ScheduleRow>(
         `select * from schedules s
-         where s.state = 'ACTIVE' and s.buffered_for is not null
+         where s.state = 'ACTIVE' and s.buffered_for is not null and s.queue_name = $1
            and not exists (
              select 1 from workflow_runs r where r.schedule_id = s.id and r.status = 'RUNNING'
            )
          order by s.buffered_for, s.id
          limit 1
          for update skip locked`,
+        [options.queueName],
       );
       const schedule = found.rows[0];
       const scheduledFor = schedule?.buffered_for;
@@ -386,25 +432,50 @@ export function createScheduleManager(
     return inTransaction(async (client, spans) => {
       const found = await client.query<ScheduleRow>(
         `select * from schedules
-         where state = 'ACTIVE' and next_fire_at <= $1
+         where state = 'ACTIVE' and next_fire_at <= $1 and queue_name = $2
          order by next_fire_at, id
          limit 1
          for update skip locked`,
-        [now],
+        [now, options.queueName],
       );
       const schedule = found.rows[0];
-      const scheduledFor = schedule?.next_fire_at;
-      if (schedule === undefined || scheduledFor === null || scheduledFor === undefined) {
+      if (schedule?.next_fire_at === undefined || schedule.next_fire_at === null) {
         return "none";
       }
-      const trigger = await handleTrigger(client, schedule, scheduledFor, spans);
-      await client.query(
-        `update schedules set next_fire_at = $2, last_fired_at = $3, updated_at = now()
-         where id = $1`,
-        [schedule.id, nextAfter(schedule, scheduledFor), scheduledFor],
-      );
-      return trigger ?? "none";
+      try {
+        const parsed = parseCron(schedule.cron_expression, schedule.time_zone);
+        const scheduledFor = catchUpInstant(schedule, parsed, now);
+        const trigger =
+          scheduledFor.getTime() <= now.getTime()
+            ? await handleTrigger(client, schedule, scheduledFor, spans)
+            : undefined;
+        await client.query(
+          `update schedules set next_fire_at = $2, last_fired_at = coalesce($3, last_fired_at),
+             updated_at = now()
+           where id = $1`,
+          [
+            schedule.id,
+            nextCronTime(parsed, scheduledFor),
+            trigger === undefined ? null : scheduledFor,
+          ],
+        );
+        return trigger ?? "none";
+      } catch (error) {
+        if (!(error instanceof InvalidScheduleError)) {
+          throw error;
+        }
+        await markErrored(client, schedule.id, error.message);
+        return "none";
+      }
     });
+  }
+
+  async function markErrored(client: PoolClient, id: string, reason: string): Promise<void> {
+    await client.query(
+      `update schedules set state = 'ERRORED', error = $2, next_fire_at = null, updated_at = now()
+       where id = $1`,
+      [id, reason],
+    );
   }
 
   async function loadForUpdate(client: PoolClient, id: string): Promise<ScheduleRow> {
@@ -434,8 +505,9 @@ export function createScheduleManager(
       const outcome = await fireNextDue(now);
       if (outcome === "none") {
         const remaining = await pool.query(
-          "select 1 from schedules where state = 'ACTIVE' and next_fire_at <= $1 limit 1",
-          [now],
+          `select 1 from schedules
+           where state = 'ACTIVE' and next_fire_at <= $1 and queue_name = $2 limit 1`,
+          [now, options.queueName],
         );
         if (remaining.rowCount === 0) {
           break;
@@ -451,14 +523,23 @@ export function createScheduleManager(
   return {
     async create(input: CreateScheduleInput): Promise<ScheduleRecord> {
       const timeZone = input.timeZone ?? "UTC";
+      const catchUpWindowMs = input.catchUpWindowMs;
+      if (
+        catchUpWindowMs !== undefined &&
+        (!Number.isInteger(catchUpWindowMs) || catchUpWindowMs <= 0)
+      ) {
+        throw new RangeError(
+          `catchUpWindowMs must be a positive integer, got ${String(catchUpWindowMs)}`,
+        );
+      }
       const parsed = parseCron(input.cronExpression, timeZone);
       const first = nextCronTime(parsed, input.startAt ?? clock.now());
       try {
         const inserted = await pool.query<ScheduleRow>(
           `insert into schedules
              (namespace_id, name, cron_expression, time_zone, workflow_type, input,
-              overlap_policy, next_fire_at)
-           values ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+              overlap_policy, next_fire_at, queue_name, catch_up_policy, catch_up_window_ms)
+           values ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11)
            returning *`,
           [
             input.namespaceId,
@@ -469,6 +550,9 @@ export function createScheduleManager(
             JSON.stringify(input.input ?? {}),
             input.overlapPolicy ?? "skip",
             first,
+            options.queueName,
+            input.catchUpPolicy ?? "latest_only",
+            catchUpWindowMs ?? null,
           ],
         );
         const row = inserted.rows[0];
@@ -508,10 +592,24 @@ export function createScheduleManager(
       const now = clock.now();
       return inTransaction(async (client) => {
         const row = await loadForUpdate(client, id);
+        let next: Date;
+        try {
+          next = nextCronTime(parseCron(row.cron_expression, row.time_zone), now);
+        } catch (error) {
+          if (!(error instanceof InvalidScheduleError)) {
+            throw error;
+          }
+          await markErrored(client, id, error.message);
+          const errored = await client.query<ScheduleRow>("select * from schedules where id = $1", [
+            id,
+          ]);
+          return toRecord(requireRow(errored.rows[0], id));
+        }
         const updated = await client.query<ScheduleRow>(
-          `update schedules set state = 'ACTIVE', next_fire_at = $2, updated_at = now()
+          `update schedules set state = 'ACTIVE', next_fire_at = $2, error = null,
+             updated_at = now()
            where id = $1 returning *`,
-          [id, nextAfter(row, now)],
+          [id, next],
         );
         return toRecord(requireRow(updated.rows[0], id));
       });
@@ -552,7 +650,8 @@ export function createScheduleManager(
 
     async nextDueAt(): Promise<Date | undefined> {
       const result = await pool.query<{ next: Date | null }>(
-        "select min(next_fire_at) as next from schedules where state = 'ACTIVE'",
+        "select min(next_fire_at) as next from schedules where state = 'ACTIVE' and queue_name = $1",
+        [options.queueName],
       );
       return result.rows[0]?.next ?? undefined;
     },

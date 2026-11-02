@@ -38,7 +38,6 @@ describe("run interactions", () => {
     const workflows = createWorkflowRegistry();
     workflows.register(approval);
     interactions = createRunInteractions(database.pool, {
-      queueName: "default",
       workflows,
       ...sources,
     });

@@ -42,8 +42,8 @@ describe("janitor and waiting runs", () => {
 
   async function createRun(): Promise<string> {
     const result = await database.pool.query<{ id: string }>(
-      `insert into workflow_runs (namespace_id, workflow_type, status, created_at)
-       values ($1, 'ship-order', 'RUNNING', $2) returning id`,
+      `insert into workflow_runs (namespace_id, workflow_type, status, created_at, queue_name)
+       values ($1, 'ship-order', 'RUNNING', $2, 'q') returning id`,
       [namespaceId, START],
     );
     return result.rows[0]?.id ?? "";
@@ -84,7 +84,7 @@ describe("janitor and waiting runs", () => {
     await markRunWaiting(database.pool, { runId, waitingOn: "dead_letter", progressed: true });
     clock.advance(GRACE_MS * 10);
     const janitor = createJanitor(database.pool, { clock });
-    expect(await janitor.findStalledRuns({ graceMs: GRACE_MS })).toEqual([]);
+    expect(await janitor.findStalledRuns({ graceMs: GRACE_MS, queueName: "q" })).toEqual([]);
   });
 
   it("still recovers a stalled run that is not marked as waiting", async () => {
@@ -101,11 +101,13 @@ describe("janitor and waiting runs", () => {
     await markRunWaiting(database.pool, { runId, waitingOn: "external", progressed: true });
     clock.advance(GRACE_MS + 1);
     const janitor = createJanitor(database.pool, { clock });
-    expect(await janitor.findStalledRuns({ graceMs: GRACE_MS })).toEqual([]);
+    expect(await janitor.findStalledRuns({ graceMs: GRACE_MS, queueName: "q" })).toEqual([]);
     await markRunWaiting(database.pool, { runId, waitingOn: null, progressed: false });
-    expect((await janitor.findStalledRuns({ graceMs: GRACE_MS })).map((run) => run.runId)).toEqual([
-      runId,
-    ]);
+    expect(
+      (await janitor.findStalledRuns({ graceMs: GRACE_MS, queueName: "q" })).map(
+        (run) => run.runId,
+      ),
+    ).toEqual([runId]);
   });
 
   it("backs off between repeated recoveries of the same run", async () => {
@@ -146,6 +148,6 @@ describe("janitor and waiting runs", () => {
     );
     clock.advance(MAX_RECOVERY_BACKOFF_MS + 1);
     const janitor = createJanitor(database.pool, { clock });
-    expect(await janitor.findStalledRuns({ graceMs: GRACE_MS })).toHaveLength(1);
+    expect(await janitor.findStalledRuns({ graceMs: GRACE_MS, queueName: "q" })).toHaveLength(1);
   });
 });

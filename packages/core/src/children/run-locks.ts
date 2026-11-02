@@ -1,18 +1,21 @@
 import type { PoolClient } from "pg";
 
 /**
- * The row of a locked run: its namespace, status and parent.
+ * The row of a locked run: its namespace, status, parent and the queue its
+ * tasks belong to.
  */
 export interface LockedRun {
   readonly namespaceId: string;
   readonly status: string;
   readonly parentRunId: string | null;
+  readonly queueName: string;
 }
 
 interface LockedRunRow {
   namespace_id: string;
   status: string;
   parent_run_id: string | null;
+  queue_name: string;
 }
 
 /**
@@ -35,12 +38,17 @@ export async function lockRunWithParent(
     await client.query("select 1 from workflow_runs where id = $1 for update", [parentRunId]);
   }
   const run = await client.query<LockedRunRow>(
-    "select namespace_id, status, parent_run_id from workflow_runs where id = $1 for update",
+    "select namespace_id, status, parent_run_id, queue_name from workflow_runs where id = $1 for update",
     [runId],
   );
   const row = run.rows[0];
   if (row === undefined) {
     return undefined;
   }
-  return { namespaceId: row.namespace_id, status: row.status, parentRunId: row.parent_run_id };
+  return {
+    namespaceId: row.namespace_id,
+    status: row.status,
+    parentRunId: row.parent_run_id,
+    queueName: row.queue_name,
+  };
 }

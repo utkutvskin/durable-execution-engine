@@ -38,8 +38,8 @@ describe("timer scheduler", () => {
 
   async function createRun(status = "RUNNING"): Promise<string> {
     const run = await database.pool.query<{ id: string }>(
-      "insert into workflow_runs (namespace_id, workflow_type, status) values ($1, 'sleeper', $2) returning id",
-      [namespaceId, status],
+      "insert into workflow_runs (namespace_id, workflow_type, status, queue_name) values ($1, 'sleeper', $2, $3) returning id",
+      [namespaceId, status, QUEUE],
     );
     return run.rows[0]?.id ?? "";
   }

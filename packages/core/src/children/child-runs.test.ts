@@ -48,7 +48,7 @@ describe("child runs", () => {
     database = await createIsolatedDatabase();
     store = createPostgresEventStore(database.pool);
     recorder = createResultRecorder(database.pool, undefined, { queueName: "default" });
-    control = createRunControl(database.pool, { queueName: "default" });
+    control = createRunControl(database.pool);
   });
 
   afterAll(async () => {

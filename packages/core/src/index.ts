@@ -174,6 +174,7 @@ export {
 } from "./schedules/schedule-manager.js";
 export type {
   CreateScheduleInput,
+  CatchUpPolicy,
   OverlapPolicy,
   ScheduleManager,
   ScheduleManagerOptions,

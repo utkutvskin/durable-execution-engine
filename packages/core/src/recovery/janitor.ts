@@ -52,15 +52,14 @@ export interface StalledRun {
  */
 export interface StalledRunOptions {
   readonly graceMs: number;
+  readonly queueName: string;
 }
 
 /**
- * Options for `Janitor.recoverStalledRuns`: the queue the replacement
- * `WORKFLOW_TASK` goes to.
+ * Options for `Janitor.recoverStalledRuns`. Only runs of `queueName` are
+ * recovered, and each replacement `WORKFLOW_TASK` goes to that queue.
  */
-export interface RecoverStalledRunsOptions extends StalledRunOptions {
-  readonly queueName: string;
-}
+export type RecoverStalledRunsOptions = StalledRunOptions;
 
 /**
  * What one `Janitor.sweep` did.
@@ -164,6 +163,7 @@ export const MAX_RECOVERY_BACKOFF_MS = 3_600_000;
 
 const STALLED_PREDICATE = `
   r.status = 'RUNNING'
+  and r.queue_name = $3
   and r.waiting_on is null
   and (r.last_recovered_at is null
        or r.last_recovered_at + least($2 * power(2, least(r.recovery_count, 20)), ${String(MAX_RECOVERY_BACKOFF_MS)})
@@ -278,7 +278,7 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
        from workflow_runs r
        where ${STALLED_PREDICATE}
        order by r.created_at, r.id`,
-      [clock.now(), stalledOptions.graceMs],
+      [clock.now(), stalledOptions.graceMs, stalledOptions.queueName],
     );
     return result.rows.map(toStalledRun);
   }
@@ -302,7 +302,7 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
       const now = clock.now();
       const result = await client.query<StalledRow>(
         `with stalled as (
-           select r.id, r.namespace_id, r.workflow_type
+           select r.id, r.namespace_id, r.workflow_type, r.queue_name
            from workflow_runs r
            where ${STALLED_PREDICATE}
          ),
@@ -315,7 +315,7 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
          ),
          enqueued as (
            insert into tasks (namespace_id, run_id, queue_name, task_type, payload, visible_at)
-           select namespace_id, id, $3, 'WORKFLOW_TASK', '{"reason":"stalled_run_recovery"}'::jsonb, $1
+           select namespace_id, id, queue_name, 'WORKFLOW_TASK', '{"reason":"stalled_run_recovery"}'::jsonb, $1
            from stalled
            returning run_id
          )

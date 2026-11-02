@@ -13,13 +13,13 @@ interface ChildLink {
 }
 
 async function queueNameOf(client: PoolClient, runId: string): Promise<string> {
-  const task = await client.query<{ queue_name: string }>(
-    "select queue_name from tasks where run_id = $1 order by created_at limit 1",
+  const run = await client.query<{ queue_name: string }>(
+    "select queue_name from workflow_runs where id = $1",
     [runId],
   );
-  const queueName = task.rows[0]?.queue_name;
+  const queueName = run.rows[0]?.queue_name;
   if (queueName === undefined) {
-    throw new Error(`workflow run "${runId}" has no task to take its queue from`);
+    throw new Error(`workflow run "${runId}" does not exist`);
   }
   return queueName;
 }
@@ -102,7 +102,7 @@ async function notifyParent(
     [
       parentRow.namespace_id,
       parentRunId,
-      await queueNameOf(client, runId),
+      await queueNameOf(client, parentRunId),
       JSON.stringify({ reason: "child_closed", childId }),
     ],
   );

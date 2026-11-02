@@ -24,8 +24,8 @@ export async function createChildRunOnClient(
   const inserted = await client.query<{ id: string }>(
     `insert into workflow_runs
        (namespace_id, workflow_type, input, parent_run_id, parent_child_id, parent_close_policy,
-        traceparent)
-     values ($1, $2, $3::jsonb, $4, $5, $6, $7)
+        traceparent, queue_name)
+     values ($1, $2, $3::jsonb, $4, $5, $6, $7, $8)
      on conflict (parent_run_id, parent_child_id) where parent_child_id is not null do nothing
      returning id`,
     [
@@ -36,6 +36,7 @@ export async function createChildRunOnClient(
       event.childId,
       event.parentClosePolicy,
       parent.traceparent ?? null,
+      parent.queueName,
     ],
   );
   const created = inserted.rows[0];

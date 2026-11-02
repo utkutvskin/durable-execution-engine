@@ -47,8 +47,9 @@ export interface CatchUpReport extends TickReport {
 }
 
 /**
- * Options for `createTimerScheduler`. `queueName` is the queue the
- * `WORKFLOW_TASK` of a fired timer goes to. `batchSize` bounds how many
+ * Options for `createTimerScheduler`. The scheduler fires only the timers of
+ * runs that belong to `queueName`, and the `WORKFLOW_TASK` of a fired timer
+ * goes to that run's queue. `batchSize` bounds how many
  * timers one tick fires (default 100).
  */
 export interface TimerSchedulerOptions {
@@ -141,12 +142,14 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
     try {
       await client.query("begin");
       const due = await client.query<DueTimerRow>(
-        `select id, run_id, timer_id, fire_at, created_at from timers
-         where state = 'PENDING' and fire_at <= $1
-         order by fire_at, id
+        `select timers.id, timers.run_id, timers.timer_id, timers.fire_at, timers.created_at
+         from timers
+         join workflow_runs r on r.id = timers.run_id
+         where timers.state = 'PENDING' and timers.fire_at <= $1 and r.queue_name = $2
+         order by timers.fire_at, timers.id
          limit 1
-         for update skip locked`,
-        [now],
+         for update of timers skip locked`,
+        [now, options.queueName],
       );
       const timer = due.rows[0];
       if (timer === undefined) {
@@ -157,9 +160,11 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
         namespace_id: string;
         status: string;
         traceparent: string | null;
-      }>("select namespace_id, status, traceparent from workflow_runs where id = $1 for update", [
-        timer.run_id,
-      ]);
+        queue_name: string;
+      }>(
+        "select namespace_id, status, traceparent, queue_name from workflow_runs where id = $1 for update",
+        [timer.run_id],
+      );
       const runRow = run.rows[0];
       if (runRow?.status !== "RUNNING") {
         await client.query("update timers set state = 'CANCELLED', fired_at = $2 where id = $1", [
@@ -184,7 +189,7 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
         [
           runRow.namespace_id,
           timer.run_id,
-          options.queueName,
+          runRow.queue_name,
           JSON.stringify({ reason: "timer_fired", timerId: timer.timer_id }),
           timer.fire_at,
         ],

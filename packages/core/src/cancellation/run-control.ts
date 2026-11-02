@@ -64,18 +64,17 @@ export interface RunControl {
 }
 
 /**
- * Options for `createRunControl`. `queueName` is the queue the
- * `WORKFLOW_TASK` of a cancellation request goes to.
+ * Options for `createRunControl`. The `WORKFLOW_TASK` of a cancellation
+ * request goes to the queue of the run it concerns.
  */
 export interface RunControlOptions {
-  readonly queueName: string;
   readonly codec?: Codec;
 }
 
 /**
  * Creates `RunControl` over `pool`.
  */
-export function createRunControl(pool: Pool, options: RunControlOptions): RunControl {
+export function createRunControl(pool: Pool, options: RunControlOptions = {}): RunControl {
   const codec = options.codec ?? jsonCodec;
 
   async function inTransaction<TResult>(
@@ -110,7 +109,7 @@ export function createRunControl(pool: Pool, options: RunControlOptions): RunCon
         return requestCancellationOnClient(
           client,
           codec,
-          { runId, namespaceId: row.namespaceId, queueName: options.queueName },
+          { runId, namespaceId: row.namespaceId, queueName: row.queueName },
           reason,
         );
       });

@@ -336,8 +336,8 @@ const clockShift: ChaosScenario = {
     for (let index = 0; index < 4; index += 1) {
       const fireAt = new Date(clock.now().getTime() + (10 + index) * 60_000);
       const run = await pool.query<{ id: string }>(
-        "insert into workflow_runs (namespace_id, workflow_type) values ($1, 'sleeper') returning id",
-        [world.namespaceId],
+        "insert into workflow_runs (namespace_id, workflow_type, queue_name) values ($1, 'sleeper', $2) returning id",
+        [world.namespaceId, queueName],
       );
       const runId = run.rows[0]?.id ?? "";
       await world.store.append(runId, 0, [

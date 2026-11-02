@@ -54,6 +54,7 @@ describe("schedule manager", () => {
       cronExpression: "*/5 * * * *",
       workflowType: "report",
       input: { kind: "nightly" },
+      catchUpPolicy: "all",
       ...overrides,
     };
   }

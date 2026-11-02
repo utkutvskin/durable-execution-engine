@@ -216,7 +216,7 @@ describe("crash recovery with SIGKILL", () => {
         "select count(*) from tasks where state <> 'COMPLETED'",
       );
       expect(Number(open.rows[0]?.count)).toBe(0);
-      expect(await janitor.findStalledRuns({ graceMs: 0 })).toEqual([]);
+      expect(await janitor.findStalledRuns({ graceMs: 0, queueName: QUEUE })).toEqual([]);
       expect(pointsUsed.size).toBe(CRASH_POINTS.length);
     },
     SPAWN_TIMEOUT_MS,

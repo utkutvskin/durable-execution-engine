@@ -53,7 +53,7 @@ describe("continue as new against postgres", () => {
     database = await createIsolatedDatabase();
     store = createPostgresEventStore(database.pool);
     recorder = createResultRecorder(database.pool, undefined, { queueName: "default" });
-    control = createRunControl(database.pool, { queueName: "default" });
+    control = createRunControl(database.pool);
   });
 
   afterAll(async () => {

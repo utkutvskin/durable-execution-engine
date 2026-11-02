@@ -44,7 +44,7 @@ describe("run control", () => {
   beforeAll(async () => {
     database = await createIsolatedDatabase();
     store = createPostgresEventStore(database.pool);
-    control = createRunControl(database.pool, { queueName: "default" });
+    control = createRunControl(database.pool);
     recorder = createResultRecorder(database.pool);
   });
 
@@ -258,7 +258,6 @@ describe("run control", () => {
     const workflows = createWorkflowRegistry();
     workflows.register(saga);
     const interactions = createRunInteractions(database.pool, {
-      queueName: "default",
       workflows,
       ...sources,
     });
