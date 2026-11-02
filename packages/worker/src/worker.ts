@@ -49,7 +49,13 @@ export function nackDelayFor(attempts: number, backoff: NackBackoff): number {
  *   (default a third of `visibilityTimeoutMs`); must be shorter than the
  *   visibility timeout.
  * - `shutdownTimeoutMs`: how long `stop` waits for running tasks before
- *   dropping them (default 30000).
+ *   dropping them (default 30000). A dropped task's signal is aborted first;
+ *   the worker then waits up to `abortGraceMs` (default 1000) for its handler
+ *   to settle before it nacks the task, so the next delivery does not run
+ *   beside a handler that is still going.
+ * - A heartbeat that cannot reach the queue for a whole `visibilityTimeoutMs`
+ *   aborts the task's signal with a `LeaseLostError`, because the lease has
+ *   expired by then whether the queue says so or not.
  * - `nackDelayMs`: the redelivery delay of a task whose handler threw
  *   (default 0). `nackBackoff` replaces it with a delay that doubles with
  *   `task.attempts`.
@@ -78,6 +84,7 @@ export interface WorkerOptions {
   readonly visibilityTimeoutMs?: number;
   readonly heartbeatIntervalMs?: number;
   readonly shutdownTimeoutMs?: number;
+  readonly abortGraceMs?: number;
   readonly nackDelayMs?: number;
   readonly nackBackoff?: NackBackoff;
   readonly maxHandlerAttempts?: number;
@@ -129,6 +136,7 @@ interface RunningTask {
   readonly task: LeasedTask;
   readonly controller: AbortController;
   heartbeat: unknown;
+  leaseConfirmedAt: number;
   finished: boolean;
   dropped: boolean;
   done: Promise<void>;
@@ -144,6 +152,7 @@ interface ResolvedOptions {
   readonly visibilityTimeoutMs: number;
   readonly heartbeatIntervalMs: number;
   readonly shutdownTimeoutMs: number;
+  readonly abortGraceMs: number;
   readonly nackDelayMs: number;
   readonly nackBackoff: NackBackoff | undefined;
   readonly maxHandlerAttempts: number;
@@ -204,6 +213,7 @@ function resolveOptions(options: WorkerOptions): ResolvedOptions {
       "shutdownTimeoutMs",
       options.shutdownTimeoutMs ?? 30_000,
     ),
+    abortGraceMs: requireNonNegativeInteger("abortGraceMs", options.abortGraceMs ?? 1000),
     nackDelayMs: requireNonNegativeInteger("nackDelayMs", options.nackDelayMs ?? 0),
     nackBackoff:
       options.nackBackoff === undefined
@@ -281,15 +291,20 @@ export function createWorker(options: WorkerOptions): Worker {
 
   async function beat(running: RunningTask): Promise<void> {
     running.heartbeat = undefined;
-    let leaseHeld = true;
+    let leaseHeld: boolean;
     try {
       leaseHeld = await config.queue.extend(
         running.task.id,
         running.task.leaseToken,
         config.visibilityTimeoutMs,
       );
+      if (leaseHeld) {
+        running.leaseConfirmedAt = config.clock.now().getTime();
+      }
     } catch (error) {
       config.onError(error);
+      leaseHeld =
+        config.clock.now().getTime() - running.leaseConfirmedAt < config.visibilityTimeoutMs;
     }
     if (running.finished) {
       return;
@@ -379,6 +394,7 @@ export function createWorker(options: WorkerOptions): Worker {
       task,
       controller: new AbortController(),
       heartbeat: undefined,
+      leaseConfirmedAt: config.clock.now().getTime(),
       finished: false,
       dropped: false,
       done: Promise.resolve(),
@@ -449,10 +465,20 @@ export function createWorker(options: WorkerOptions): Worker {
     }
   }
 
+  async function settledWithin(work: Promise<void>, graceMs: number): Promise<void> {
+    let deadline: unknown;
+    const elapsed = new Promise<void>((resolve) => {
+      deadline = config.timers.setTimeout(resolve, graceMs);
+    });
+    await Promise.race([work, elapsed]);
+    config.timers.clearTimeout(deadline);
+  }
+
   async function drop(running: RunningTask): Promise<void> {
     running.dropped = true;
     stopHeartbeat(running);
     running.controller.abort(new ShutdownTimeoutError(running.task.id));
+    await settledWithin(running.done, config.abortGraceMs);
     try {
       await config.queue.nack(running.task.id, running.task.leaseToken);
     } catch (error) {

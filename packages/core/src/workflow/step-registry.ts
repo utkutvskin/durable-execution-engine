@@ -1,9 +1,20 @@
 /**
+ * What a step handler receives besides its input. `signal` aborts when the
+ * step must stop: its `timeoutMs` elapsed, its task lost the lease to another
+ * worker, or the worker is shutting down. A step that does I/O should pass
+ * it on (for example to `fetch`) so that work stops instead of running twice.
+ */
+export interface StepContext {
+  readonly signal: AbortSignal;
+}
+
+/**
  * A step's implementation: the side-effecting function a `ctx.step()` call
  * invokes by its registered `stepType`.
  */
 export type StepHandler<TInput = unknown, TResult = unknown> = (
   input: TInput,
+  context: StepContext,
 ) => TResult | Promise<TResult>;
 
 /**

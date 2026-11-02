@@ -69,7 +69,7 @@ export type { RunWorkflowOptions, RunWorkflowResult } from "./workflow/run-workf
 export { systemClock, systemRandomSource } from "./workflow/sources.js";
 export type { ClockSource, RandomSource } from "./workflow/sources.js";
 export { createStepRegistry } from "./workflow/step-registry.js";
-export type { StepHandler, StepRegistry } from "./workflow/step-registry.js";
+export type { StepContext, StepHandler, StepRegistry } from "./workflow/step-registry.js";
 export { createWorkflowRegistry } from "./workflow/workflow-registry.js";
 export type { WorkflowDefinition, WorkflowRegistry } from "./workflow/workflow-registry.js";
 export { TASK_TYPES, createTaskQueue, taskQueueName } from "./queue/task-queue.js";

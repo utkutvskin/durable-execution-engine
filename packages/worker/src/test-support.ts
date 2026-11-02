@@ -64,6 +64,7 @@ export interface MemoryQueue extends TaskQueue {
   readonly quarantined: { readonly id: string; readonly reason: string }[];
   readonly dequeueLimits: number[];
   extendResult: boolean;
+  extendError: Error | undefined;
   dequeueError: Error | undefined;
   add(count: number, attempts?: number): void;
 }
@@ -79,6 +80,7 @@ export function createMemoryQueue(): MemoryQueue {
     quarantined: [],
     dequeueLimits: [],
     extendResult: true,
+    extendError: undefined,
     dequeueError: undefined,
     add(count: number, attempts = 1): void {
       for (let index = 0; index < count; index += 1) {
@@ -121,6 +123,9 @@ export function createMemoryQueue(): MemoryQueue {
     },
     extend(taskId: string): Promise<boolean> {
       queue.extended.push(taskId);
+      if (queue.extendError !== undefined) {
+        return Promise.reject(queue.extendError);
+      }
       return Promise.resolve(queue.extendResult);
     },
   };

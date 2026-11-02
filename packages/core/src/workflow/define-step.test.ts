@@ -72,7 +72,9 @@ describe("defineStep", () => {
     const handler = registry.get("charge-card");
 
     expect(handler).toBeDefined();
-    await expect(handler?.({ amount: 42 })).resolves.toEqual({ charged: true });
+    await expect(
+      handler?.({ amount: 42 }, { signal: new AbortController().signal }),
+    ).resolves.toEqual({ charged: true });
   });
 
   it("carries a resolved retry policy onto the definition", () => {

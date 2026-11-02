@@ -57,6 +57,8 @@ describe("shutdown handlers", () => {
     processLike.emit("SIGINT");
     await waitFor(() => time.pendingDelays().includes(1000));
     time.advance(1000);
+    await waitFor(() => time.pendingDelays().includes(1000));
+    time.advance(1000);
     await waitFor(() => processLike.codes.length === 1);
     expect(processLike.codes).toEqual([1]);
   });

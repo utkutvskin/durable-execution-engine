@@ -90,7 +90,55 @@ export interface StepTaskProcessor {
    * another attempt recorded its result changes nothing and reports
    * `already_recorded`.
    */
-  process(task: LeasedTask): Promise<StepTaskOutcome>;
+  process(task: LeasedTask, context?: StepTaskContext): Promise<StepTaskOutcome>;
+}
+
+/**
+ * What the caller of `StepTaskProcessor.process` can tell it about the
+ * delivery. `signal` aborts when the task's lease is lost or the worker drops
+ * it. The step handler receives it, combined with its own timeout, and an
+ * aborted delivery reports `lease_lost` without recording an attempt, an ack
+ * or a nack: the step's next delivery decides what happens.
+ */
+export interface StepTaskContext {
+  readonly signal?: AbortSignal;
+}
+
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
+}
+
+function abortError(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason));
+}
+
+function rejectOnAbort(signal: AbortSignal | undefined): {
+  readonly promise: Promise<never>;
+  dispose(): void;
+} {
+  if (signal === undefined) {
+    return { promise: new Promise<never>(() => undefined), dispose: () => undefined };
+  }
+  let listener: (() => void) | undefined;
+  const promise = new Promise<never>((_resolve, reject) => {
+    if (signal.aborted) {
+      reject(abortError(signal));
+      return;
+    }
+    listener = (): void => {
+      reject(abortError(signal));
+    };
+    signal.addEventListener("abort", listener, { once: true });
+  });
+  promise.catch(() => undefined);
+  return {
+    promise,
+    dispose(): void {
+      if (listener !== undefined) {
+        signal.removeEventListener("abort", listener);
+      }
+    },
+  };
 }
 
 const systemTimers: TimeoutTimers = {
@@ -132,26 +180,43 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
     stepType: string,
     input: unknown,
     span: TraceSpan,
+    leaseSignal: AbortSignal | undefined,
   ): Promise<unknown> {
+    const abortion = rejectOnAbort(leaseSignal);
     try {
       if (definition === undefined) {
         throw new NonRetryableError(`no step registered for type "${stepType}"`);
       }
-      return await runWithTimeout(() => definition.handler(input), definition.timeoutMs, timers);
+      const run = runWithTimeout(
+        (timeoutSignal) =>
+          definition.handler(input, {
+            signal:
+              leaseSignal === undefined
+                ? timeoutSignal
+                : AbortSignal.any([timeoutSignal, leaseSignal]),
+          }),
+        definition.timeoutMs,
+        timers,
+      );
+      return await Promise.race([run, abortion.promise]);
     } catch (thrown) {
       span.recordError(thrown);
       throw thrown;
     } finally {
+      abortion.dispose();
       span.end();
     }
   }
 
   return {
-    async process(task: LeasedTask): Promise<StepTaskOutcome> {
+    async process(task: LeasedTask, context: StepTaskContext = {}): Promise<StepTaskOutcome> {
       const payload = stepTaskPayloadSchema.parse(task.payload);
       const { runId } = task;
       const { stepId } = payload;
 
+      if (isAborted(context.signal)) {
+        return { status: "lease_lost" };
+      }
       if (await hasRecordedResult(runId, stepId)) {
         await options.queue.ack(task.id, task.leaseToken);
         return { status: "already_recorded" };
@@ -171,7 +236,13 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
       });
 
       try {
-        const result = await executeTraced(definition, payload.stepType, payload.input, span);
+        const result = await executeTraced(
+          definition,
+          payload.stepType,
+          payload.input,
+          span,
+          context.signal,
+        );
         const recorded = await options.recorder.recordStepResult({
           runId,
           stepId,
@@ -186,6 +257,9 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
           ? { status: "completed", attempt }
           : { status: "already_recorded" };
       } catch (thrown) {
+        if (isAborted(context.signal)) {
+          return { status: "lease_lost" };
+        }
         const error = serializeError(thrown);
         const decision = decideRetry(policy, attempt - payload.attemptOffset, error, random);
 

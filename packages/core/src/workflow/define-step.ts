@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import { resolveRetryPolicy, type RetryPolicy } from "../retry/retry-policy.js";
-import type { StepHandler } from "./step-registry.js";
+import type { StepContext, StepHandler } from "./step-registry.js";
 
 /**
  * A step registered under `stepType`: its handler, wrapped with whatever
@@ -11,7 +11,7 @@ import type { StepHandler } from "./step-registry.js";
  */
 export interface StepDefinition<TInput = unknown, TResult = unknown> {
   readonly stepType: string;
-  readonly handler: StepHandler<TInput, TResult>;
+  readonly handler: (input: TInput, context?: StepContext) => TResult | Promise<TResult>;
   readonly timeoutMs?: number;
   readonly retry?: RetryPolicy;
 }
@@ -47,9 +47,10 @@ export function defineStep<TInput = unknown, TResult = unknown>(
     );
   }
 
-  const handler: StepHandler<TInput, TResult> = async (input: TInput): Promise<TResult> => {
+  const neverAborted: StepContext = { signal: new AbortController().signal };
+  const handler = async (input: TInput, context: StepContext = neverAborted): Promise<TResult> => {
     const validatedInput = options.input === undefined ? input : options.input.parse(input);
-    const result = await options.handler(validatedInput);
+    const result = await options.handler(validatedInput, context);
     return options.output === undefined ? result : options.output.parse(result);
   };
 

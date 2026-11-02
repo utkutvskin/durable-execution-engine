@@ -158,7 +158,7 @@ function createInMemoryContext(
       if (handler === undefined) {
         throw new Error(`no step registered for type "${stepType}"`);
       }
-      return (await handler(input)) as TResult;
+      return (await handler(input, { signal: new AbortController().signal })) as TResult;
     },
     sleep(durationMs: number): Promise<void> {
       timerSequence += 1;

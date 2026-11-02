@@ -292,8 +292,8 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
     }
   }
 
-  async function handleStepTask(task: LeasedTask): Promise<void> {
-    const outcome = await processor.process(task);
+  async function handleStepTask(task: LeasedTask, signal: AbortSignal): Promise<void> {
+    const outcome = await processor.process(task, { signal });
     if (
       outcome.status === "completed" ||
       outcome.status === "failed" ||
@@ -320,9 +320,9 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
     return undefined;
   }
 
-  return async (task) => {
+  return async (task, context) => {
     if (task.taskType === "STEP_TASK") {
-      await handleStepTask(task);
+      await handleStepTask(task, context.signal);
       return;
     }
     try {
