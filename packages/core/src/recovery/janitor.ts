@@ -113,8 +113,9 @@ export interface Janitor {
 }
 
 /**
- * Options for `createJanitor`. `clock` supplies "now" for lease expiry and
- * the stalled run grace period, so tests move time without waiting.
+ * Options for `createJanitor`. Without `clock`, lease expiry and the stalled
+ * run grace period use the database's time. A `clock` replaces it, so tests
+ * move time without waiting.
  */
 export interface JanitorOptions {
   readonly clock?: ClockSource;
@@ -161,15 +162,17 @@ const STALLED_RUNS_LOCK_KEY = 7_201_201;
  */
 export const MAX_RECOVERY_BACKOFF_MS = 3_600_000;
 
+const DB_NOW = "coalesce($1::timestamptz, now())";
+
 const STALLED_PREDICATE = `
   r.status = 'RUNNING'
   and r.queue_name = $3
   and r.waiting_on is null
   and (r.last_recovered_at is null
        or r.last_recovered_at + least($2 * power(2, least(r.recovery_count, 20)), ${String(MAX_RECOVERY_BACKOFF_MS)})
-          * interval '1 millisecond' <= $1::timestamptz)
+          * interval '1 millisecond' <= ${DB_NOW})
   and coalesce((select max(e.created_at) from run_events e where e.run_id = r.id), r.created_at)
-      <= $1::timestamptz - $2 * interval '1 millisecond'
+      <= ${DB_NOW} - $2 * interval '1 millisecond'
   and not exists (
     select 1 from tasks t where t.run_id = r.id and t.state in ('PENDING', 'LEASED', 'QUARANTINED')
   )
@@ -192,6 +195,7 @@ function assertNonNegativeInteger(name: string, value: number): void {
  */
 export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor {
   const clock = options.clock ?? systemClock;
+  const instant = (): Date | null => options.clock?.now() ?? null;
   const metrics = options.metrics ?? createRecoveryMetrics();
   const poisonThreshold = options.poisonThreshold ?? DEFAULT_POISON_THRESHOLD;
   if (!Number.isInteger(poisonThreshold) || poisonThreshold <= 0) {
@@ -201,21 +205,21 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
   }
 
   async function reclaimOrphanedLeases(): Promise<ReclaimedTask[]> {
-    const now = clock.now();
+    const now = instant();
     const result = await pool.query<ReclaimRow>(
       `with expired as (
          select id, leased_by, leased_by_version from tasks
-         where state = 'LEASED' and visible_at <= $1
+         where state = 'LEASED' and visible_at <= ${DB_NOW}
          for update skip locked
        )
        update tasks
        set state = case when tasks.reclaim_count + 1 >= $2 then 'QUARANTINED' else 'PENDING' end,
            lease_token = null, leased_by = null, leased_by_version = null,
            leased_at = null, reclaim_count = tasks.reclaim_count + 1,
-           quarantined_at = case when tasks.reclaim_count + 1 >= $2 then $1::timestamptz end,
+           quarantined_at = case when tasks.reclaim_count + 1 >= $2 then ${DB_NOW} end,
            quarantine_reason = case when tasks.reclaim_count + 1 >= $2
              then 'lease lost ' || (tasks.reclaim_count + 1)::text || ' times' end,
-           visible_at = $1, updated_at = $1
+           visible_at = ${DB_NOW}, updated_at = ${DB_NOW}
        from expired
        where tasks.id = expired.id
        returning tasks.id, tasks.run_id, tasks.queue_name, tasks.attempts, tasks.state,
@@ -260,11 +264,11 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
   }
 
   async function releaseQuarantined(taskId: string): Promise<boolean> {
-    const now = clock.now();
+    const now = instant();
     const result = await pool.query(
       `update tasks
        set state = 'PENDING', reclaim_count = 0, quarantined_at = null, quarantine_reason = null,
-           visible_at = $2, updated_at = $2
+           visible_at = coalesce($2::timestamptz, now()), updated_at = coalesce($2::timestamptz, now())
        where id = $1 and state = 'QUARANTINED'`,
       [taskId, now],
     );
@@ -278,7 +282,7 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
        from workflow_runs r
        where ${STALLED_PREDICATE}
        order by r.created_at, r.id`,
-      [clock.now(), stalledOptions.graceMs, stalledOptions.queueName],
+      [instant(), stalledOptions.graceMs, stalledOptions.queueName],
     );
     return result.rows.map(toStalledRun);
   }
@@ -299,7 +303,7 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
         await client.query("rollback");
         return [];
       }
-      const now = clock.now();
+      const now = instant();
       const result = await client.query<StalledRow>(
         `with stalled as (
            select r.id, r.namespace_id, r.workflow_type, r.queue_name
@@ -308,14 +312,14 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
          ),
          bumped as (
            update workflow_runs
-           set recovery_count = workflow_runs.recovery_count + 1, last_recovered_at = $1
+           set recovery_count = workflow_runs.recovery_count + 1, last_recovered_at = ${DB_NOW}
            from stalled
            where workflow_runs.id = stalled.id
            returning workflow_runs.id
          ),
          enqueued as (
            insert into tasks (namespace_id, run_id, queue_name, task_type, payload, visible_at)
-           select namespace_id, id, queue_name, 'WORKFLOW_TASK', '{"reason":"stalled_run_recovery"}'::jsonb, $1
+           select namespace_id, id, queue_name, 'WORKFLOW_TASK', '{"reason":"stalled_run_recovery"}'::jsonb, ${DB_NOW}
            from stalled
            returning run_id
          )

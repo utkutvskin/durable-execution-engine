@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import { DEFAULT_POISON_THRESHOLD } from "../recovery/janitor.js";
-import { systemClock, type ClockSource } from "../workflow/sources.js";
+import type { ClockSource } from "../workflow/sources.js";
 
 /**
  * The kinds of work a queue carries: a `WORKFLOW_TASK` asks a worker to run
@@ -125,9 +125,17 @@ function assertNonNegativeInteger(name: string, value: number): void {
   }
 }
 
+const DATABASE_NOW = "now()";
+
+function at(placeholder: string): string {
+  return `coalesce(${placeholder}::timestamptz, ${DATABASE_NOW})`;
+}
+
 /**
- * Creates a `TaskQueue` over `pool`. `clock` supplies "now" for every
- * visibility calculation, so tests can move time without waiting.
+ * Creates a `TaskQueue` over `pool`. Without `clock`, every lease, visibility
+ * and extend decision uses the database's time, so hosts whose own clocks
+ * disagree still agree on who holds a lease. A `clock` replaces it, which is
+ * how tests move time without waiting; production code leaves it out.
  *
  * `ack`, `nack` and `extend` resolve `true` when the given lease was still
  * current and the change applied, and `false` when it was not (the task was
@@ -138,7 +146,8 @@ export function createTaskQueue(
   pool: Pool,
   options: { readonly clock?: ClockSource; readonly poisonThreshold?: number } = {},
 ): TaskQueue {
-  const clock = options.clock ?? systemClock;
+  const clock = options.clock;
+  const instant = (): Date | null => clock?.now() ?? null;
   const poisonThreshold = options.poisonThreshold ?? DEFAULT_POISON_THRESHOLD;
   assertPositiveInteger("poisonThreshold", poisonThreshold);
 
@@ -148,7 +157,7 @@ export function createTaskQueue(
       assertNonNegativeInteger("delayMs", delayMs);
       const result = await pool.query<{ id: string }>(
         `insert into tasks (namespace_id, run_id, queue_name, task_type, payload, visible_at)
-         values ($1, $2, $3, $4, $5::jsonb, $6::timestamptz + $7 * interval '1 millisecond')
+         values ($1, $2, $3, $4, $5::jsonb, ${at("$6")} + $7 * interval '1 millisecond')
          returning id`,
         [
           input.namespaceId,
@@ -156,7 +165,7 @@ export function createTaskQueue(
           input.queueName,
           input.taskType,
           JSON.stringify(input.payload ?? {}),
-          clock.now(),
+          instant(),
           delayMs,
         ],
       );
@@ -176,12 +185,12 @@ export function createTaskQueue(
            select id, state = 'LEASED' as reclaimed,
                   state = 'LEASED' and reclaim_count + 1 >= $8 as poisoned
            from tasks
-           where queue_name = $1 and state in ('PENDING', 'LEASED') and visible_at <= $2
+           where queue_name = $1 and state in ('PENDING', 'LEASED') and visible_at <= ${at("$2")}
              and ($7::text is null or task_type <> 'WORKFLOW_TASK' or not exists (
                select 1 from run_stickiness sticky
                where sticky.run_id = tasks.run_id
                  and sticky.worker_id <> $7
-                 and sticky.expires_at > $2
+                 and sticky.expires_at > ${at("$2")}
              ))
            order by visible_at, created_at, id
            limit $4
@@ -191,9 +200,9 @@ export function createTaskQueue(
            update tasks
            set state = 'QUARANTINED', lease_token = null, leased_by = null,
                leased_by_version = null, leased_at = null,
-               reclaim_count = tasks.reclaim_count + 1, quarantined_at = $2,
+               reclaim_count = tasks.reclaim_count + 1, quarantined_at = ${at("$2")},
                quarantine_reason = 'lease lost ' || (tasks.reclaim_count + 1)::text || ' times',
-               updated_at = $2
+               updated_at = ${at("$2")}
            from next
            where tasks.id = next.id and next.poisoned
            returning tasks.id
@@ -205,16 +214,16 @@ export function createTaskQueue(
              reclaim_count = tasks.reclaim_count + case when next.reclaimed then 1 else 0 end,
              leased_by = $5,
              leased_by_version = $6,
-             leased_at = $2,
-             visible_at = $2::timestamptz + $3 * interval '1 millisecond',
-             updated_at = $2
+             leased_at = ${at("$2")},
+             visible_at = ${at("$2")} + $3 * interval '1 millisecond',
+             updated_at = ${at("$2")}
          from next
          where tasks.id = next.id and not next.poisoned
          returning tasks.id, namespace_id, run_id, queue_name, task_type, payload,
                    attempts, lease_token, visible_at`,
         [
           dequeueOptions.queueName,
-          clock.now(),
+          instant(),
           dequeueOptions.visibilityTimeoutMs,
           limit,
           dequeueOptions.workerId ?? null,
@@ -229,22 +238,21 @@ export function createTaskQueue(
     async ack(taskId: string, leaseToken: string): Promise<boolean> {
       const result = await pool.query(
         `update tasks set state = 'COMPLETED', lease_token = null, leased_by = null,
-             leased_by_version = null, updated_at = $3
+             leased_by_version = null, updated_at = ${at("$3")}
          where id = $1 and lease_token = $2 and state = 'LEASED'`,
-        [taskId, leaseToken, clock.now()],
+        [taskId, leaseToken, instant()],
       );
       return result.rowCount === 1;
     },
 
     async nack(taskId: string, leaseToken: string, delayMs = 0): Promise<boolean> {
       assertNonNegativeInteger("delayMs", delayMs);
-      const now = clock.now();
       const result = await pool.query(
         `update tasks
          set state = 'PENDING', lease_token = null, leased_by = null, leased_by_version = null,
-             visible_at = $3::timestamptz + $4 * interval '1 millisecond', updated_at = $3
+             visible_at = ${at("$3")} + $4 * interval '1 millisecond', updated_at = ${at("$3")}
          where id = $1 and lease_token = $2 and state = 'LEASED'`,
-        [taskId, leaseToken, now, delayMs],
+        [taskId, leaseToken, instant(), delayMs],
       );
       return result.rowCount === 1;
     },
@@ -253,10 +261,10 @@ export function createTaskQueue(
       const result = await pool.query(
         `update tasks
          set state = 'QUARANTINED', lease_token = null, leased_by = null,
-             leased_by_version = null, leased_at = null, quarantined_at = $3,
-             quarantine_reason = $4, updated_at = $3
+             leased_by_version = null, leased_at = null, quarantined_at = ${at("$3")},
+             quarantine_reason = $4, updated_at = ${at("$3")}
          where id = $1 and lease_token = $2 and state = 'LEASED'`,
-        [taskId, leaseToken, clock.now(), reason],
+        [taskId, leaseToken, instant(), reason],
       );
       return result.rowCount === 1;
     },
@@ -267,12 +275,11 @@ export function createTaskQueue(
       visibilityTimeoutMs: number,
     ): Promise<boolean> {
       assertPositiveInteger("visibilityTimeoutMs", visibilityTimeoutMs);
-      const now = clock.now();
       const result = await pool.query(
         `update tasks
-         set visible_at = $3::timestamptz + $4 * interval '1 millisecond', updated_at = $3
-         where id = $1 and lease_token = $2 and state = 'LEASED' and visible_at > $3`,
-        [taskId, leaseToken, now, visibilityTimeoutMs],
+         set visible_at = ${at("$3")} + $4 * interval '1 millisecond', updated_at = ${at("$3")}
+         where id = $1 and lease_token = $2 and state = 'LEASED' and visible_at > ${at("$3")}`,
+        [taskId, leaseToken, instant(), visibilityTimeoutMs],
       );
       return result.rowCount === 1;
     },
