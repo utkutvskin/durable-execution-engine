@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 36: queue routing, database time and step cancellation
+
+- **Status:** DONE
+- **Completed day:** 36
+- **Files added or changed:** `packages/core/migrations/0019_run_queue_and_schedule_policy.{up,down}.sql` (new), `packages/core/src/children/run-locks.ts`, `child-runs.ts`, `continuation/continued-run.ts`, `cancellation/close-run.ts`, `run-control.ts`, `signals/signal-service.ts`, `timers/timer-scheduler.ts`, `recovery/janitor.ts` (queue filter, `queueName` required in `StalledRunOptions`, database time), `queue/task-queue.ts` (database time), `schedules/schedule-manager.ts` (queue, catch-up policy, `ERRORED`), `retry/step-task-processor.ts` (`StepTaskContext`, abort), `workflow/step-registry.ts` (`StepContext`), `define-step.ts`, `run-workflow.ts`, `packages/core/src/index.ts`, new tests `queue/queue-routing.test.ts`, `queue/database-time.test.ts`, `schedules/catch-up.test.ts`, `retry/step-abort.test.ts`, `packages/worker/src/worker.ts` (heartbeat failure, `abortGraceMs`), `engine/task-handler.ts`, `test-support.ts`, new `worker-abort.test.ts` and `engine/step-abort.integration.test.ts`, `packages/api/src/run-service.ts`, chaos world and scenarios (runs carry their queue), `docs/DECISIONS.md` (ADR-0046), `docs/DEFERRED.md`
+- **Technical decisions:** ADR-0046 in `docs/DECISIONS.md`. No new dependency.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green (130 test files, 949 tests, 37 of them new today). The baseline `verify` of the session was green (124 files, 912 tests). **Done:** `workflow_runs` and `schedules` carry `queue_name`; timers, signals, cancels, close, parent wake-ups and stalled recovery enqueue to the run's queue and the timer, schedule and janitor loops filter by their queue (`createRunControl` and `createRunInteractions` lost their `queueName` option, `StalledRunOptions` gained a required one). The task queue and the janitor use `now()` of the database unless a clock is injected; a test with the host `Date` moved 30 s fast shows a live lease is not taken, an expired lease is not extended by a slow host and a fresh run is not stalled. `StepHandler` receives `{ signal }`; a lost lease, a step timeout and a shutdown drop abort it, an aborted delivery reports `lease_lost` and records nothing; a heartbeat failing for a whole visibility timeout aborts; a dropped task waits `abortGraceMs` before the nack. Schedules default to `latest_only` (a per-minute schedule offline for a simulated day starts one run), `all` takes an optional window, and an invalid cron or time zone gives the `ERRORED` state with `error`. **Things to know:** I wrote the code before the tests for the routing and schedule parts, so those tests were not seen red first; the database time tests were checked red by stashing the two source files (6 of 7 failed). Existing schedule tests now create schedules with `catchUpPolicy: "all"` to keep their meaning, and the chaos harness inserts runs with their queue. The shutdown test needed a second virtual advance for the abort grace. The "two engines" done-when item is proven at component level, see `docs/DEFERRED.md`. CI of the pushed commit is read after the push, below. Day 37 (workflow timeouts and failure propagation) is next.
+
+---
+
 ## Day 35: poison tasks, quarantine and idle runs
 
 - **Status:** DONE

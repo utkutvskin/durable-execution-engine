@@ -68,3 +68,12 @@ The recorder creates the `STEP_TASK` of a `step_scheduled` event in the same tra
 ## Parked tasks and waiting runs have no operator surface (day 35)
 
 A task parked for a code or deployment error (`NonDeterminismError`, `VersionMismatchError`, an unknown workflow type) and a run marked `waiting_on` can be read only through `Janitor.listQuarantined` and the `workflow_runs` column. The API, the CLI and the UI do not list or release them, and no metric counts parked tasks by reason. A lost enqueue on a path that ends a wait (a signal, a child result) is no longer healed by the janitor for a marked run. To close this: an API route and CLI command for quarantined tasks, and a slow safety sweep of waiting runs.
+
+## Queue routing, database time and abort limits (day 36)
+
+- Moving a run between queues has no API; `workflow_runs.queue_name` is updated by hand and open tasks keep the old queue. `wf` and the API serve one queue per process, so a two-pool setup needs two API processes or a queue argument on the start route.
+- The "two engines on different queues" proof is at component level (timer, signal, cancel, close, janitor and schedule manager against one database), not two `startEngine` instances over a long run.
+- Timers and schedules still read the host or injected clock for their due check; only the task queue and the janitor use database time. A fast host can fire a timer or a trigger early by its skew.
+- Catch-up instants skipped by `latest_only` or by the window are not recorded in `schedule_triggers`, so nothing shows how many were dropped. Finding the latest instant steps through every missed minute, which is slow for a schedule that was off for years.
+- A step that ignores its abort signal keeps running after its lease is lost; the engine stops waiting for it, but only the step's own code can stop its side effects.
+- `ERRORED` schedules have no API, CLI or UI surface yet.
