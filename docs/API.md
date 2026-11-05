@@ -63,13 +63,15 @@ Errors are `{ "error": { "code", "message", "details"? } }`. 400 is a validation
 
 ## Dead letters
 
-`GET /v1/dead-letters` lists the namespace's step tasks that used all their attempts, oldest first. `POST /v1/dead-letters/{deadLetterId}/requeue` puts one back on its queue with a fresh retry budget and answers `{ "taskId" }`; an unknown id, an id of another namespace and an entry that was requeued already all answer 404.
+`GET /v1/dead-letters` lists the namespace's step tasks that used all their attempts, oldest first. `POST /v1/dead-letters/{deadLetterId}/requeue` puts one back on its queue and answers `{ "taskId" }`; the step already failed for its workflow, so the task is acknowledged without running the step again (see `docs/CONCEPTS.md`); an unknown id, an id of another namespace and an entry that was requeued already all answer 404.
 
 ## Idempotent start
 
 Send `Idempotency-Key: <1 to 255 characters>` with `POST /v1/runs`. The first call answers 201 and creates the run; any repeat in the same namespace answers 200 with `"created": false` and the same run. Reusing the key with a different workflow type or input answers 409.
 
 ## Listing
+
+`POST /v1/runs` also accepts `runTimeoutMs` and `executionTimeoutMs` (positive numbers, milliseconds). A run that outlives its run timeout, or whose continue-as-new chain outlives the execution timeout, ends `TIMED_OUT`; a zero or negative value answers 400.
 
 `GET /v1/runs?status=&workflowType=&startedAfter=&startedBefore=&limit=&cursor=` returns runs newest first, at most `limit` (1 to 200, default 50). Pass the returned `nextCursor` to get the next page; the last page has none. `startedAfter` (inclusive) and `startedBefore` (exclusive) are ISO 8601 timestamps.
 

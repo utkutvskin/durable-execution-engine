@@ -45,7 +45,8 @@ A step runs with a retry policy: `maxAttempts`, `initialIntervalMs`, `backoffCoe
 
 - A thrown error is retried after the next backoff and recorded as a `step_attempt_failed` event with its retry time.
 - A `NonRetryableError` is tried once and fails the step at once. The workflow sees a rejected `ctx.step` it can catch.
-- A step that uses all its attempts moves to the **dead letter queue**. The run keeps waiting. An operator can fix the cause and requeue it from the API (`POST /v1/dead-letters/{id}/requeue`) or from the ui; it then gets a fresh attempt budget.
+- A step that uses all its attempts moves to the **dead letter queue** for the operator, and the workflow sees the failure at once: `ctx.step()` rejects with a `StepFailedError` (`stepId`, `stepType`, and the step's last error as `cause`) that the workflow can catch to compensate; uncaught, it fails the run. The failure is final: a requeued dead letter is acknowledged without running the step again, because the step already has its result. A step that fails with a `NonRetryableError` rejects with the original error instead.
+- A failure keeps the error's `name`, `message`, the serializable own properties as `details` and the `cause` chain, so a custom error class arrives in the workflow with its type and details (`error.name`, `error.details`, `error.cause`). A compensation that throws is recorded as a `compensation_failed` event and the other compensations still run.
 - A step that exceeds its `timeoutMs` fails that attempt with a `StepTimeoutError`.
 - A task whose lease is lost three times is **quarantined** instead of redelivered forever, so one poison task cannot block a queue.
 
@@ -104,3 +105,9 @@ A namespace is a tenant. An API key belongs to exactly one namespace and every q
 | A step result and a decision are recorded once                    | Throughput beyond one Postgres (`docs/BENCHMARKS.md`) |
 | A timer fires once, in due-time order                             | Wall-clock accuracy better than the loop interval     |
 | Replay of an unchanged workflow reaches the same decision         | That changed code replays without a patch             |
+
+## Run and execution timeouts
+
+A run can bound its own life. `runTimeoutMs` ends one run, `executionTimeoutMs` ends a whole continue-as-new chain at a fixed deadline. Both are set when the run starts: `POST /v1/runs` accepts them in the body, and `ctx.startChild` and `ctx.executeChild` accept them in their options. A run created with a timeout gets a durable timer (`run-timeout`, `execution-timeout`) in the same transaction. When it comes due, the timer loop appends `run_timed_out` (with `kind` `run` or `execution`) and closes the run: the run becomes `TIMED_OUT`, its waiting tasks are withdrawn and its parent receives a `child_failed` event named `TimedOutError`. A run that closed first just cancels its timer. A continued run keeps the chain's deadline and restarts its own run timeout.
+
+`ctx.sleep()` rejects a negative, `NaN` or infinite duration with an `InvalidSleepDurationError`.

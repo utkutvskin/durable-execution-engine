@@ -19,7 +19,7 @@ The ui is then on the same origin as the api, so there is no CORS. The files in 
 - **Run detail.** The status, three viewers (input, output, error) and the event history as a timeline: label, summary, offset from the first event, and the raw event on click. The timeline is kept live by the run stream (`GET /v1/runs/{runId}/stream`, see `docs/API.md`): new events are appended without a page refresh, and the stream reconnects from the last sequence number it received.
 - **Signal.** A name and an optional json payload, sent with `POST /v1/runs/{runId}/signal`. The form is disabled once the run is closed.
 - **Cancel.** Requests a graceful cancellation. The timeline shows `cancel requested` at once and `run cancelled` when the workflow has reacted.
-- **Dead letters.** The step tasks that ran out of attempts, with a requeue button.
+- **Dead letters.** The step tasks that ran out of attempts, with a requeue button. Since day 37 the failure is already final for the workflow, so a requeue only acknowledges the entry.
 
 Run data is always inserted as text nodes, never as markup, so an input such as `<img onerror=...>` is displayed and not executed.
 

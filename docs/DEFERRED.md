@@ -77,3 +77,11 @@ A task parked for a code or deployment error (`NonDeterminismError`, `VersionMis
 - Catch-up instants skipped by `latest_only` or by the window are not recorded in `schedule_triggers`, so nothing shows how many were dropped. Finding the latest instant steps through every missed minute, which is slow for a schedule that was off for years.
 - A step that ignores its abort signal keeps running after its lease is lost; the engine stops waiting for it, but only the step's own code can stop its side effects.
 - `ERRORED` schedules have no API, CLI or UI surface yet.
+
+## Timeouts, requeue and compacted queries (day 37)
+
+- Timeouts are set per run at creation (API start, child options). A workflow definition cannot declare a default, and schedules cannot set them, so a scheduled run is unbounded.
+- A requeued dead letter is acknowledged without running the step, so the dead letter queue is now an inspection list, not a retry path. A resume flow (run the step again and let a waiting workflow continue) would need a new event kind and a design for workflows that already moved on.
+- `queryRun` on a compacted run rejects with `RunHistoryCompactedError`; answering it would need the query handler state kept in the snapshot or the history kept for replay.
+- `compensation_failed` is not shown in the web UI timeline as a special row, and the live session treats the new event kinds as unsupported, which makes a run that cancels replay from the top once.
+- The step `details` are the own enumerable JSON-serializable properties; values that do not serialize (functions, bigint, cycles) are dropped silently.
