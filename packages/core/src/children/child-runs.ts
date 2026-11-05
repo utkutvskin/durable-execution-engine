@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import type { Codec } from "../event-store/codec.js";
 import { appendEventsOnClient } from "../event-store/event-store.js";
 import type { WorkflowEvent } from "../event-store/events.js";
+import { applyRunTimeoutsOnClient } from "../timeouts/run-timeouts.js";
 
 /**
  * Creates the run for a `child_started` event inside the caller's
@@ -18,6 +19,7 @@ export async function createChildRunOnClient(
     readonly namespaceId: string;
     readonly queueName: string;
     readonly traceparent?: string | null;
+    readonly now?: Date;
   },
   event: Extract<WorkflowEvent, { type: "child_started" }>,
 ): Promise<{ readonly runId: string; readonly created: boolean }> {
@@ -47,6 +49,10 @@ export async function createChildRunOnClient(
     );
     return { runId: existing.rows[0]?.id ?? "", created: false };
   }
+  await applyRunTimeoutsOnClient(client, created.id, parent.now ?? new Date(), {
+    runTimeoutMs: event.runTimeoutMs,
+    executionTimeoutMs: event.executionTimeoutMs,
+  });
   await appendEventsOnClient(client, codec, created.id, 0, [
     { type: "run_started", workflowType: event.workflowType, input: event.input },
   ]);

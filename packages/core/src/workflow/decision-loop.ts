@@ -1,4 +1,5 @@
-import type { WorkflowEvent } from "../event-store/events.js";
+import type { RecordedError, WorkflowEvent } from "../event-store/events.js";
+import { deserializeError, toRecordedError } from "./error-serialization.js";
 import type { WorkflowCommand } from "./commands.js";
 import type {
   ChildHandle,
@@ -15,7 +16,9 @@ import {
   CancelledError,
   ChildLimitExceededError,
   NonDeterminismError,
+  StepFailedError,
   VersionMismatchError,
+  sleepDurationError,
 } from "./errors.js";
 import { createCommandMatcher, recordedCommandOf } from "./command-matcher.js";
 import { createContextValues } from "./context-values.js";
@@ -116,13 +119,8 @@ export function toError(reason: unknown): Error {
 /**
  * Rebuilds the `Error` a recorded `step_failed` or `child_failed` event stands for.
  */
-export function reconstructError(error: {
-  readonly name: string;
-  readonly message: string;
-}): Error {
-  const reconstructed = new Error(error.message);
-  reconstructed.name = error.name;
-  return reconstructed;
+export function reconstructError(error: RecordedError): Error {
+  return deserializeError(error);
 }
 
 /**
@@ -328,7 +326,19 @@ function createReplayContext(
         if (cancelled) {
           throw new CancelledError();
         }
-        newCommands.push({ type: "start_child", childId, workflowType, input, parentClosePolicy });
+        newCommands.push({
+          type: "start_child",
+          childId,
+          workflowType,
+          input,
+          parentClosePolicy,
+          ...(childOptions?.runTimeoutMs === undefined
+            ? {}
+            : { runTimeoutMs: childOptions.runTimeoutMs }),
+          ...(childOptions?.executionTimeoutMs === undefined
+            ? {}
+            : { executionTimeoutMs: childOptions.executionTimeoutMs }),
+        });
       }
 
       const finishedIndex = history.findIndex(
@@ -403,7 +413,10 @@ function createReplayContext(
         if (finished?.type === "step_failed") {
           return completedAt(finishedIndex, {
             fulfilled: false,
-            error: reconstructError(finished.error),
+            error:
+              finished.exhausted === true
+                ? new StepFailedError(stepId, stepType, reconstructError(finished.error))
+                : reconstructError(finished.error),
           });
         }
 
@@ -420,6 +433,10 @@ function createReplayContext(
         return neverSettles<TResult>();
       },
       sleep(durationMs: number): Promise<void> {
+        const invalid = sleepDurationError(durationMs);
+        if (invalid !== undefined) {
+          return Promise.reject(invalid);
+        }
         timerSequence += 1;
         const timerId = `timer-${String(timerSequence)}`;
         const recorded = matcher.issue({ kind: "timer", id: timerId, durationMs }, cancelled);
@@ -582,13 +599,27 @@ export async function replayHistory<TInput, TResult>(
   let handlerDone = false;
   let compensated = false;
 
+  const recordedCompensationFailures = new Set(
+    history.flatMap((event) => (event.type === "compensation_failed" ? [event.index] : [])),
+  );
+
   async function runCompensations(): Promise<void> {
-    for (const compensation of [...compensations].reverse()) {
+    for (let index = compensations.length - 1; index >= 0; index -= 1) {
+      const compensation = compensations[index];
+      if (compensation === undefined) {
+        continue;
+      }
       try {
         await compensation(compensationContext);
       } catch (reason: unknown) {
         if (isIntegrityError(reason)) {
           settled = { outcome: "failed", error: reason };
+        } else if (!recordedCompensationFailures.has(index)) {
+          commands.push({
+            type: "record_compensation_failure",
+            index,
+            error: toRecordedError(reason),
+          });
         }
       }
     }
@@ -726,10 +757,7 @@ async function decide<TInput, TResult>(
     commands.push({ type: "complete_run", result: settled.result });
     return { outcome: "completed", result: settled.result, commands };
   }
-  commands.push({
-    type: "fail_run",
-    error: { name: settled.error.name, message: settled.error.message },
-  });
+  commands.push({ type: "fail_run", error: toRecordedError(settled.error) });
   return { outcome: "failed", error: settled.error, commands };
 }
 

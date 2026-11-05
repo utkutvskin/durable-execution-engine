@@ -62,7 +62,21 @@ export type { DefineStepOptions, StepDefinition } from "./workflow/define-step.j
 export { defineWorkflow } from "./workflow/define-workflow.js";
 export { deserializeError, serializeError } from "./workflow/error-serialization.js";
 export type { SerializedError } from "./workflow/error-serialization.js";
-export { CancelledError, NonDeterminismError, VersionMismatchError } from "./workflow/errors.js";
+export {
+  CancelledError,
+  InvalidSleepDurationError,
+  NonDeterminismError,
+  StepFailedError,
+  VersionMismatchError,
+} from "./workflow/errors.js";
+export {
+  EXECUTION_TIMEOUT_TIMER_ID,
+  RUN_TIMEOUT_TIMER_ID,
+  applyRunTimeoutsOnClient,
+  timeOutRunOnClient,
+  validateTimeoutMs,
+} from "./timeouts/run-timeouts.js";
+export { RunHistoryCompactedError } from "./signals/signal-service.js";
 export { ForbiddenApiError } from "./workflow/sandbox.js";
 export { runRegisteredWorkflowInMemory, runWorkflowInMemory } from "./workflow/run-workflow.js";
 export type { RunWorkflowOptions, RunWorkflowResult } from "./workflow/run-workflow.js";

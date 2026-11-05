@@ -8,7 +8,8 @@ import type {
   WorkflowContext,
   WorkflowHandler,
 } from "./context.js";
-import { ChildLimitExceededError } from "./errors.js";
+import { toRecordedError } from "./error-serialization.js";
+import { ChildLimitExceededError, sleepDurationError } from "./errors.js";
 import { fulfilledValues, runParallel } from "./parallel.js";
 import type { ClockSource, RandomSource } from "./sources.js";
 import type { StepRegistry } from "./step-registry.js";
@@ -161,6 +162,10 @@ function createInMemoryContext(
       return (await handler(input, { signal: new AbortController().signal })) as TResult;
     },
     sleep(durationMs: number): Promise<void> {
+      const invalid = sleepDurationError(durationMs);
+      if (invalid !== undefined) {
+        return Promise.reject(invalid);
+      }
       timerSequence += 1;
       const timerId = `timer-${String(timerSequence)}`;
       const fireAt = new Date(options.clock.now().getTime() + durationMs).toISOString();
@@ -259,7 +264,7 @@ export async function runWorkflowInMemory<TInput, TResult>(
     return { outcome: "completed", result: result as TResult, commands };
   } catch (reason) {
     const error = toError(reason);
-    commands.push({ type: "fail_run", error: { name: error.name, message: error.message } });
+    commands.push({ type: "fail_run", error: toRecordedError(error) });
     return { outcome: "failed", error, commands };
   }
 }

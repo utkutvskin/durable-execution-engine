@@ -93,3 +93,49 @@ export class VersionMismatchError extends Error {
     this.buildId = buildId;
   }
 }
+
+/**
+ * What `ctx.step()` rejects with when the step used every attempt its retry
+ * policy allows. The step's last error is the `cause`; its dead letter entry
+ * stays for the operator. A workflow can catch it to compensate, and an
+ * uncaught one fails the run.
+ */
+export class StepFailedError extends Error {
+  readonly stepId: string;
+  readonly stepType: string;
+
+  constructor(stepId: string, stepType: string, cause: Error) {
+    super(`step "${stepId}" (${stepType}) failed after exhausting its retries: ${cause.message}`, {
+      cause,
+    });
+    this.name = "StepFailedError";
+    this.stepId = stepId;
+    this.stepType = stepType;
+  }
+}
+
+/**
+ * What `ctx.sleep()` rejects with for a duration that is not a finite,
+ * non-negative number of milliseconds.
+ */
+export class InvalidSleepDurationError extends RangeError {
+  readonly durationMs: number;
+
+  constructor(durationMs: number) {
+    super(
+      `sleep duration must be a finite, non-negative number of milliseconds, got ${String(durationMs)}`,
+    );
+    this.name = "InvalidSleepDurationError";
+    this.durationMs = durationMs;
+  }
+}
+
+/**
+ * The error `ctx.sleep()` rejects with for `durationMs`, or `undefined` when
+ * the duration is valid.
+ */
+export function sleepDurationError(durationMs: number): InvalidSleepDurationError | undefined {
+  return Number.isFinite(durationMs) && durationMs >= 0
+    ? undefined
+    : new InvalidSleepDurationError(durationMs);
+}

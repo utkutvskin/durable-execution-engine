@@ -1,4 +1,4 @@
-import type { ParentClosePolicy } from "../event-store/events.js";
+import type { ParentClosePolicy, RecordedError } from "../event-store/events.js";
 
 /**
  * A step was scheduled for execution as part of a run's decision.
@@ -30,6 +30,8 @@ export interface StartChildCommand {
   readonly workflowType: string;
   readonly input: unknown;
   readonly parentClosePolicy: ParentClosePolicy;
+  readonly runTimeoutMs?: number;
+  readonly executionTimeoutMs?: number;
 }
 
 /**
@@ -52,6 +54,16 @@ export interface RecordTimeCommand {
 }
 
 /**
+ * A compensation registered with `ctx.onCancel()` threw. `index` is its
+ * position in registration order.
+ */
+export interface RecordCompensationFailureCommand {
+  readonly type: "record_compensation_failure";
+  readonly index: number;
+  readonly error: RecordedError;
+}
+
+/**
  * The run finished successfully with the given result.
  */
 export interface CompleteRunCommand {
@@ -64,7 +76,7 @@ export interface CompleteRunCommand {
  */
 export interface FailRunCommand {
   readonly type: "fail_run";
-  readonly error: { name: string; message: string };
+  readonly error: RecordedError;
 }
 
 /**
@@ -98,6 +110,7 @@ export type WorkflowCommand =
   | StartChildCommand
   | RecordPatchCommand
   | RecordTimeCommand
+  | RecordCompensationFailureCommand
   | CompleteRunCommand
   | FailRunCommand
   | CancelRunCommand

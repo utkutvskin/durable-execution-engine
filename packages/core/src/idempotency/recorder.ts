@@ -15,7 +15,11 @@ import { lockRunWithParent } from "../children/run-locks.js";
 import { isTerminalState, type RunState } from "../run/state-machine.js";
 import { insertTimerOnClient } from "../timers/timer-scheduler.js";
 import { noopTracing, type TraceSpan, type Tracing } from "../observability/tracing.js";
-import { workflowEventSchema, type WorkflowEvent } from "../event-store/events.js";
+import {
+  workflowEventSchema,
+  type RecordedError,
+  type WorkflowEvent,
+} from "../event-store/events.js";
 import type { SerializedError } from "../workflow/error-serialization.js";
 
 /**
@@ -24,7 +28,11 @@ import type { SerializedError } from "../workflow/error-serialization.js";
  */
 export type StepOutcome =
   | { readonly status: "completed"; readonly result: unknown }
-  | { readonly status: "failed"; readonly error: SerializedError };
+  | {
+      readonly status: "failed";
+      readonly error: SerializedError;
+      readonly exhausted?: boolean;
+    };
 
 /**
  * What `recordStepResult` needs. `attemptKey` names the logical attempt
@@ -83,9 +91,11 @@ export interface ResultRecorder {
    * `(runId, stepId, attemptKey)` writes nothing and returns the first
    * delivery's stored outcome. A result for a run that is already closed is
    * discarded: nothing is written and `recorded` is false. A failure anywhere
-   * in the transaction leaves neither the row nor the event behind.
+   * in the transaction leaves neither the row nor the event behind. With
+   * `client`, the write joins the caller's open transaction instead of
+   * starting its own, and the caller commits or rolls back.
    */
-  recordStepResult(input: RecordStepResultInput): Promise<RecordedStepResult>;
+  recordStepResult(input: RecordStepResultInput, client?: PoolClient): Promise<RecordedStepResult>;
 
   /**
    * Appends a workflow task's decision events and marks the task key as
@@ -144,6 +154,15 @@ async function readNamespaceId(client: PoolClient, runId: string): Promise<strin
   return result.rows[0]?.namespace_id ?? "";
 }
 
+function recordedErrorOf(error: SerializedError): RecordedError {
+  return {
+    name: error.name,
+    message: error.message,
+    ...(error.details === undefined ? {} : { details: error.details }),
+    ...(error.cause === undefined ? {} : { cause: recordedErrorOf(error.cause) }),
+  };
+}
+
 function toStepEvent(input: RecordStepResultInput): WorkflowEvent {
   if (input.outcome.status === "completed") {
     return workflowEventSchema.parse({
@@ -155,7 +174,8 @@ function toStepEvent(input: RecordStepResultInput): WorkflowEvent {
   return workflowEventSchema.parse({
     type: "step_failed",
     stepId: input.stepId,
-    error: { name: input.outcome.error.name, message: input.outcome.error.message },
+    error: recordedErrorOf(input.outcome.error),
+    ...(input.outcome.exhausted === true ? { exhausted: true } : {}),
   });
 }
 
@@ -198,9 +218,12 @@ export function createResultRecorder(
   const tracing = recorderOptions.tracing ?? noopTracing;
   const clock = recorderOptions.clock ?? systemClock;
   return {
-    async recordStepResult(input: RecordStepResultInput): Promise<RecordedStepResult> {
+    async recordStepResult(
+      input: RecordStepResultInput,
+      joined?: PoolClient,
+    ): Promise<RecordedStepResult> {
       const event = toStepEvent(input);
-      return withTransaction(pool, async (client) => {
+      const write = async (client: PoolClient): Promise<RecordedStepResult> => {
         const status = await lockRunStatusOnly(client, input.runId);
         if (status !== undefined && isTerminalState(status)) {
           return { recorded: false, outcome: input.outcome };
@@ -229,7 +252,8 @@ export function createResultRecorder(
         const currentSeq = await readCurrentSequenceOnClient(client, input.runId);
         await appendEventsOnClient(client, codec, input.runId, currentSeq, [event]);
         return { recorded: true, outcome: input.outcome };
-      });
+      };
+      return joined === undefined ? withTransaction(pool, write) : write(joined);
     },
 
     async recordWorkflowTaskResult(
@@ -299,6 +323,7 @@ export function createResultRecorder(
                 namespaceId: namespace.rows[0]?.namespace_id ?? "",
                 queueName: recorderOptions.queueName,
                 traceparent: childSpan.traceparent ?? traceparent,
+                now: clock.now(),
               },
               event,
             );
@@ -307,7 +332,7 @@ export function createResultRecorder(
             }
           }
           if (event.type === "run_continued_as_new") {
-            await createContinuedRunOnClient(client, codec, input.runId, event);
+            await createContinuedRunOnClient(client, codec, input.runId, event, clock.now());
           }
           if (event.type === "step_scheduled" && recorderOptions.queueName !== undefined) {
             await enqueueStepTaskOnClient(client, {

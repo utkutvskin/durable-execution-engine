@@ -11,6 +11,22 @@ import type { WorkflowRegistry } from "../workflow/workflow-registry.js";
 import { rollbackQuietly } from "../db/transaction.js";
 
 /**
+ * Raised when a query names a run whose history was compacted, so the
+ * workflow cannot be replayed to answer it.
+ */
+export class RunHistoryCompactedError extends Error {
+  readonly runId: string;
+
+  constructor(runId: string) {
+    super(
+      `workflow run "${runId}" has a compacted history: a query needs the whole history to replay, so it can only be answered while the run keeps its first event`,
+    );
+    this.name = "RunHistoryCompactedError";
+    this.runId = runId;
+  }
+}
+
+/**
  * Raised when a signal or query names a run that does not exist.
  */
 export class RunNotFoundError extends Error {
@@ -145,7 +161,10 @@ export function createRunInteractions(
       const events = await store.read(runId);
       const started = events[0]?.event;
       if (started?.type !== "run_started") {
-        throw new RunNotFoundError(runId);
+        const known = await pool.query("select 1 from workflow_runs where id = $1", [runId]);
+        throw known.rowCount === 1
+          ? new RunHistoryCompactedError(runId)
+          : new RunNotFoundError(runId);
       }
       const definition = options.workflows.get(started.workflowType);
       if (definition === undefined) {

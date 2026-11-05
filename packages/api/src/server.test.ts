@@ -72,6 +72,42 @@ describe("http api", () => {
     await database.close();
   });
 
+  describe("run timeouts", () => {
+    it("creates a run timeout and an execution timeout timer when a run starts with them", async () => {
+      const reply = await call(keyA, "POST", "/v1/runs", {
+        workflowType: "timed",
+        runTimeoutMs: 3_600_000,
+        executionTimeoutMs: 7_200_000,
+      });
+
+      expect(reply.status).toBe(201);
+      const runId = (reply.body["run"] as { runId: string }).runId;
+      const timers = await database.pool.query<{ timer_id: string }>(
+        "select timer_id from timers where run_id = $1 order by timer_id",
+        [runId],
+      );
+      expect(timers.rows.map((row) => row.timer_id)).toEqual(["execution-timeout", "run-timeout"]);
+    });
+
+    it("creates no timer for a run started without a timeout", async () => {
+      const runId = await startRun(keyA, "untimed");
+
+      const timers = await database.pool.query("select 1 from timers where run_id = $1", [runId]);
+      expect(timers.rowCount).toBe(0);
+    });
+
+    it("answers 400 for a timeout that is zero or negative", async () => {
+      const zero = await call(keyA, "POST", "/v1/runs", { workflowType: "timed", runTimeoutMs: 0 });
+      const negative = await call(keyA, "POST", "/v1/runs", {
+        workflowType: "timed",
+        executionTimeoutMs: -1,
+      });
+
+      expect(zero.status).toBe(400);
+      expect(negative.status).toBe(400);
+    });
+  });
+
   describe("authentication", () => {
     it("answers 401 with a challenge when no key is sent", async () => {
       const reply = await call(undefined, "GET", "/v1/runs");

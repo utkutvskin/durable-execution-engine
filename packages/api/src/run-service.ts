@@ -5,6 +5,7 @@ import {
   type Tracing,
   RunNotFoundError,
   appendEventsOnClient,
+  applyRunTimeoutsOnClient,
   createPostgresEventStore,
   createRunControl,
   createRunInteractions,
@@ -119,6 +120,8 @@ export interface StartRunInput {
   readonly input?: unknown;
   readonly idempotencyKey?: string;
   readonly traceparent?: string;
+  readonly runTimeoutMs?: number;
+  readonly executionTimeoutMs?: number;
 }
 
 /**
@@ -393,6 +396,10 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
         await client.query("rollback");
         return undefined;
       }
+      await applyRunTimeoutsOnClient(client, runId, systemClock.now(), {
+        runTimeoutMs: input.runTimeoutMs,
+        executionTimeoutMs: input.executionTimeoutMs,
+      });
       await appendEventsOnClient(client, jsonCodec, runId, 0, [
         {
           type: "run_started",

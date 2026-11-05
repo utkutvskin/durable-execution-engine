@@ -6,7 +6,9 @@ import { defineWorkflow } from "../workflow/define-workflow.js";
 import { UnknownQueryError } from "../workflow/query.js";
 import type { ClockSource, RandomSource } from "../workflow/sources.js";
 import { createWorkflowRegistry } from "../workflow/workflow-registry.js";
+import { createHistoryCompactor } from "../compaction/history-compactor.js";
 import {
+  RunHistoryCompactedError,
   RunNotFoundError,
   RunNotOpenError,
   createRunInteractions,
@@ -146,5 +148,23 @@ describe("run interactions", () => {
     await expect(
       interactions.queryRun("00000000-0000-0000-0000-000000000000", "state"),
     ).rejects.toBeInstanceOf(RunNotFoundError);
+  });
+
+  it("tells a query on a compacted run that its history is gone instead of calling it missing", async () => {
+    await store.append(runId, 1, [{ type: "run_completed", result: "yes" }]);
+    await database.pool.query(
+      "update workflow_runs set status = 'COMPLETED', closed_at = now() where id = $1",
+      [runId],
+    );
+    const compactor = createHistoryCompactor(database.pool, {
+      clock: sources.clock,
+      policy: { closedRunRetentionMs: 0, tailEvents: 0 },
+    });
+    expect((await compactor.compactRun(runId)).compacted).toBe(true);
+
+    const rejection = interactions.queryRun(runId, "state");
+
+    await expect(rejection).rejects.toBeInstanceOf(RunHistoryCompactedError);
+    await expect(rejection).rejects.not.toBeInstanceOf(RunNotFoundError);
   });
 });

@@ -28,6 +28,10 @@ export function commandToEvent(command: WorkflowCommand): WorkflowEvent {
         workflowType: command.workflowType,
         input: command.input,
         parentClosePolicy: command.parentClosePolicy,
+        ...(command.runTimeoutMs === undefined ? {} : { runTimeoutMs: command.runTimeoutMs }),
+        ...(command.executionTimeoutMs === undefined
+          ? {}
+          : { executionTimeoutMs: command.executionTimeoutMs }),
       };
     case "record_patch":
       return command.buildId === undefined
@@ -35,6 +39,8 @@ export function commandToEvent(command: WorkflowCommand): WorkflowEvent {
         : { type: "patch_recorded", patchId: command.patchId, buildId: command.buildId };
     case "record_time":
       return { type: "time_recorded", time: command.time };
+    case "record_compensation_failure":
+      return { type: "compensation_failed", index: command.index, error: command.error };
     case "complete_run":
       return { type: "run_completed", result: command.result };
     case "fail_run":

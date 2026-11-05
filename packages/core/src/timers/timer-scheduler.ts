@@ -5,6 +5,7 @@ import { systemClock, type ClockSource } from "../workflow/sources.js";
 import { noopTracing, type Tracing } from "../observability/tracing.js";
 import { createMonotonicClock } from "./monotonic-clock.js";
 import { rollbackQuietly } from "../db/transaction.js";
+import { isTimeoutTimerId, timeOutRunOnClient } from "../timeouts/run-timeouts.js";
 
 /**
  * What `TimerScheduler.schedule` needs: the run and timer id the decision
@@ -122,6 +123,17 @@ interface DueTimerRow {
 
 const DEFAULT_BATCH_SIZE = 100;
 
+function timeoutFiredTimer(timer: DueTimerRow, now: Date): FiredTimer {
+  return {
+    runId: timer.run_id,
+    timerId: timer.timer_id,
+    fireAt: timer.fire_at,
+    firedAt: now,
+    lateMs: Math.max(0, now.getTime() - timer.fire_at.getTime()),
+    taskId: "",
+  };
+}
+
 /**
  * Creates a `TimerScheduler` over `pool`. The clock is wrapped in a
  * monotonic clock, so a wall clock stepped backwards can delay a timer but
@@ -155,6 +167,16 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
       if (timer === undefined) {
         await client.query("commit");
         return undefined;
+      }
+      if (isTimeoutTimerId(timer.timer_id)) {
+        const closed = await timeOutRunOnClient(client, codec, timer.run_id, timer.timer_id);
+        await client.query("update timers set state = $3, fired_at = $2 where id = $1", [
+          timer.id,
+          now,
+          closed ? "FIRED" : "CANCELLED",
+        ]);
+        await client.query("commit");
+        return closed ? timeoutFiredTimer(timer, now) : "cancelled";
       }
       const run = await client.query<{
         namespace_id: string;

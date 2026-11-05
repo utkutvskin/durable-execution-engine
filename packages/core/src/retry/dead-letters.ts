@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import type { PoolClient } from "pg";
 import { withTransaction } from "../db/transaction.js";
 import type { SerializedError } from "../workflow/error-serialization.js";
 import { systemClock, type ClockSource } from "../workflow/sources.js";
@@ -75,9 +76,16 @@ export interface DeadLetterQueue {
    * in one transaction, so a crash cannot leave the entry stored with the
    * task still deliverable, or the task gone with no entry. Resolves the
    * entry id, or `undefined` when `lease` is no longer the task's current
-   * lease, in which case nothing is stored.
+   * lease, in which case nothing is stored. `within` runs on the same
+   * transaction before the ack, so a caller can record the step's failure
+   * atomically with the entry; when the lease turns out to be lost, its
+   * writes are rolled back too.
    */
-  addAndAck(input: AddDeadLetterInput, lease: TaskLease): Promise<string | undefined>;
+  addAndAck(
+    input: AddDeadLetterInput,
+    lease: TaskLease,
+    within?: (client: PoolClient) => Promise<void>,
+  ): Promise<string | undefined>;
 
   list(options?: ListDeadLettersOptions): Promise<DeadLetter[]>;
 
@@ -127,6 +135,8 @@ function withAttemptOffset(payload: unknown, attemptOffset: number): unknown {
   return { ...base, attemptOffset };
 }
 
+class LeaseLostSignal extends Error {}
+
 interface Queryable {
   query: Pool["query"];
 }
@@ -174,26 +184,47 @@ export function createDeadLetterQueue(
 ): DeadLetterQueue {
   const clock = options.clock ?? systemClock;
 
+  async function addAndAckOnce(
+    input: AddDeadLetterInput,
+    lease: TaskLease,
+    within: ((client: PoolClient) => Promise<void>) | undefined,
+  ): Promise<string> {
+    return withTransaction(pool, async (client) => {
+      if (within !== undefined) {
+        await within(client);
+      }
+      const acked = await client.query(
+        `update tasks set state = 'COMPLETED', lease_token = null, leased_by = null,
+             leased_by_version = null, updated_at = $3
+         where id = $1 and lease_token = $2 and state = 'LEASED'`,
+        [lease.taskId, lease.leaseToken, clock.now()],
+      );
+      if (acked.rowCount !== 1) {
+        throw new LeaseLostSignal();
+      }
+      return insertDeadLetter(client, input);
+    });
+  }
+
   return {
     async add(input: AddDeadLetterInput): Promise<string> {
       return insertDeadLetter(pool, input);
     },
 
-    async addAndAck(input: AddDeadLetterInput, lease: TaskLease): Promise<string | undefined> {
-      return withTransaction(pool, async (client) => {
-        const acked = await client.query(
-          `update tasks set state = 'COMPLETED', lease_token = null, leased_by = null,
-               leased_by_version = null, updated_at = $3
-           where id = $1 and lease_token = $2 and state = 'LEASED'`,
-          [lease.taskId, lease.leaseToken, clock.now()],
-        );
-        if (acked.rowCount !== 1) {
+    async addAndAck(
+      input: AddDeadLetterInput,
+      lease: TaskLease,
+      within?: (client: PoolClient) => Promise<void>,
+    ): Promise<string | undefined> {
+      try {
+        return await addAndAckOnce(input, lease, within);
+      } catch (error) {
+        if (error instanceof LeaseLostSignal) {
           return undefined;
         }
-        return insertDeadLetter(client, input);
-      });
+        throw error;
+      }
     },
-
     async list(listOptions: ListDeadLettersOptions = {}): Promise<DeadLetter[]> {
       const result = await pool.query<DeadLetterRow>(
         `select * from dead_letters

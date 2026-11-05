@@ -1,6 +1,29 @@
 import { z } from "zod";
 
 /**
+ * The error a failure event keeps: its type (`name`), `message`, the
+ * serializable `details` the error carried and its `cause` chain.
+ */
+export interface RecordedError {
+  readonly name: string;
+  readonly message: string;
+  readonly details?: unknown;
+  readonly cause?: RecordedError | undefined;
+}
+
+/**
+ * Schema of `RecordedError`, shared by every event that records a failure.
+ */
+export const recordedErrorSchema: z.ZodType<RecordedError> = z.lazy(() =>
+  z.object({
+    name: z.string(),
+    message: z.string(),
+    details: z.unknown().optional(),
+    cause: recordedErrorSchema.optional(),
+  }),
+);
+
+/**
  * A workflow run started with the given input. Always the first event in a
  * run's history.
  */
@@ -23,18 +46,17 @@ export const runCompletedEventSchema = z.object({
  */
 export const runFailedEventSchema = z.object({
   type: z.literal("run_failed"),
-  error: z.object({
-    name: z.string(),
-    message: z.string(),
-  }),
+  error: recordedErrorSchema,
 });
 
 /**
  * The run reached its `TIMED_OUT` state because it exceeded its allowed
- * duration.
+ * duration. `kind` says which limit fired: `run` for the single run's
+ * timeout, `execution` for the deadline of the whole continue-as-new chain.
  */
 export const runTimedOutEventSchema = z.object({
   type: z.literal("run_timed_out"),
+  kind: z.enum(["run", "execution"]).optional(),
 });
 
 /**
@@ -85,6 +107,17 @@ export const stepScheduledEventSchema = z.object({
 });
 
 /**
+ * A compensation registered with `ctx.onCancel()` threw while the cancelled
+ * run unwound. `index` is its position in registration order; the other
+ * compensations still ran.
+ */
+export const compensationFailedEventSchema = z.object({
+  type: z.literal("compensation_failed"),
+  index: z.number().int().nonnegative(),
+  error: recordedErrorSchema,
+});
+
+/**
  * A previously scheduled step finished successfully with the given result.
  */
 export const stepCompletedEventSchema = z.object({
@@ -94,15 +127,15 @@ export const stepCompletedEventSchema = z.object({
 });
 
 /**
- * A previously scheduled step finished with the given error.
+ * A previously scheduled step finished with the given error. `exhausted` is
+ * true when the step ran out of retry attempts: the workflow then sees a
+ * `StepFailedError` carrying this error as its cause.
  */
 export const stepFailedEventSchema = z.object({
   type: z.literal("step_failed"),
   stepId: z.string().min(1),
-  error: z.object({
-    name: z.string(),
-    message: z.string(),
-  }),
+  error: recordedErrorSchema,
+  exhausted: z.boolean().optional(),
 });
 
 /**
@@ -114,10 +147,7 @@ export const stepAttemptFailedEventSchema = z.object({
   type: z.literal("step_attempt_failed"),
   stepId: z.string().min(1),
   attempt: z.number().int().positive(),
-  error: z.object({
-    name: z.string(),
-    message: z.string(),
-  }),
+  error: recordedErrorSchema,
   retryAt: z.string().min(1).nullable(),
 });
 
@@ -174,6 +204,8 @@ export const childStartedEventSchema = z.object({
   workflowType: z.string().min(1),
   input: z.unknown(),
   parentClosePolicy: parentClosePolicySchema,
+  runTimeoutMs: z.number().positive().optional(),
+  executionTimeoutMs: z.number().positive().optional(),
 });
 
 /**
@@ -192,10 +224,7 @@ export const childCompletedEventSchema = z.object({
 export const childFailedEventSchema = z.object({
   type: z.literal("child_failed"),
   childId: z.string().min(1),
-  error: z.object({
-    name: z.string(),
-    message: z.string(),
-  }),
+  error: recordedErrorSchema,
 });
 
 /**
@@ -246,6 +275,7 @@ export const workflowEventSchema = z.discriminatedUnion("type", [
   childFailedEventSchema,
   patchRecordedEventSchema,
   timeRecordedEventSchema,
+  compensationFailedEventSchema,
 ]);
 
 /**

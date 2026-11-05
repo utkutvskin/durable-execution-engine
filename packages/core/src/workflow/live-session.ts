@@ -10,6 +10,8 @@ import {
   type DecisionLoopOptions,
   type DecisionResult,
 } from "./decision-loop.js";
+import { toRecordedError } from "./error-serialization.js";
+import { StepFailedError, sleepDurationError } from "./errors.js";
 import { createCommandMatcher, recordedCommandOf } from "./command-matcher.js";
 import { createContextValues } from "./context-values.js";
 import { guardAgainstForbiddenApis, runUnguarded } from "./sandbox.js";
@@ -210,13 +212,18 @@ export function createLiveSession<TInput, TResult>(
           return true;
         }
         if (done?.type === "step_failed") {
-          reject(reconstructError(done.error));
+          const cause = reconstructError(done.error);
+          reject(done.exhausted === true ? new StepFailedError(stepId, stepType, cause) : cause);
           return true;
         }
         return false;
       });
     },
     sleep(durationMs: number): Promise<void> {
+      const invalid = sleepDurationError(durationMs);
+      if (invalid !== undefined) {
+        return Promise.reject(invalid);
+      }
       timerSequence += 1;
       const timerId = `timer-${String(timerSequence)}`;
       const recorded = matcher.issue({ kind: "timer", id: timerId, durationMs });
@@ -296,10 +303,7 @@ export function createLiveSession<TInput, TResult>(
       commands.push({ type: "complete_run", result: settled.result });
       return { outcome: "completed", result: settled.result, commands, ...warning };
     }
-    commands.push({
-      type: "fail_run",
-      error: { name: settled.error.name, message: settled.error.message },
-    });
+    commands.push({ type: "fail_run", error: toRecordedError(settled.error) });
     return { outcome: "failed", error: settled.error, commands, ...warning };
   }
 

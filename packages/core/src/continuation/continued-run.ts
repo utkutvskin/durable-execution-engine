@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import type { Codec } from "../event-store/codec.js";
 import { appendEventsOnClient } from "../event-store/event-store.js";
 import type { WorkflowEvent } from "../event-store/events.js";
+import { applyRunTimeoutsOnClient } from "../timeouts/run-timeouts.js";
 
 interface PredecessorRow {
   namespace_id: string;
@@ -13,6 +14,8 @@ interface PredecessorRow {
   chain_index: number;
   traceparent: string | null;
   queue_name: string;
+  run_timeout_ms: string | null;
+  execution_deadline: Date | null;
 }
 
 /**
@@ -29,10 +32,11 @@ export async function createContinuedRunOnClient(
   codec: Codec,
   runId: string,
   event: Extract<WorkflowEvent, { type: "run_continued_as_new" }>,
+  now: Date = new Date(),
 ): Promise<string> {
   const predecessor = await client.query<PredecessorRow>(
     `select namespace_id, workflow_type, parent_run_id, parent_close_policy, schedule_id,
-            first_run_id, chain_index, traceparent, queue_name
+            first_run_id, chain_index, traceparent, queue_name, run_timeout_ms, execution_deadline
      from workflow_runs where id = $1`,
     [runId],
   );
@@ -64,6 +68,10 @@ export async function createContinuedRunOnClient(
   if (nextRunId === undefined) {
     throw new Error(`continuing run "${runId}" did not return the new run id`);
   }
+  await applyRunTimeoutsOnClient(client, nextRunId, now, {
+    runTimeoutMs: row.run_timeout_ms === null ? undefined : Number(row.run_timeout_ms),
+    executionDeadline: row.execution_deadline ?? undefined,
+  });
   await appendEventsOnClient(client, codec, nextRunId, 0, [
     { type: "run_started", workflowType: row.workflow_type, input: event.input },
   ]);

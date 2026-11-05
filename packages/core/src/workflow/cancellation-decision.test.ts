@@ -160,6 +160,11 @@ describe("cancellation in the decision loop", () => {
     const result = await runDecisionLoop(brittle.handler, {}, history, sources);
 
     expect(result.commands).toEqual([
+      {
+        type: "record_compensation_failure",
+        index: 1,
+        error: { name: "Error", message: "first compensation broke" },
+      },
       { type: "schedule_step", stepId: "step-1", stepType: "second", input: {} },
     ]);
   });

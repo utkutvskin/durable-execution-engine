@@ -83,8 +83,10 @@ export interface StepTaskProcessor {
    * step's `RetryPolicy`, the task is nacked with the backoff delay, or the
    * step is given up on. A `NonRetryableError` ends the step with
    * `step_failed` so the workflow sees the failure. Exhausting the attempts
-   * parks the step in the dead letter queue and leaves the run waiting on
-   * it, to be requeued by an operator. A step with a recorded result is
+   * parks the step in the dead letter queue for the operator and records
+   * `step_failed` with `exhausted`, in one transaction, so the workflow sees
+   * a `StepFailedError` it can catch. A requeued dead letter runs the step
+   * again, but its result is not recorded when the step already has one. A step with a recorded result is
    * acked without running again. The recorder, under the run's lock, is what
    * guarantees one terminal result per step: an attempt that finishes after
    * another attempt recorded its result changes nothing and reports
@@ -295,6 +297,17 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
             reason: "MAX_ATTEMPTS_EXHAUSTED",
           },
           { taskId: task.id, leaseToken: task.leaseToken },
+          async (client) => {
+            await options.recorder.recordStepResult(
+              {
+                runId,
+                stepId,
+                attemptKey: `attempt-${String(attempt)}`,
+                outcome: { status: "failed", error, exhausted: true },
+              },
+              client,
+            );
+          },
         );
         if (deadLetterId === undefined) {
           return { status: "lease_lost" };

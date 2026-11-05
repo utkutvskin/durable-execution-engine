@@ -97,6 +97,8 @@ const startRequestSchema = z
   .object({
     workflowType: z.string().min(1).max(255),
     input: z.unknown().optional(),
+    runTimeoutMs: z.number().positive().optional(),
+    executionTimeoutMs: z.number().positive().optional(),
   })
   .meta({ id: "StartRunRequest" });
 
@@ -271,6 +273,12 @@ export function createRoutes(service: RunService): readonly Route[] {
         const result = await service.startRun(request.namespaceId, {
           workflowType: request.parsedBody.workflowType,
           input: request.parsedBody.input,
+          ...(request.parsedBody.runTimeoutMs === undefined
+            ? {}
+            : { runTimeoutMs: request.parsedBody.runTimeoutMs }),
+          ...(request.parsedBody.executionTimeoutMs === undefined
+            ? {}
+            : { executionTimeoutMs: request.parsedBody.executionTimeoutMs }),
           ...(key === undefined ? {} : { idempotencyKey: key }),
           ...(request.headers["traceparent"] === undefined
             ? {}

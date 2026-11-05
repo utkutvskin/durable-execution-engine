@@ -29,6 +29,8 @@ export type CompensationHandler = (ctx: WorkflowContext) => Promise<void>;
  */
 export interface ChildOptions {
   readonly parentClosePolicy?: ParentClosePolicy;
+  readonly runTimeoutMs?: number;
+  readonly executionTimeoutMs?: number;
 }
 
 /**

@@ -192,7 +192,7 @@ describe("step task processor", () => {
     expect(await deadLetters.list()).toEqual([]);
   });
 
-  it("dead-letters a step that exhausts its attempts and leaves the run waiting", async () => {
+  it("dead-letters a step that exhausts its attempts and records step_failed as exhausted", async () => {
     steps.set(
       "charge",
       defineStep("charge", {
@@ -222,13 +222,19 @@ describe("step task processor", () => {
       "step_attempt_failed",
       "step_attempt_failed",
       "step_attempt_failed",
+      "step_failed",
     ]);
+    expect((await store.read(runId)).at(-1)?.event).toMatchObject({
+      type: "step_failed",
+      stepId: "charge-card",
+      exhausted: true,
+      error: { name: "Error", message: "gateway down" },
+    });
     nowMs += 10 * 60_000;
     expect(await lease()).toBeUndefined();
   });
 
-  it("completes a dead-lettered step after a manual requeue with a fresh budget", async () => {
-    let healthy = false;
+  it("acks a requeued dead letter without running the step again", async () => {
     let calls = 0;
     steps.set(
       "charge",
@@ -236,10 +242,7 @@ describe("step task processor", () => {
         retry: { ...policy, maxAttempts: 2 },
         handler: () => {
           calls += 1;
-          if (!healthy) {
-            throw new Error("gateway down");
-          }
-          return "charged";
+          throw new Error("gateway down");
         },
       }),
     );
@@ -249,39 +252,33 @@ describe("step task processor", () => {
     const exhausted = await runOnce();
     expect(exhausted).toMatchObject({ status: "dead_lettered", attempt: 2 });
 
-    healthy = true;
     const [letter] = await deadLetters.list();
     await deadLetters.requeue(letter?.id ?? "");
-    expect(await runOnce()).toEqual({ status: "completed", attempt: 3 });
-    expect(calls).toBe(3);
-    expect((await store.read(runId)).at(-1)?.event).toEqual({
-      type: "step_completed",
-      stepId: "charge-card",
-      result: "charged",
+    expect(await runOnce()).toEqual({ status: "already_recorded" });
+    expect(calls).toBe(2);
+    expect((await store.read(runId)).at(-1)?.event).toMatchObject({
+      type: "step_failed",
+      exhausted: true,
     });
   });
 
-  it("gives a requeued step a full budget of attempts again", async () => {
+  it("keeps the dead letter and the step_failed event together when the lease is lost", async () => {
     steps.set(
       "charge",
       defineStep("charge", {
-        retry: { ...policy, maxAttempts: 2 },
-        handler: () => {
-          throw new Error("still down");
+        retry: { ...policy, maxAttempts: 1 },
+        handler: async () => {
+          await database.pool.query("update tasks set lease_token = null, state = 'PENDING'");
+          throw new Error("gateway down");
         },
       }),
     );
     await enqueueStep();
-    await runOnce();
-    nowMs += 1000;
-    await runOnce();
-    const [letter] = await deadLetters.list();
-    await deadLetters.requeue(letter?.id ?? "");
+    const outcome = await runOnce();
 
-    expect(await runOnce()).toMatchObject({ status: "retry_scheduled", attempt: 3 });
-    nowMs += 1000;
-    expect(await runOnce()).toMatchObject({ status: "dead_lettered", attempt: 4 });
-    expect(await deadLetters.list({ includeRequeued: true })).toHaveLength(2);
+    expect(outcome).toEqual({ status: "lease_lost" });
+    expect(await deadLetters.list()).toEqual([]);
+    expect(await eventTypes()).not.toContain("step_failed");
   });
 
   it("counts a step timeout as a failed attempt", async () => {

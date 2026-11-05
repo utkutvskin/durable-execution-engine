@@ -57,3 +57,50 @@ describe("deserializeError", () => {
     expect(typeof reconstructed.stack).toBe("string");
   });
 });
+
+describe("error details and causes", () => {
+  it("keeps the serializable own properties of a custom error as details", () => {
+    const serialized = serializeError(new CardDeclinedError("declined", "card-9"));
+
+    expect(serialized.details).toEqual({ cardId: "card-9" });
+  });
+
+  it("drops properties that cannot be serialized and omits empty details", () => {
+    const error = Object.assign(new Error("odd"), { handler: () => 1, big: 10n });
+
+    expect(serializeError(error)).not.toHaveProperty("details");
+  });
+
+  it("serializes the cause chain and rebuilds it", () => {
+    const root = new Error("socket closed");
+    const middle = new Error("request failed", { cause: root });
+    const top = new CardDeclinedError("declined", "card-1");
+    top.cause = middle;
+
+    const rebuilt = deserializeError(serializeError(top));
+
+    expect(rebuilt.cause).toMatchObject({ message: "request failed" });
+    expect((rebuilt.cause as Error).cause).toMatchObject({ message: "socket closed" });
+    expect((rebuilt as unknown as { details: unknown }).details).toEqual({ cardId: "card-1" });
+  });
+
+  it("stops following a cause chain after five links", () => {
+    let error = new Error("link-0");
+    for (let index = 1; index < 10; index += 1) {
+      error = new Error(`link-${String(index)}`, { cause: error });
+    }
+
+    let depth = 0;
+    for (let link = serializeError(error).cause; link !== undefined; link = link.cause) {
+      depth += 1;
+    }
+
+    expect(depth).toBe(5);
+  });
+
+  it("describes a non-error cause as a plain error", () => {
+    const serialized = serializeError(new Error("outer", { cause: "just a string" }));
+
+    expect(serialized.cause).toEqual({ name: "Error", message: "just a string" });
+  });
+});
