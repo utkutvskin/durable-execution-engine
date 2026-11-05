@@ -162,7 +162,7 @@ describe("engine runtime against postgres", () => {
     expect(types.filter((type) => type === "step_completed")).toHaveLength(1);
   });
 
-  it("parks a step that used all its attempts in the dead letter queue and leaves the run open", async () => {
+  it("keeps the dead letter of a step that used all its attempts and fails the run with a StepFailedError", async () => {
     const broken = defineStep<unknown, string>("broken", {
       retry: { initialIntervalMs: 100, jitter: 0, maxAttempts: 2 },
       handler: () => {
@@ -172,19 +172,77 @@ describe("engine runtime against postgres", () => {
     const flow = defineWorkflow("broken-flow", (ctx) => ctx.step<string>("broken", {}));
     boot([flow], [broken]);
     const runId = await start("broken-flow");
-    for (let round = 0; round < 400; round += 1) {
-      clock.shift(200);
-      const letters = await pool.query("select 1 from dead_letters where run_id = $1", [runId]);
-      if (letters.rowCount === 1) {
-        break;
-      }
-      await new Promise<void>((resolve) => setTimeout(resolve, 10));
-    }
+
+    const final = await settled(runId, 200);
+
+    expect(final.status).toBe("FAILED");
+    expect(final.error).toMatchObject({ name: "StepFailedError" });
     const letters = await pool.query("select attempts from dead_letters where run_id = $1", [
       runId,
     ]);
     expect(letters.rows).toHaveLength(1);
-    expect((await row(runId)).status).toBe("RUNNING");
+  });
+
+  it("lets a workflow catch a step that used all its attempts and run its compensation", async () => {
+    const reserve = defineStep<unknown, string>("reserve", { handler: () => "held" });
+    const charge = defineStep<unknown, string>("charge", {
+      retry: { initialIntervalMs: 100, jitter: 0, maxAttempts: 2 },
+      handler: () => {
+        throw new Error("gateway down");
+      },
+    });
+    const release = defineStep<unknown, string>("release", {
+      handler: () => {
+        stepCalls.set("release", (stepCalls.get("release") ?? 0) + 1);
+        return "released";
+      },
+    });
+    const flow = defineWorkflow("saga-flow", async (ctx) => {
+      await ctx.step<string>("reserve", {});
+      try {
+        await ctx.step<string>("charge", {});
+        return "charged";
+      } catch (error) {
+        await ctx.step<string>("release", {});
+        return `compensated after ${(error as Error).name}`;
+      }
+    });
+    boot([flow], [reserve, charge, release]);
+    const runId = await start("saga-flow");
+
+    const final = await settled(runId, 200);
+
+    expect(final).toMatchObject({
+      status: "COMPLETED",
+      result: "compensated after StepFailedError",
+    });
+    expect(stepCalls.get("release")).toBe(1);
+    expect(await eventTypes(runId)).toContain("step_failed");
+  });
+
+  it("ends a child with a one hour run timeout as TIMED_OUT and hands the parent its failure", async () => {
+    const hang = defineWorkflow("hang", async (ctx) => {
+      await ctx.waitForSignal("never");
+    });
+    const parent = defineWorkflow("timeout-parent", async (ctx) => {
+      try {
+        await ctx.executeChild("hang", {}, { runTimeoutMs: 3_600_000 });
+        return "finished";
+      } catch (error) {
+        return `child ended: ${(error as Error).name}`;
+      }
+    });
+    boot([parent, hang], []);
+    const runId = await start("timeout-parent");
+
+    const final = await settled(runId, 600_000);
+
+    expect(final).toMatchObject({ status: "COMPLETED", result: "child ended: TimedOutError" });
+    const child = await pool.query<{ status: string }>(
+      "select status from workflow_runs where parent_run_id = $1",
+      [runId],
+    );
+    expect(child.rows[0]?.status).toBe("TIMED_OUT");
   });
 
   it("completes a run that sleeps once the clock passes the timer", async () => {
