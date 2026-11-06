@@ -1,7 +1,12 @@
 import { CliError } from "../errors.js";
 import { readDevState, resolveClientConfig } from "../config.js";
 import type { CliIo } from "../io.js";
-import { createApiClient, type RunClient, type RunSnapshot } from "../run-client.js";
+import {
+  MAX_LIST_LIMIT,
+  createApiClient,
+  type RunClient,
+  type RunSnapshot,
+} from "../run-client.js";
 import {
   booleanFlag,
   parseCommand,
@@ -77,16 +82,27 @@ async function startRun(parsed: ParsedCommand, io: CliIo, client: RunClient): Pr
   return 0;
 }
 
+function parseLimit(raw: string | undefined): number | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  const value = /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
+  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_LIST_LIMIT) {
+    throw new CliError(`--limit must be a whole number from 1 to ${String(MAX_LIST_LIMIT)}`, 2);
+  }
+  return value;
+}
+
 async function listRuns(parsed: ParsedCommand, io: CliIo, client: RunClient): Promise<number> {
   const status = stringFlag(parsed, "status");
   const workflowType = stringFlag(parsed, "type");
-  const limit = stringFlag(parsed, "limit");
+  const limit = parseLimit(stringFlag(parsed, "limit"));
   const cursor = stringFlag(parsed, "cursor");
   const page = await client.listRuns({
     ...(cursor === undefined ? {} : { cursor }),
     ...(status === undefined ? {} : { status }),
     ...(workflowType === undefined ? {} : { workflowType }),
-    ...(limit === undefined ? {} : { limit: Number(limit) }),
+    ...(limit === undefined ? {} : { limit }),
   });
   if (booleanFlag(parsed, "json")) {
     io.stdout(JSON.stringify(page));

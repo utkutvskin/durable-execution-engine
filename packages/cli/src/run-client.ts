@@ -51,6 +51,11 @@ export interface WaitOptions {
 }
 
 /**
+ * The largest page `RunClient.listRuns` can ask the api for.
+ */
+export const MAX_LIST_LIMIT = 200;
+
+/**
  * What a program needs to drive runs of a namespace: the surface the cli
  * commands and the example demos share.
  */
@@ -62,27 +67,54 @@ export interface RunClient {
   describe(runId: string): Promise<RunSnapshot>;
   history(runId: string): Promise<readonly HistoryItem[]>;
   listRuns(filter?: ListFilter): Promise<RunListPage>;
-  /** Resolves with the run once it is no longer `RUNNING`; rejects after `timeoutMs`. */
+  /**
+   * Resolves with the run once it is no longer `RUNNING`; rejects after
+   * `timeoutMs`. An answer of 429 is waited out for the `Retry-After` the api
+   * gave (at most until the timeout) instead of failing the wait.
+   */
   waitForClose(runId: string, options?: WaitOptions): Promise<RunSnapshot>;
 }
 
 /**
- * Options for `createApiClient`. `fetch` defaults to the global one.
+ * Options for `createApiClient`. `fetch` defaults to the global one. `now`
+ * and `sleep` default to the system clock and are replaced in tests.
  */
 export interface ApiClientOptions {
   readonly baseUrl: string;
   readonly apiKey: string;
   readonly fetch?: typeof fetch;
+  readonly now?: () => number;
+  readonly sleep?: (ms: number) => Promise<void>;
 }
 
 interface ErrorBody {
   readonly error?: { readonly code?: string; readonly message?: string };
 }
 
+const BODY_PREVIEW_CHARS = 120;
+const DEFAULT_RETRY_AFTER_MS = 1000;
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function retryAfterMs(response: Response, now: number): number | undefined {
+  const header = response.headers.get("retry-after");
+  if (header === null) {
+    return undefined;
+  }
+  if (/^\d+$/.test(header.trim())) {
+    return Number(header) * 1000;
+  }
+  const date = Date.parse(header);
+  return Number.isNaN(date) ? undefined : Math.max(0, date - now);
+}
+
+function preview(text: string): string {
+  const flat = text.replaceAll(/\s+/g, " ").trim();
+  return flat.length > BODY_PREVIEW_CHARS ? `${flat.slice(0, BODY_PREVIEW_CHARS)}...` : flat;
 }
 
 /**
@@ -93,6 +125,8 @@ function delay(ms: number): Promise<void> {
 export function createApiClient(options: ApiClientOptions): RunClient {
   const fetchImpl = options.fetch ?? fetch;
   const base = options.baseUrl.replace(/\/+$/, "");
+  const now = options.now ?? Date.now;
+  const sleep = options.sleep ?? delay;
 
   async function call(
     method: string,
@@ -110,20 +144,34 @@ export function createApiClient(options: ApiClientOptions): RunClient {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     const text = await response.text();
-    const parsed: unknown = text === "" ? undefined : JSON.parse(text);
+    let parsed: unknown;
+    try {
+      parsed = text === "" ? undefined : JSON.parse(text);
+    } catch {
+      const detail = text === "" ? "" : `: ${preview(text)}`;
+      throw new ApiError(
+        response.status,
+        "invalid_response",
+        response.ok
+          ? `the api answered ${String(response.status)} with a body that is not json${detail}`
+          : `the api answered ${String(response.status)} without a json error body${detail}`,
+        retryAfterMs(response, now()),
+      );
+    }
     if (!response.ok) {
       const failure = (parsed ?? {}) as ErrorBody;
       throw new ApiError(
         response.status,
         failure.error?.code ?? "unknown",
         failure.error?.message ?? `the api answered ${String(response.status)}`,
+        retryAfterMs(response, now()),
       );
     }
     return parsed;
   }
 
   async function describe(runId: string): Promise<RunSnapshot> {
-    return (await call("GET", `/v1/runs/${runId}`)) as RunSnapshot;
+    return (await call("GET", `/v1/runs/${encodeURIComponent(runId)}`)) as RunSnapshot;
   }
 
   return {
@@ -137,20 +185,32 @@ export function createApiClient(options: ApiClientOptions): RunClient {
       return answer.run.runId;
     },
     async signal(runId, name, payload) {
-      await call("POST", `/v1/runs/${runId}/signal`, {
+      await call("POST", `/v1/runs/${encodeURIComponent(runId)}/signal`, {
         name,
         ...(payload === undefined ? {} : { payload }),
       });
     },
     async cancel(runId, reason) {
-      await call("POST", `/v1/runs/${runId}/cancel`, reason === undefined ? {} : { reason });
+      await call(
+        "POST",
+        `/v1/runs/${encodeURIComponent(runId)}/cancel`,
+        reason === undefined ? {} : { reason },
+      );
     },
     describe,
     async history(runId) {
-      const answer = (await call("GET", `/v1/runs/${runId}/history`)) as {
-        events: HistoryItem[];
-      };
-      return answer.events;
+      const events: HistoryItem[] = [];
+      let cursor: string | undefined;
+      do {
+        const query = cursor === undefined ? "" : `?cursor=${encodeURIComponent(cursor)}`;
+        const answer = (await call(
+          "GET",
+          `/v1/runs/${encodeURIComponent(runId)}/history${query}`,
+        )) as { events: HistoryItem[]; nextCursor?: string };
+        events.push(...answer.events);
+        cursor = answer.nextCursor;
+      } while (cursor !== undefined);
+      return events;
     },
     async listRuns(filter = {}) {
       const query = new URLSearchParams();
@@ -163,17 +223,28 @@ export function createApiClient(options: ApiClientOptions): RunClient {
       return (await call("GET", `/v1/runs${suffix}`)) as RunListPage;
     },
     async waitForClose(runId, waitOptions = {}) {
-      const deadline = Date.now() + (waitOptions.timeoutMs ?? 60_000);
+      const deadline = now() + (waitOptions.timeoutMs ?? 60_000);
       const pollMs = waitOptions.pollMs ?? 50;
+      let lastStatus = "RUNNING";
       for (;;) {
-        const run = await describe(runId);
-        if (run.status !== "RUNNING") {
-          return run;
+        let waitMs = pollMs;
+        try {
+          const run = await describe(runId);
+          if (run.status !== "RUNNING") {
+            return run;
+          }
+          lastStatus = run.status;
+        } catch (error) {
+          if (!(error instanceof ApiError) || error.status !== 429) {
+            throw error;
+          }
+          waitMs = Math.max(pollMs, error.retryAfterMs ?? DEFAULT_RETRY_AFTER_MS);
         }
-        if (Date.now() >= deadline) {
-          throw new Error(`run ${runId} was still ${run.status} after the wait timeout`);
+        const remaining = deadline - now();
+        if (remaining <= 0) {
+          throw new Error(`run ${runId} was still ${lastStatus} after the wait timeout`);
         }
-        await delay(pollMs);
+        await sleep(Math.min(waitMs, remaining));
       }
     },
   };
