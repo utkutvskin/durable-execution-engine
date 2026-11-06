@@ -54,8 +54,9 @@ function clientOver(
     now: time.now,
     sleep: time.sleep,
     fetch: (input, init) => {
-      urls.push(String(input));
-      return Promise.resolve(answer(String(input), init));
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      urls.push(url);
+      return Promise.resolve(answer(url, init));
     },
   });
   return { client, urls };
