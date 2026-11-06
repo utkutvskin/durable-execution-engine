@@ -53,11 +53,16 @@ export interface TaskLease {
 
 /**
  * Filters for `DeadLetterQueue.list`. Requeued entries are left out unless
- * `includeRequeued` is true.
+ * `includeRequeued` is true. `namespaceId` filters in SQL. `afterId` starts
+ * the list after that entry in the list's order (oldest first, ties by id),
+ * and `limit` caps the number of entries returned.
  */
 export interface ListDeadLettersOptions {
   readonly runId?: string;
   readonly includeRequeued?: boolean;
+  readonly namespaceId?: string;
+  readonly afterId?: string;
+  readonly limit?: number;
 }
 
 /**
@@ -230,8 +235,18 @@ export function createDeadLetterQueue(
         `select * from dead_letters
          where ($1::uuid is null or run_id = $1)
            and ($2::boolean or requeued_at is null)
-         order by created_at, id`,
-        [listOptions.runId ?? null, listOptions.includeRequeued ?? false],
+           and ($3::uuid is null or namespace_id = $3)
+           and ($4::uuid is null or (created_at, id) > (
+             select created_at, id from dead_letters where id = $4))
+         order by created_at, id
+         limit $5`,
+        [
+          listOptions.runId ?? null,
+          listOptions.includeRequeued ?? false,
+          listOptions.namespaceId ?? null,
+          listOptions.afterId ?? null,
+          listOptions.limit ?? null,
+        ],
       );
       return result.rows.map(toDeadLetter);
     },

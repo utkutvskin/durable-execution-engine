@@ -17,11 +17,17 @@ export {
   DeadLetterNotFoundError,
   IdempotencyConflictError,
   InvalidCursorError,
+  UnknownWorkflowTypeError,
+  DEFAULT_PAGE_LIMIT,
+  MAX_PAGE_LIMIT,
   createRunService,
 } from "./run-service.js";
 export type {
+  DeadLetterPage,
   DeadLetterSummary,
   HistoryEntry,
+  HistoryPage,
+  PageInput,
   HistorySlice,
   NamespaceDescription,
   ListRunsInput,

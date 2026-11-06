@@ -16,7 +16,8 @@ export type LogFields = Readonly<Record<string, unknown>>;
 /**
  * Writes structured json log lines. Every line carries `time`, `level`,
  * `message`, the logger's bound fields, the call's fields and, inside
- * `withCorrelationId`, the `correlationId`.
+ * `withCorrelationId`, the `correlationId`. Bound and call fields cannot
+ * replace those four core fields: the core value always wins.
  */
 export interface Logger {
   debug(message: string, fields?: LogFields): void;
@@ -32,11 +33,20 @@ export interface Logger {
  * (default: stdout), `level` is the minimum level written (default `info`).
  */
 export interface LoggerOptions {
+  /**
+   * Called for every key and value inside a line's fields, at any depth,
+   * and returns the value to write. Use it to mask secrets. It is not
+   * called for `time`, `level`, `message` or `correlationId`.
+   */
+  readonly redact?: (key: string, value: unknown) => unknown;
   readonly sink?: (line: string) => void;
   readonly level?: LogLevel;
   readonly clock?: { now(): Date };
   readonly fields?: LogFields;
 }
+
+const CORE_FIELDS: ReadonlySet<string> = new Set(["time", "level", "message", "correlationId"]);
+const PROTECTED_FIELDS: ReadonlySet<string> = new Set(["time", "level", "message"]);
 
 const correlationStorage = new AsyncLocalStorage<string>();
 
@@ -70,14 +80,23 @@ function serializeError(error: Error): Record<string, unknown> {
   return { name: error.name, message: error.message, stack: error.stack };
 }
 
-function replacer(_key: string, value: unknown): unknown {
-  if (value instanceof Error) {
-    return serializeError(value);
-  }
-  if (typeof value === "bigint") {
-    return value.toString();
-  }
-  return value;
+function makeReplacer(
+  redact: ((key: string, value: unknown) => unknown) | undefined,
+  entry: object,
+): (this: unknown, key: string, value: unknown) => unknown {
+  return function replacer(this: unknown, key: string, value: unknown): unknown {
+    const redacted =
+      redact === undefined || (this === entry && CORE_FIELDS.has(key)) || key === ""
+        ? value
+        : redact(key, value);
+    if (redacted instanceof Error) {
+      return serializeError(redacted);
+    }
+    if (typeof redacted === "bigint") {
+      return redacted.toString();
+    }
+    return redacted;
+  };
 }
 
 /**
@@ -98,15 +117,19 @@ export function createLogger(options: LoggerOptions = {}): Logger {
         return;
       }
       const correlationId = currentCorrelationId();
+      const extras = Object.fromEntries(
+        Object.entries({ ...bound, ...fields }).filter(
+          ([key]) => !PROTECTED_FIELDS.has(key) && !(key === "correlationId" && correlationId),
+        ),
+      );
       const entry = {
         time: clock.now().toISOString(),
         level,
         message,
         ...(correlationId === undefined ? {} : { correlationId }),
-        ...bound,
-        ...fields,
+        ...extras,
       };
-      sink(JSON.stringify(entry, replacer));
+      sink(JSON.stringify(entry, makeReplacer(options.redact, entry)));
     }
     return {
       debug: (message, fields) => {

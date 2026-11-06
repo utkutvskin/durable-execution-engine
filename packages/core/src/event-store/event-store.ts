@@ -42,9 +42,10 @@ export interface EventStore {
   /**
    * Reads `runId`'s history in ascending sequence order, starting after
    * `fromSeq` (default 0, i.e. the whole history). Returns an empty array
-   * for a run with no events past `fromSeq`.
+   * for a run with no events past `fromSeq`. With `limit`, at most that many
+   * events are returned.
    */
-  read(runId: string, fromSeq?: number): Promise<StoredEvent[]>;
+  read(runId: string, fromSeq?: number, limit?: number): Promise<StoredEvent[]>;
 }
 
 function isUniqueViolation(error: unknown): boolean {
@@ -199,7 +200,7 @@ export function createPostgresEventStore(pool: Pool, codec: Codec = jsonCodec): 
       }
     },
 
-    async read(runId: string, fromSeq = 0): Promise<StoredEvent[]> {
+    async read(runId: string, fromSeq = 0, limit?: number): Promise<StoredEvent[]> {
       const result = await pool.query<{
         sequence_number: string;
         payload: string;
@@ -208,8 +209,9 @@ export function createPostgresEventStore(pool: Pool, codec: Codec = jsonCodec): 
         `select sequence_number, payload::text as payload, created_at
          from run_events
          where run_id = $1 and sequence_number > $2
-         order by sequence_number asc`,
-        [runId, fromSeq],
+         order by sequence_number asc
+         limit $3`,
+        [runId, fromSeq, limit ?? null],
       );
       return result.rows.map((row) => ({
         sequenceNumber: Number(row.sequence_number),

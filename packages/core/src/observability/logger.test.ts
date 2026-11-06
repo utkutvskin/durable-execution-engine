@@ -80,4 +80,40 @@ describe("structured logger", () => {
     expect(resolveCorrelationId("x".repeat(200))).toHaveLength(36);
     expect(resolveCorrelationId(undefined)).toMatch(/^[0-9a-f-]{36}$/);
   });
+  it("does not let bound or call fields replace time, level or message", () => {
+    const { lines, logger } = capture();
+    logger
+      .child({ level: "debug", time: "bound" })
+      .info("real message", { message: "spoofed", level: "error", time: "yesterday", kept: 1 });
+    expect(lines).toEqual([
+      { time: "2026-03-01T10:00:00.000Z", level: "info", message: "real message", kept: 1 },
+    ]);
+  });
+
+  it("does not let a field replace the correlation id of the running call chain", () => {
+    const { lines, logger } = capture();
+    withCorrelationId("real-id", () => {
+      logger.info("inside", { correlationId: "spoofed" });
+    });
+    expect(lines[0]?.correlationId).toBe("real-id");
+  });
+
+  it("passes nested fields through the redaction hook and leaves core fields alone", () => {
+    const lines: Record<string, unknown>[] = [];
+    const logger = createLogger({
+      sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
+      clock: { now: () => new Date("2026-03-01T10:00:00.000Z") },
+      redact: (key, value) => (key === "password" || key === "message" ? "[masked]" : value),
+    });
+    logger.info("login", { user: "ada", request: { password: "hunter2", path: "/x" } });
+    expect(lines).toEqual([
+      {
+        time: "2026-03-01T10:00:00.000Z",
+        level: "info",
+        message: "login",
+        user: "ada",
+        request: { password: "[masked]", path: "/x" },
+      },
+    ]);
+  });
 });

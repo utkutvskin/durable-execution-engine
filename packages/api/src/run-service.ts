@@ -11,6 +11,7 @@ import {
   createRunInteractions,
   createWorkflowRegistry,
   jsonCodec,
+  type WorkflowRegistry,
   systemClock,
   systemRandomSource,
   type Pool,
@@ -56,6 +57,20 @@ export class DeadLetterNotFoundError extends Error {
   constructor(id: string) {
     super(`dead letter "${id}" was not found`);
     this.name = "DeadLetterNotFoundError";
+  }
+}
+
+/**
+ * Raised when a run is started for a workflow type the service's registry
+ * does not know.
+ */
+export class UnknownWorkflowTypeError extends Error {
+  readonly workflowType: string;
+
+  constructor(workflowType: string) {
+    super(`workflow type "${workflowType}" is not registered`);
+    this.name = "UnknownWorkflowTypeError";
+    this.workflowType = workflowType;
   }
 }
 
@@ -154,6 +169,42 @@ export interface RunPage {
 }
 
 /**
+ * Paging of `getHistory` and `listDeadLetters`. `limit` defaults to
+ * `DEFAULT_PAGE_LIMIT` and is capped at `MAX_PAGE_LIMIT`.
+ */
+export interface PageInput {
+  readonly limit?: number | undefined;
+  readonly cursor?: string | undefined;
+}
+
+/**
+ * One page of a run's history. `nextCursor` is absent on the last page.
+ */
+export interface HistoryPage {
+  readonly events: readonly HistoryEntry[];
+  readonly nextCursor?: string;
+}
+
+/**
+ * One page of dead letters, oldest first. `nextCursor` is absent on the
+ * last page.
+ */
+export interface DeadLetterPage {
+  readonly deadLetters: readonly DeadLetterSummary[];
+  readonly nextCursor?: string;
+}
+
+/**
+ * The page size used when a request gives no `limit`.
+ */
+export const DEFAULT_PAGE_LIMIT = 500;
+
+/**
+ * The largest page a request can ask for.
+ */
+export const MAX_PAGE_LIMIT = 1000;
+
+/**
  * One event of a run's history.
  */
 export interface HistoryEntry {
@@ -187,10 +238,11 @@ export interface RunService {
   listRuns(namespaceId: string, input: ListRunsInput): Promise<RunPage>;
 
   /**
-   * Reads a run's event history in sequence order. Rejects with
-   * `RunNotFoundError`.
+   * Reads one page of a run's event history in sequence order. Follow
+   * `nextCursor` for the rest. Rejects with `RunNotFoundError` or
+   * `InvalidCursorError`.
    */
-  getHistory(namespaceId: string, runId: string): Promise<readonly HistoryEntry[]>;
+  getHistory(namespaceId: string, runId: string, page?: PageInput): Promise<HistoryPage>;
 
   /**
    * Reads the events of a run with a sequence number above `afterSequence`
@@ -208,10 +260,10 @@ export interface RunService {
   describeNamespace(namespaceId: string): Promise<NamespaceDescription>;
 
   /**
-   * Lists the namespace's dead letters that wait for an operator, oldest
-   * first.
+   * Lists one page of the namespace's dead letters that wait for an
+   * operator, oldest first. Rejects with `InvalidCursorError`.
    */
-  listDeadLetters(namespaceId: string): Promise<readonly DeadLetterSummary[]>;
+  listDeadLetters(namespaceId: string, page?: PageInput): Promise<DeadLetterPage>;
 
   /**
    * Puts a dead letter's step task back on its queue with a fresh retry
@@ -256,11 +308,15 @@ export interface RunService {
 
 /**
  * Options for `createRunService`. `queueName` is the queue every workflow
- * task created by the service goes to.
+ * task created by the service goes to. With `workflows`, `startRun` rejects
+ * a workflow type the registry does not know with `UnknownWorkflowTypeError`;
+ * without it any type is accepted, because the process that serves the api
+ * need not be the one that runs the workflows.
  */
 export interface RunServiceOptions {
   readonly queueName: string;
   readonly tracing?: Tracing;
+  readonly workflows?: WorkflowRegistry;
 }
 
 interface RunRow {
@@ -303,6 +359,27 @@ function toDescription(row: RunRow): RunDescription {
     lastSequenceNumber: Number(row.last_sequence_number),
     idempotencyKey: row.idempotency_key,
   };
+}
+
+function pageSize(page: PageInput | undefined): number {
+  return Math.min(Math.max(page?.limit ?? DEFAULT_PAGE_LIMIT, 1), MAX_PAGE_LIMIT);
+}
+
+function parseSequenceCursor(cursor: string | undefined): number {
+  if (cursor === undefined) {
+    return 0;
+  }
+  if (!/^\d{1,15}$/.test(cursor)) {
+    throw new InvalidCursorError();
+  }
+  return Number(cursor);
+}
+
+function parseIdCursor(cursor: string | undefined): string | undefined {
+  if (cursor !== undefined && !UUID_PATTERN.test(cursor)) {
+    throw new InvalidCursorError();
+  }
+  return cursor;
 }
 
 function encodeCursor(startedCursor: string, runId: string): string {
@@ -365,6 +442,30 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     return row;
   }
 
+  async function findByKey(
+    namespaceId: string,
+    input: StartRunInput,
+  ): Promise<StartRunResult | undefined> {
+    if (input.idempotencyKey === undefined) {
+      return undefined;
+    }
+    const existing = await pool.query<RunRow>(
+      `select ${RUN_COLUMNS} from workflow_runs
+       where namespace_id = $1 and idempotency_key = $2`,
+      [namespaceId, input.idempotencyKey],
+    );
+    const row = existing.rows[0];
+    if (row === undefined) {
+      return undefined;
+    }
+    const sameRequest =
+      row.workflow_type === input.workflowType && isDeepStrictEqual(row.input, input.input ?? null);
+    if (!sameRequest) {
+      throw new IdempotencyConflictError(input.idempotencyKey, row.id);
+    }
+    return { created: false, run: toDescription(row) };
+  }
+
   async function insertRun(namespaceId: string, input: StartRunInput): Promise<string | undefined> {
     const client = await pool.connect();
     let broken = false;
@@ -394,6 +495,8 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
       const runId = inserted.rows[0]?.id;
       if (runId === undefined) {
         await client.query("rollback");
+        span.setAttributes({ "dee.start.duplicate": true });
+        span.end();
         return undefined;
       }
       await applyRunTimeoutsOnClient(client, runId, systemClock.now(), {
@@ -418,6 +521,8 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
       return runId;
     } catch (error) {
       broken = !(await rollbackQuietly(client));
+      span.recordError(error);
+      span.end();
       throw error;
     } finally {
       client.release(broken);
@@ -426,26 +531,25 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
 
   return {
     async startRun(namespaceId: string, input: StartRunInput): Promise<StartRunResult> {
+      if (
+        options.workflows !== undefined &&
+        options.workflows.get(input.workflowType) === undefined
+      ) {
+        throw new UnknownWorkflowTypeError(input.workflowType);
+      }
+      const earlier = await findByKey(namespaceId, input);
+      if (earlier !== undefined) {
+        return earlier;
+      }
       const runId = await insertRun(namespaceId, input);
       if (runId !== undefined) {
         return { created: true, run: toDescription(await readRun(namespaceId, runId)) };
       }
-      const existing = await pool.query<RunRow>(
-        `select ${RUN_COLUMNS} from workflow_runs
-         where namespace_id = $1 and idempotency_key = $2`,
-        [namespaceId, input.idempotencyKey],
-      );
-      const row = existing.rows[0];
-      if (row === undefined || input.idempotencyKey === undefined) {
+      const raced = await findByKey(namespaceId, input);
+      if (raced === undefined) {
         throw new Error("a start request was rejected as a duplicate but no run holds its key");
       }
-      const sameRequest =
-        row.workflow_type === input.workflowType &&
-        isDeepStrictEqual(row.input, input.input ?? null);
-      if (!sameRequest) {
-        throw new IdempotencyConflictError(input.idempotencyKey, row.id);
-      }
-      return { created: false, run: toDescription(row) };
+      return raced;
     },
 
     async describeRun(namespaceId: string, runId: string): Promise<RunDescription> {
@@ -499,14 +603,23 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
       };
     },
 
-    async getHistory(namespaceId: string, runId: string): Promise<readonly HistoryEntry[]> {
+    async getHistory(namespaceId, runId, page) {
       await assertOwned(namespaceId, runId);
-      const events = await store.read(runId);
-      return events.map((stored) => ({
-        sequenceNumber: stored.sequenceNumber,
-        createdAt: stored.createdAt.toISOString(),
-        event: stored.event,
-      }));
+      const after = parseSequenceCursor(page?.cursor);
+      const limit = pageSize(page);
+      const events = await store.read(runId, after, limit + 1);
+      const shown = events.slice(0, limit);
+      const last = shown.at(-1);
+      return {
+        events: shown.map((stored) => ({
+          sequenceNumber: stored.sequenceNumber,
+          createdAt: stored.createdAt.toISOString(),
+          event: stored.event,
+        })),
+        ...(events.length > limit && last !== undefined
+          ? { nextCursor: String(last.sequenceNumber) }
+          : {}),
+      };
     },
 
     async readHistorySince(namespaceId, runId, afterSequence) {
@@ -535,11 +648,18 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
       return { id: row.id, name: row.name };
     },
 
-    async listDeadLetters(namespaceId) {
-      const all = await deadLetters.list();
-      return all
-        .filter((letter) => letter.namespaceId === namespaceId)
-        .map((letter) => ({
+    async listDeadLetters(namespaceId, page) {
+      const afterId = parseIdCursor(page?.cursor);
+      const limit = pageSize(page);
+      const letters = await deadLetters.list({
+        namespaceId,
+        limit: limit + 1,
+        ...(afterId === undefined ? {} : { afterId }),
+      });
+      const shown = letters.slice(0, limit);
+      const last = shown.at(-1);
+      return {
+        deadLetters: shown.map((letter) => ({
           id: letter.id,
           runId: letter.runId,
           stepId: letter.stepId,
@@ -547,7 +667,9 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
           error: { name: letter.error.name, message: letter.error.message },
           reason: letter.reason,
           createdAt: letter.createdAt.toISOString(),
-        }));
+        })),
+        ...(letters.length > limit && last !== undefined ? { nextCursor: last.id } : {}),
+      };
     },
 
     async requeueDeadLetter(namespaceId, deadLetterId) {

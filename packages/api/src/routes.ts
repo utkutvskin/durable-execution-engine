@@ -4,6 +4,8 @@ import {
   DeadLetterNotFoundError,
   IdempotencyConflictError,
   InvalidCursorError,
+  MAX_PAGE_LIMIT,
+  UnknownWorkflowTypeError,
   type RunService,
 } from "./run-service.js";
 
@@ -119,8 +121,14 @@ const listResponseSchema = z
   .object({ runs: z.array(runSummarySchema), nextCursor: z.string().optional() })
   .meta({ id: "RunListResponse" });
 
+const pageQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(MAX_PAGE_LIMIT).optional(),
+  cursor: z.string().min(1).optional(),
+});
+
 const historyResponseSchema = z
   .object({
+    nextCursor: z.string().optional(),
     events: z.array(
       z.object({
         sequenceNumber: z.number().int(),
@@ -148,7 +156,7 @@ const deadLetterSchema = z
   .meta({ id: "DeadLetter" });
 
 const deadLetterListSchema = z
-  .object({ deadLetters: z.array(deadLetterSchema) })
+  .object({ deadLetters: z.array(deadLetterSchema), nextCursor: z.string().optional() })
   .meta({ id: "DeadLetterListResponse" });
 
 const requeueResponseSchema = z.object({ taskId: z.uuid() }).meta({ id: "RequeueResponse" });
@@ -320,13 +328,14 @@ export function createRoutes(service: RunService): readonly Route[] {
       path: "/v1/dead-letters",
       operationId: "listDeadLetters",
       summary: "List the step tasks that ran out of attempts and wait for an operator.",
+      query: pageQuerySchema,
       responses: {
         200: { description: "The dead letters, oldest first.", schema: deadLetterListSchema },
         ...commonErrors,
       },
       async handle(request) {
-        const deadLetters = await service.listDeadLetters(request.namespaceId);
-        return { status: 200, body: { deadLetters } };
+        const page = await service.listDeadLetters(request.namespaceId, request.parsedQuery);
+        return { status: 200, body: page };
       },
     }),
     defineRoute({
@@ -368,15 +377,20 @@ export function createRoutes(service: RunService): readonly Route[] {
       method: "get",
       path: "/v1/runs/{runId}/history",
       operationId: "getHistory",
-      summary: "Read the run's event history.",
+      summary: "Read one page of the run's event history. Follow nextCursor for the rest.",
+      query: pageQuerySchema,
       responses: {
         200: { description: "The events in sequence order.", schema: historyResponseSchema },
         ...commonErrors,
         404: notFound,
       },
       async handle(request) {
-        const events = await service.getHistory(request.namespaceId, runIdOf(request));
-        return { status: 200, body: { events } };
+        const page = await service.getHistory(
+          request.namespaceId,
+          runIdOf(request),
+          request.parsedQuery,
+        );
+        return { status: 200, body: page };
       },
     }),
     defineRoute({
@@ -489,6 +503,12 @@ export function toErrorResult(error: unknown): ErrorResult {
     return {
       status: 409,
       body: { error: { code: "idempotency_conflict", message: error.message } },
+    };
+  }
+  if (error instanceof UnknownWorkflowTypeError) {
+    return {
+      status: 400,
+      body: { error: { code: "unknown_workflow_type", message: error.message } },
     };
   }
   if (error instanceof InvalidCursorError) {
