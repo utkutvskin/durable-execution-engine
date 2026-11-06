@@ -85,3 +85,14 @@ A task parked for a code or deployment error (`NonDeterminismError`, `VersionMis
 - `queryRun` on a compacted run rejects with `RunHistoryCompactedError`; answering it would need the query handler state kept in the snapshot or the history kept for replay.
 - `compensation_failed` is not shown in the web UI timeline as a special row, and the live session treats the new event kinds as unsupported, which makes a run that cancels replay from the top once.
 - The step `details` are the own enumerable JSON-serializable properties; values that do not serialize (functions, bigint, cycles) are dropped silently.
+
+## API, UI and CLI hardening (day 38)
+
+- API keys still have no expiry, no `last_used_at`, no scopes and no admin endpoint, and `issue` still creates a namespace silently (`docs/REVIEW.md` section 4, item 8). Only the items of the day's scope were done.
+- The throttle counts failures per socket address, so clients behind one proxy or NAT share a budget, and a valid key from a throttled address is refused until the window ends. Reading `x-forwarded-for` needs a trusted proxy setting that does not exist. The counters live in process memory, so the budget is per API process.
+- `metricsCacheMs` defaults to 0 and `maxStreamsPerNamespace`, `maxStreamLifetimeMs` and the throttle are options of `createApiHandler`; no bundled process sets metrics caching or a metrics token yet (the entry points are day 39).
+- A run stream reads each slice whole: a history of hundreds of thousands of events arrives in one `slice` event. The page limit applies to `/history` only.
+- `dee_task_latency_seconds` and `dee_leases_reclaimed_total` are still not filled by a bundled process, and `/metrics` still runs its aggregates on every uncached scrape.
+- `maskSensitiveFields` stays unwired; the documentation now says so. Masking in the UI and the API would change what operators can debug.
+- The UI cancel and requeue confirmations use the browser `confirm` dialog, which a page cannot style and a test must answer.
+- `wf worker` can still spawn `docker compose` in production, and `migrateUp` still takes no lock (review items 1 and 2; day 39).

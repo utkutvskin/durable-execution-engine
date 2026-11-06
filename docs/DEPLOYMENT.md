@@ -61,9 +61,9 @@ Your module imports `@dee/core`. Place it inside `/app` (for example under `/app
 
 - Every `/v1` endpoint needs `Authorization: Bearer <key>`. Keys are scoped to one namespace and stored as a sha256 hash. Terminate TLS in front of the API (a reverse proxy or load balancer); the API itself speaks plain HTTP.
 - `wf dev` issues a new key on every start and prints it to its log; earlier keys stay valid. In production, treat that log line as a secret and revoke keys you do not need (`ApiKeyStore.revoke`). There is no admin endpoint for keys yet.
-- `/health`, `/ready`, `/metrics` and `/openapi.json` are not authenticated. Keep them on a private network or restrict them at the proxy.
+- `/health`, `/ready` and `/openapi.json` are not authenticated. `/metrics` is not either unless the server is given a `metricsToken`; set one, or keep the endpoint on a private network or restrict it at the proxy. Failed authentication is throttled per client address (`docs/API.md`, hardening), and streams are capped per namespace.
 - Run the container as the unprivileged user (the image does) and give it only the database credential it needs.
-- Workflow and step payloads are stored in Postgres as JSON. Do not put secrets in a workflow input; pass a reference and fetch the secret in the step. `maskSensitiveFields` can mask known field names in logs and the ui.
+- Workflow and step payloads are stored in Postgres as JSON. Do not put secrets in a workflow input; pass a reference and fetch the secret in the step. `maskSensitiveFields` exists in `@dee/core` and returns a masked copy of a value, but nothing in the API, the UI or the engine calls it: run input, results and history are shown as stored. The logger takes a `redact(key, value)` hook (`createLogger({ redact })`) that is called for every field of a log line, so mask there if your log lines can carry payloads. The API's own request log carries the method, path, status and duration only.
 
 ## Upgrading
 

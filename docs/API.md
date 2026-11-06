@@ -24,7 +24,7 @@ curl -s -X POST localhost:8080/v1/runs/$RUN_ID/cancel \
   -d '{"reason":"customer asked"}'
 ```
 
-Probes and metrics need no key: `GET /health`, `GET /ready`, `GET /metrics`.
+Probes need no key: `GET /health`, `GET /ready`. `GET /metrics` needs none unless the server is given a `metricsToken`, in which case it needs `Authorization: Bearer <that token>`.
 
 ## Authentication and namespaces
 
@@ -59,11 +59,11 @@ Errors are `{ "error": { "code", "message", "details"? } }`. 400 is a validation
 
 ## Run stream
 
-`GET /v1/runs/{runId}/stream?after=<sequence number>` is a server sent events stream of one run. It sends a `slice` event with `{ events, status, closed }` for the history after `after` (or the `Last-Event-ID` header, which holds the last sequence number sent), keeps polling the database every `streamPollMs` (default 500 ms) and sends a new `slice` whenever events or the status change. When the run has closed and everything was sent it sends an `end` event and closes. A comment line is sent as a heartbeat every 15 seconds. The stream needs the bearer key like every other call, so a browser reads it with `fetch` and not with `EventSource`. A run of another namespace answers 404, a cursor that is not a non negative integer answers 400.
+`GET /v1/runs/{runId}/stream?after=<sequence number>` is a server sent events stream of one run. It sends a `slice` event with `{ events, status, closed }` for the history after `after` (or the `Last-Event-ID` header, which holds the last sequence number sent), keeps polling the database every `streamPollMs` (default 500 ms) and sends a new `slice` whenever events or the status change. When the run has closed and everything was sent it sends an `end` event and closes. A comment line is sent as a heartbeat every 15 seconds. A namespace can have `maxStreamsPerNamespace` streams open (default 20); one more answers 429 `stream_limit_reached` with `Retry-After: 5`. A stream ends after `maxStreamLifetimeMs` (default 15 minutes) with a `reconnect` event instead of `end`, and the client opens a new one with `Last-Event-ID`. The stream needs the bearer key like every other call, so a browser reads it with `fetch` and not with `EventSource`. A run of another namespace answers 404, a cursor that is not a non negative integer answers 400.
 
 ## Dead letters
 
-`GET /v1/dead-letters` lists the namespace's step tasks that used all their attempts, oldest first. `POST /v1/dead-letters/{deadLetterId}/requeue` puts one back on its queue and answers `{ "taskId" }`; the step already failed for its workflow, so the task is acknowledged without running the step again (see `docs/CONCEPTS.md`); an unknown id, an id of another namespace and an entry that was requeued already all answer 404.
+`GET /v1/dead-letters?limit=&cursor=` lists the namespace's step tasks that used all their attempts, oldest first, one page at a time (the namespace filter, the order and the limit run in SQL). A page holds `limit` entries (default 500, at most 1,000) and carries `nextCursor` when more follow. `POST /v1/dead-letters/{deadLetterId}/requeue` puts one back on its queue and answers `{ "taskId" }`; the step already failed for its workflow, so the task is acknowledged without running the step again (see `docs/CONCEPTS.md`); an unknown id, an id of another namespace and an entry that was requeued already all answer 404.
 
 ## Idempotent start
 
@@ -97,3 +97,13 @@ A task whose lease expires without an ack is reclaimed by the janitor. After `po
 ## Worker backpressure
 
 `createWorker({ pollBudget: createDepthBackpressure({ readDepth, lowWatermark, highWatermark }) })` makes a worker read the queue depth before each poll. An empty queue costs no dequeue, a shallow queue is polled in small batches so work spreads across workers, and a queue at or above the high watermark is drained with every free slot.
+
+## Hardening (day 38)
+
+- **History is paged.** `GET /v1/runs/{runId}/history?limit=&cursor=` returns up to `limit` events (default 500, at most 1,000) and a `nextCursor` while more follow; pass it back as `cursor`. A cursor that is not one the API issued answers 400 `invalid_cursor`. A history that fits one page has no `nextCursor`, so older clients that read `events` keep working for short runs.
+- **Unauthenticated requests are throttled per client address.** An address that presents `authThrottle.maxFailures` (default 20) missing or wrong credentials within `authThrottle.windowMs` (default 60 seconds) is answered 429 `too_many_failed_requests` with `Retry-After`, without a database query, until the window ends. The address is the socket's; behind a reverse proxy it is the proxy's, so one bad client can lock out everyone behind the same proxy for a window (`docs/DEFERRED.md`).
+- **Errors.** A malformed percent encoding in a path answers 400 `malformed_request`. A 500 is logged at `error` level as `request failed` with the method, the path, the error and the correlation id that the response carries in `x-correlation-id`; the body stays opaque.
+- **`/metrics`.** `metricsCacheMs` (default 0, off) serves one rendered scrape for that long; scrapes that arrive while a render runs share it. A failed render is never cached.
+- **Workflow types.** With a `workflows` registry in the options, `POST /v1/runs` for a type the registry does not know answers 400 `unknown_workflow_type`. Without a registry any type is accepted, because the process serving the API need not be the one that runs workflows.
+- **Idempotent starts.** A repeated `Idempotency-Key` is answered from a lookup before any span or transaction; only a concurrent race on a key reaches the insert, and its `workflow.start` span is ended and marked `dee.start.duplicate`.
+- **Headers.** Every JSON, metrics and stream answer carries `x-content-type-options: nosniff`.

@@ -20,6 +20,8 @@ npx wf help
 | `wf run list`                                  | Lists runs: `--status`, `--type`, `--limit`, `--cursor`                     |
 | `wf example <payment-saga\|etl-pipeline\|all>` | Runs a bundled example end to end (see `docs/EXAMPLES.md`)                  |
 
+`--limit` must be a whole number from 1 to 200 (usage error otherwise). `--wait` polls the run and, when the API answers 429, sleeps for the `Retry-After` it gave (never past the wait timeout) instead of failing. Run ids are percent encoded in URLs, `wf run describe --history` reads every history page, and an API answer that is not JSON (a proxy's error page) is reported as one line with its status and a short preview, with no stack trace.
+
 Exit codes: 0 on success, 1 when a command failed (or `--wait` ended in a state other than `COMPLETED`), 2 for a usage error such as an unknown flag.
 
 ## `wf dev`

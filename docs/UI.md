@@ -18,7 +18,7 @@ The ui is then on the same origin as the api, so there is no CORS. The files in 
 - **Runs.** A table of the namespace's runs with filters for status, workflow type and a start date range, "load more" paging through the api's cursor, and a refresh every 3 seconds. The namespace column shows the namespace of the key, because the api never shows another one.
 - **Run detail.** The status, three viewers (input, output, error) and the event history as a timeline: label, summary, offset from the first event, and the raw event on click. The timeline is kept live by the run stream (`GET /v1/runs/{runId}/stream`, see `docs/API.md`): new events are appended without a page refresh, and the stream reconnects from the last sequence number it received.
 - **Signal.** A name and an optional json payload, sent with `POST /v1/runs/{runId}/signal`. The form is disabled once the run is closed.
-- **Cancel.** Requests a graceful cancellation. The timeline shows `cancel requested` at once and `run cancelled` when the workflow has reacted.
+- **Cancel.** Asks for confirmation, then requests a graceful cancellation. The timeline shows `cancel requested` at once and `run cancelled` when the workflow has reacted.
 - **Dead letters.** The step tasks that ran out of attempts, with a requeue button. Since day 37 the failure is already final for the workflow, so a requeue only acknowledges the entry.
 
 Run data is always inserted as text nodes, never as markup, so an input such as `<img onerror=...>` is displayed and not executed.
@@ -34,3 +34,11 @@ Run data is always inserted as text nodes, never as markup, so an input such as 
 - There is no list level stream: the run list polls.
 - The quarantined tasks of the janitor (`docs/API.md`, poison pills) have no ui or endpoint; only dead letters do.
 - A run's workflow code can only be decided in a process that does not also need `setTimeout` in the same tick: workflow decisions patch the global `setTimeout`, `Date.now` and `Math.random` while they run. The api handler uses `node:timers` and `node:perf_hooks` for this reason, and a pool shared with it must be created with `idleTimeoutMillis: 0`.
+
+## Hardening (day 38)
+
+- The timeline shows one row per sequence number. The client remembers the last sequence it showed, so a dropped stream resumes from there, and rows that arrive twice (a server that replays from an older position) are merged by sequence number.
+- A stream refused with 429 (the per namespace cap) is retried like a dropped one; the indicator reads `reconnecting`.
+- Cancelling a run and requeueing a dead letter ask for confirmation with the browser's `confirm` dialog; dismissing it does nothing.
+- The content security policy is `default-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`, so the page cannot be framed.
+- The dead letter list follows the API cursor, up to 10 pages (5,000 entries).
