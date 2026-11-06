@@ -32,7 +32,11 @@ describe("ui handler", () => {
     const response = await fetch(`${baseUrl}/ui/`);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/html");
-    expect(response.headers.get("content-security-policy")).toContain("default-src 'self'");
+    const policy = response.headers.get("content-security-policy") ?? "";
+    expect(policy).toContain("default-src 'self'");
+    expect(policy).toContain("frame-ancestors 'none'");
+    expect(policy).toContain("base-uri 'none'");
+    expect(policy).toContain("form-action 'self'");
     expect(await response.text()).toContain('<div id="app">');
   });
 

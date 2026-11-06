@@ -1,9 +1,13 @@
 import { ApiError, type ApiClient, type RunDescription } from "./api.js";
 import { h } from "./dom.js";
 import { formatJson, formatOffset, formatTimestamp } from "./format.js";
-import { buildTimeline, type HistoryEntry, type TimelineItem } from "./timeline.js";
+import { buildTimeline, mergeEntries, type HistoryEntry, type TimelineItem } from "./timeline.js";
 
 const RECONNECT_MS = 1000;
+
+function confirmAction(question: string): boolean {
+  return window.confirm(question);
+}
 
 function isAborted(signal: AbortSignal): boolean {
   return signal.aborted;
@@ -30,7 +34,7 @@ export function mountRunView(
   onError: (error: unknown) => void,
 ): () => void {
   const abort = new AbortController();
-  const entries: HistoryEntry[] = [];
+  let entries: readonly HistoryEntry[] = [];
   let description: RunDescription | undefined;
 
   const header = h("div", { testId: "run-header" });
@@ -124,6 +128,9 @@ export function mountRunView(
   }
 
   async function cancel(): Promise<void> {
+    if (!confirmAction(`cancel run ${runId}? the workflow will run its compensations.`)) {
+      return;
+    }
     try {
       await api.cancelRun(runId, "cancelled from the ui");
       message.textContent = "cancellation requested";
@@ -167,7 +174,8 @@ export function mountRunView(
           runId,
           after,
           (slice) => {
-            entries.push(...slice.events);
+            entries = mergeEntries(entries, slice.events);
+            after = Math.max(after, entries.at(-1)?.sequenceNumber ?? 0);
             renderTimeline();
             if (description?.status !== slice.status || slice.closed) {
               void refreshDescription();
@@ -175,7 +183,7 @@ export function mountRunView(
           },
           abort.signal,
         );
-        after = result.lastSequence;
+        after = Math.max(after, result.lastSequence);
         if (result.ended) {
           live.textContent = "closed";
           await refreshDescription();
@@ -185,7 +193,7 @@ export function mountRunView(
         if (isAborted(abort.signal)) {
           return;
         }
-        if (error instanceof ApiError) {
+        if (error instanceof ApiError && error.status !== 429) {
           onError(error);
           return;
         }

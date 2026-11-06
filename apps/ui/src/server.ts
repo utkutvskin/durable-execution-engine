@@ -36,7 +36,8 @@ function respond(response: ServerResponse, status: number, asset: Asset): void {
     "content-type": asset.contentType,
     "content-length": Buffer.byteLength(asset.body),
     "cache-control": "no-cache",
-    "content-security-policy": "default-src 'self'; style-src 'self'; script-src 'self'",
+    "content-security-policy":
+      "default-src 'self'; style-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     "x-content-type-options": "nosniff",
   });
   response.end(asset.body);

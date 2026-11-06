@@ -57,6 +57,8 @@ describe.skipIf(BROWSER.mode === "skip")("run explorer in a browser", () => {
   let key: string;
   let namespaceId: string;
   let taskCounter = 0;
+  const dialogs: string[] = [];
+  let answerDialogs = true;
 
   async function startRun(
     workflowType = "approval",
@@ -212,6 +214,12 @@ describe.skipIf(BROWSER.mode === "skip")("run explorer in a browser", () => {
   beforeEach(async () => {
     page = await browser.newPage();
     page.setDefaultTimeout(10_000);
+    dialogs.length = 0;
+    answerDialogs = true;
+    page.on("dialog", (dialog) => {
+      dialogs.push(dialog.message());
+      void (answerDialogs ? dialog.accept() : dialog.dismiss());
+    });
   });
 
   afterEach(async () => {
@@ -278,6 +286,79 @@ describe.skipIf(BROWSER.mode === "skip")("run explorer in a browser", () => {
     await expect.poll(() => page.getByTestId("signal-send").isDisabled()).toBe(true);
     await expect.poll(() => page.getByTestId("live-indicator").textContent()).toBe("closed");
   }, 30_000);
+
+  it("asks before cancelling and does nothing when the question is dismissed", async () => {
+    const runId = await startRun("approval", { item: "stool" });
+    await signIn();
+    await openRun(runId);
+    await pump();
+    await timelineItem("step_completed").first().waitFor();
+    answerDialogs = false;
+    await page.getByTestId("cancel-button").click();
+    await expect.poll(() => dialogs.length).toBe(1);
+    expect(dialogs[0]).toContain("cancel run");
+    await page.waitForTimeout(300);
+    expect(await timelineItem("cancel_requested").count()).toBe(0);
+    const events = await database.pool.query(
+      "select 1 from run_events where run_id = $1 and payload::text like '%cancel_requested%'",
+      [runId],
+    );
+    expect(events.rowCount).toBe(0);
+    answerDialogs = true;
+    await page.getByTestId("cancel-button").click();
+    await timelineItem("cancel_requested").first().waitFor();
+  }, 30_000);
+
+  it("keeps one timeline entry per event when the stream drops and replays from the start", async () => {
+    const lifetimeApi = createApiServer(serverPool, {
+      queueName: "default",
+      streamPollMs: 20,
+      maxStreamLifetimeMs: 300,
+      sideHandler: createUiHandler(),
+      logger: silentLogger,
+    });
+    await new Promise<void>((resolve) => lifetimeApi.server.listen(0, "127.0.0.1", resolve));
+    const primaryUrl = baseUrl;
+    baseUrl = `http://127.0.0.1:${String((lifetimeApi.server.address() as AddressInfo).port)}`;
+    try {
+      const runId = await startRun("approval", { item: "lamp" });
+      let streamRequests = 0;
+      await page.route("**/v1/runs/*/stream*", (route) => {
+        streamRequests += 1;
+        if (streamRequests === 1) {
+          void route.continue();
+          return;
+        }
+        const replay = new URL(route.request().url());
+        replay.searchParams.set("after", "0");
+        void route.continue({ url: replay.toString() });
+      });
+      await signIn();
+      await openRun(runId);
+      await pump();
+      await timelineItem("step_completed").first().waitFor();
+      await expect.poll(() => streamRequests, { timeout: 15_000 }).toBeGreaterThanOrEqual(3);
+      const stored = await database.pool.query<{ count: string }>(
+        "select count(*) from run_events where run_id = $1",
+        [runId],
+      );
+      const shown: (string | null)[] = [];
+      for (const item of await page.locator("[data-testid=timeline-item]").all()) {
+        shown.push(await item.getAttribute("data-seq"));
+      }
+      expect(shown).toHaveLength(Number(stored.rows[0]?.count));
+      expect(new Set(shown).size).toBe(shown.length);
+      expect(shown).toEqual([...shown].sort((a, b) => Number(a) - Number(b)));
+    } finally {
+      baseUrl = primaryUrl;
+      lifetimeApi.server.closeAllConnections();
+      await new Promise<void>((resolve) => {
+        lifetimeApi.server.close(() => {
+          resolve();
+        });
+      });
+    }
+  }, 40_000);
 
   it("shows the input, the error and escapes markup in run data", async () => {
     const runId = await startRun("unregistered", { note: "<img src=x onerror=window.pwned=1>" });
@@ -346,6 +427,13 @@ describe.skipIf(BROWSER.mode === "skip")("run explorer in a browser", () => {
     const row = page.locator(`[data-dead-letter-id="${id}"]`);
     await row.waitFor();
     expect(await row.textContent()).toContain("card declined");
+    answerDialogs = false;
+    await row.getByTestId("requeue-button").click();
+    await expect.poll(() => dialogs.length).toBe(1);
+    expect(dialogs[0]).toContain("requeue step step-1");
+    await page.waitForTimeout(300);
+    expect(await row.count()).toBe(1);
+    answerDialogs = true;
     await row.getByTestId("requeue-button").click();
     await page.locator("[data-testid=dead-letter-message]", { hasText: "requeued" }).waitFor();
     await row.waitFor({ state: "detached" });

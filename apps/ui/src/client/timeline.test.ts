@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTimeline, type HistoryEntry } from "./timeline.js";
+import { buildTimeline, mergeEntries, type HistoryEntry } from "./timeline.js";
 
 function entry(sequenceNumber: number, at: string, event: HistoryEntry["event"]): HistoryEntry {
   return { sequenceNumber, createdAt: at, event };
@@ -86,5 +86,35 @@ describe("buildTimeline", () => {
 
   it("returns nothing for an empty history", () => {
     expect(buildTimeline([])).toEqual([]);
+  });
+});
+
+describe("mergeEntries", () => {
+  const started = entry(1, "2026-03-01T10:00:00.000Z", { type: "run_started" });
+  const scheduled = entry(2, "2026-03-01T10:00:01.000Z", { type: "step_scheduled" });
+  const completed = entry(3, "2026-03-01T10:00:02.000Z", { type: "step_completed" });
+
+  it("keeps an entry that arrives twice once", () => {
+    expect(mergeEntries([started, scheduled], [scheduled, completed])).toEqual([
+      started,
+      scheduled,
+      completed,
+    ]);
+  });
+
+  it("orders entries by sequence number whatever order they arrive in", () => {
+    expect(mergeEntries([completed], [started, scheduled]).map((e) => e.sequenceNumber)).toEqual([
+      1, 2, 3,
+    ]);
+  });
+
+  it("keeps the first copy of a repeated sequence number", () => {
+    const later = entry(2, "2026-03-01T10:00:09.000Z", { type: "timer_fired" });
+    expect(mergeEntries([scheduled], [later])).toEqual([scheduled]);
+  });
+
+  it("shows a replayed history once in the timeline", () => {
+    const items = buildTimeline([started, scheduled, started, scheduled, completed]);
+    expect(items.map((item) => item.sequenceNumber)).toEqual([1, 2, 3]);
   });
 });

@@ -73,4 +73,20 @@ describe("createApiClient", () => {
     expect(slices.map((received) => received.events[0]?.sequenceNumber)).toEqual([1, 2]);
     expect(result).toEqual({ lastSequence: 2, ended: true });
   });
+
+  it("follows the dead letter cursor until the last page", async () => {
+    const urls: string[] = [];
+    const letter = (id: string): Record<string, unknown> => ({ id });
+    const client = createApiClient("k", (input) => {
+      urls.push(input as string);
+      return Promise.resolve(
+        urls.length === 1
+          ? jsonResponse(200, { deadLetters: [letter("a")], nextCursor: "a b" })
+          : jsonResponse(200, { deadLetters: [letter("b")] }),
+      );
+    });
+    const letters = await client.listDeadLetters();
+    expect(letters.map((item) => item.id)).toEqual(["a", "b"]);
+    expect(urls).toEqual(["/v1/dead-letters", "/v1/dead-letters?cursor=a%20b"]);
+  });
 });

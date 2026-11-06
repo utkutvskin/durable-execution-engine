@@ -92,6 +92,8 @@ export interface ApiClient {
   ): Promise<{ readonly lastSequence: number; readonly ended: boolean }>;
 }
 
+const MAX_DEAD_LETTER_PAGES = 10;
+
 async function failure(response: Response): Promise<ApiError> {
   try {
     const body = (await response.json()) as { error?: { code?: string; message?: string } };
@@ -144,8 +146,21 @@ export function createApiClient(apiKey: string, fetchFn: typeof fetch, baseUrl =
       });
     },
     async listDeadLetters() {
-      const body = await request<{ deadLetters: DeadLetter[] }>("GET", "/v1/dead-letters");
-      return body.deadLetters;
+      const letters: DeadLetter[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < MAX_DEAD_LETTER_PAGES; page += 1) {
+        const query = cursor === undefined ? "" : `?cursor=${encodeURIComponent(cursor)}`;
+        const body = await request<{ deadLetters: DeadLetter[]; nextCursor?: string }>(
+          "GET",
+          `/v1/dead-letters${query}`,
+        );
+        letters.push(...body.deadLetters);
+        cursor = body.nextCursor;
+        if (cursor === undefined) {
+          break;
+        }
+      }
+      return letters;
     },
     async requeueDeadLetter(id) {
       await request("POST", `/v1/dead-letters/${encodeURIComponent(id)}/requeue`, {});

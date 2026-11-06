@@ -107,11 +107,34 @@ const PRESENTATIONS: Readonly<Record<string, Presentation>> = {
 };
 
 /**
- * Turns history entries into timeline items. Offsets are measured from the
+ * Returns `existing` followed by the entries of `incoming` it does not hold
+ * yet, ordered by sequence number. An entry that arrives twice, as after a
+ * stream reconnect that replays from an older position, appears once.
+ */
+export function mergeEntries(
+  existing: readonly HistoryEntry[],
+  incoming: readonly HistoryEntry[],
+): HistoryEntry[] {
+  const bySequence = new Map<number, HistoryEntry>();
+  for (const entry of [...existing, ...incoming]) {
+    if (!bySequence.has(entry.sequenceNumber)) {
+      bySequence.set(entry.sequenceNumber, entry);
+    }
+  }
+  return [...bySequence.values()].sort((left, right) => left.sequenceNumber - right.sequenceNumber);
+}
+
+/**
+ * Turns history entries into timeline items. Entries with a repeated
+ * sequence number are shown once. Offsets are measured from the
  * first entry, so a partial list given later still lines up when the caller
  * passes `originMs`.
  */
-export function buildTimeline(entries: readonly HistoryEntry[], originMs?: number): TimelineItem[] {
+export function buildTimeline(
+  recorded: readonly HistoryEntry[],
+  originMs?: number,
+): TimelineItem[] {
+  const entries = mergeEntries([], recorded);
   const first = entries[0];
   const origin = originMs ?? (first === undefined ? 0 : Date.parse(first.createdAt));
   return entries.map((entry) => {

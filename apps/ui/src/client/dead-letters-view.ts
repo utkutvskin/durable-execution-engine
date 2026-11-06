@@ -15,6 +15,13 @@ export function mountDeadLettersView(
   const message = h("p", { className: "muted", testId: "dead-letter-message" });
 
   async function requeue(letter: DeadLetter): Promise<void> {
+    if (
+      !window.confirm(
+        `requeue step ${letter.stepId} of run ${shortId(letter.runId)}? it gets a fresh retry budget.`,
+      )
+    ) {
+      return;
+    }
     try {
       await api.requeueDeadLetter(letter.id);
       message.textContent = `step ${letter.stepId} of run ${shortId(letter.runId)} was requeued`;
