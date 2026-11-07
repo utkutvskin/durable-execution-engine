@@ -72,6 +72,8 @@ export function nackDelayFor(attempts: number, backoff: NackBackoff): number {
  *   reported to `onError`.
  * - `identity`: stamped on every leased task, so a reclaimed lease names
  *   the worker that lost it.
+ * - `stickyRouting`: with an `identity`, the poll skips workflow tasks of
+ *   runs that another worker holds a live sticky claim on (default false).
  * - `onError`: receives errors the worker survives, such as a failed poll.
  */
 export interface WorkerOptions {
@@ -90,6 +92,7 @@ export interface WorkerOptions {
   readonly maxHandlerAttempts?: number;
   readonly timers?: Timers;
   readonly identity?: WorkerIdentity;
+  readonly stickyRouting?: boolean;
   readonly pollBudget?: (free: number) => Promise<number>;
   readonly onTaskSettled?: (settled: SettledTask) => void;
   readonly clock?: { now(): Date };
@@ -158,6 +161,7 @@ interface ResolvedOptions {
   readonly maxHandlerAttempts: number;
   readonly timers: Timers;
   readonly identity: WorkerIdentity | undefined;
+  readonly stickyRouting: boolean;
   readonly pollBudget: ((free: number) => Promise<number>) | undefined;
   readonly onTaskSettled: ((settled: SettledTask) => void) | undefined;
   readonly clock: { now(): Date };
@@ -231,6 +235,7 @@ function resolveOptions(options: WorkerOptions): ResolvedOptions {
     ),
     timers: options.timers ?? systemTimers,
     identity: options.identity,
+    stickyRouting: options.stickyRouting ?? false,
     pollBudget: options.pollBudget,
     onTaskSettled: options.onTaskSettled,
     clock: options.clock ?? { now: () => new Date() },
@@ -446,6 +451,9 @@ export function createWorker(options: WorkerOptions): Worker {
             ...(config.identity === undefined
               ? {}
               : { workerId: config.identity.id, workerVersion: config.identity.version }),
+            ...(config.identity !== undefined && config.stickyRouting
+              ? { stickyFor: config.identity.id }
+              : {}),
           });
         }
       } catch (error) {

@@ -30,9 +30,13 @@ export type TaskOutcome = "completed" | "failed";
 
 /**
  * Options for `createEngineMetrics`. `recovery` adds the janitor's reclaimed
- * lease count; `clock` supplies "now" for the timer lag.
+ * lease count; `clock` supplies "now" for the timer lag. Every queue in
+ * `queues` always has a `dee_queue_depth` and `dee_tasks_quarantined` series,
+ * with the value 0 when nothing waits, so a dashboard sees an idle queue
+ * instead of a missing one.
  */
 export interface EngineMetricsOptions {
+  readonly queues?: readonly string[];
   readonly registry?: MetricsRegistry;
   readonly recovery?: RecoveryMetrics;
   readonly clock?: { now(): Date };
@@ -111,6 +115,9 @@ export function createEngineMetrics(pool: Pool, options: EngineMetricsOptions = 
       [now],
     );
     queueDepth.clear();
+    for (const queue of options.queues ?? []) {
+      queueDepth.set({ queue }, 0);
+    }
     for (const row of depth.rows) {
       queueDepth.set({ queue: row.queue_name }, Number(row.depth));
     }
@@ -120,6 +127,9 @@ export function createEngineMetrics(pool: Pool, options: EngineMetricsOptions = 
        where state = 'QUARANTINED' group by queue_name`,
     );
     quarantined.clear();
+    for (const queue of options.queues ?? []) {
+      quarantined.set({ queue }, 0);
+    }
     for (const row of parked.rows) {
       quarantined.set({ queue: row.queue_name }, Number(row.parked));
     }

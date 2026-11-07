@@ -56,6 +56,16 @@ describe("engine metrics", () => {
     }
   });
 
+  it("keeps a zero series for each configured queue that has no tasks", async () => {
+    const metrics = createEngineMetrics(database.pool, { clock, queues: ["idle-q"] });
+    const parsed = parsePrometheusText(await metrics.render());
+    const find = (name: string): number | undefined =>
+      parsed.samples.find((entry) => entry.name === name && entry.labels["queue"] === "idle-q")
+        ?.value;
+    expect(find("dee_queue_depth")).toBe(0);
+    expect(find("dee_tasks_quarantined")).toBe(0);
+  });
+
   it("reports run counts by status, zero for statuses without runs", async () => {
     await insertRun("RUNNING");
     await insertRun("RUNNING");

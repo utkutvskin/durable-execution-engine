@@ -286,7 +286,7 @@ export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler {
     });
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   const health = options.health ?? createHealthChecks(pool);
-  const metrics = options.metrics ?? createEngineMetrics(pool);
+  const metrics = options.metrics ?? createEngineMetrics(pool, { queues: [options.queueName] });
   const logger = options.logger ?? createLogger();
   const streamPollMs = options.streamPollMs ?? DEFAULT_STREAM_POLL_MS;
   const nowMs = options.nowMs ?? ((): number => performance.now());

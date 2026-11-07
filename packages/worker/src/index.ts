@@ -37,4 +37,8 @@ export type {
   EngineTaskHandlerOptions,
 } from "./engine/task-handler.js";
 export { DEFAULT_QUEUE_NAME, startEngine } from "./engine/runtime.js";
-export type { Engine, EngineOptions } from "./engine/runtime.js";
+export type { CompactionOptions, DecisionTotals, Engine, EngineOptions } from "./engine/runtime.js";
+export { startCompactorLoop } from "./compactor-loop.js";
+export type { CompactorLoop, CompactorLoopOptions } from "./compactor-loop.js";
+export { startOpsServer } from "./ops-server.js";
+export type { OpsServer, OpsServerOptions } from "./ops-server.js";

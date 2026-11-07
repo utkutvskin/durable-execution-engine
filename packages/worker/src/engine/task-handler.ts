@@ -23,6 +23,7 @@ import {
   type Pool,
   type RandomSource,
   type RunState,
+  type StickyRouter,
   type StepDefinition,
   type StickyDecider,
   type TaskQueue,
@@ -65,18 +66,24 @@ export interface EngineTaskHandlerOptions {
   readonly tracing?: Tracing;
   readonly maxCachedRuns?: number;
   readonly stickyTimeoutMs?: number;
+  readonly router?: StickyRouter;
+  readonly workerId?: string;
   readonly onDecision?: (decision: DecisionReport) => void;
+  readonly onError?: (error: unknown) => void;
 }
 
 /**
- * What one workflow task decided: the run, the outcome of the workflow code
- * and how many events the decision recorded.
+ * What one workflow task decided: the run, the outcome of the workflow code,
+ * how many events the decision recorded and whether it advanced a cached
+ * live session (`cache`) or replayed the history from the top (`replay`).
+ * A `superseded` decision has no source.
  */
 export interface DecisionReport {
   readonly runId: string;
   readonly workflowType: string;
   readonly outcome: string;
   readonly recordedEvents: number;
+  readonly source?: "cache" | "replay";
 }
 
 /**
@@ -126,6 +133,11 @@ function openStepIds(events: readonly WorkflowEvent[]): WorkflowEvent[] {
  * nothing. A workflow task that decided from a history another writer has
  * since extended records nothing and reports `superseded`: whoever wrote the
  * newer event also enqueued the task that sees it.
+ *
+ * With `router` and `workerId`, a decision that leaves the run open claims it
+ * for this worker (see `createStickyRouter`) and a decision that closes it
+ * releases the claim. A failing claim is reported to `onError`; it never
+ * fails the task, because the decision is already recorded.
  */
 export function createEngineTaskHandler(options: EngineTaskHandlerOptions): TaskHandler {
   const clock = options.clock ?? systemClock;
@@ -229,6 +241,25 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
     await markRunWaiting(options.pool, { runId, waitingOn, progressed: recordedCount > 0 });
   }
 
+  async function updateClaim(runId: string, outcome: string): Promise<void> {
+    if (options.router === undefined || options.workerId === undefined) {
+      return;
+    }
+    try {
+      if (outcome === "suspended") {
+        await options.router.claim(
+          runId,
+          options.workerId,
+          options.stickyTimeoutMs ?? DEFAULT_STICKY_TIMEOUT_MS,
+        );
+      } else {
+        await options.router.release(runId, options.workerId);
+      }
+    } catch (error) {
+      options.onError?.(error);
+    }
+  }
+
   async function handleWorkflowTask(task: LeasedTask): Promise<void> {
     const run = await readRun(task.runId);
     if (run === undefined || isTerminalState(run.status)) {
@@ -246,7 +277,7 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
     if (definition === undefined) {
       throw new UnknownWorkflowError(started.workflowType);
     }
-    const { decision } = await decider.decide(
+    const { decision, source } = await decider.decide(
       task.runId,
       definition.handler as unknown as WorkflowHandler,
       started.input,
@@ -283,7 +314,9 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
       workflowType: started.workflowType,
       outcome: decision.outcome,
       recordedEvents: recorded.recorded ? events.length : 0,
+      source,
     });
+    await updateClaim(task.runId, decision.outcome);
     if (recorded.recorded) {
       await markWaiting(task.runId, decision.outcome, [...history, ...events], events.length);
     }
