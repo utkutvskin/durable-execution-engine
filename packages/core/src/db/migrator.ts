@@ -49,6 +49,21 @@ export async function loadMigrations(migrationsDir: string): Promise<Migration[]
   );
 }
 
+const MIGRATION_LOCK_KEY = "dee:migrations";
+
+async function acquireMigrationLock(client: PoolClient): Promise<void> {
+  await client.query("select pg_advisory_lock(hashtext($1))", [MIGRATION_LOCK_KEY]);
+}
+
+async function releaseMigrationLock(client: PoolClient): Promise<boolean> {
+  try {
+    await client.query("select pg_advisory_unlock(hashtext($1))", [MIGRATION_LOCK_KEY]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function ensureMigrationsTable(client: PoolClient): Promise<void> {
   await client.query(
     `create table if not exists schema_migrations (
@@ -67,8 +82,10 @@ async function getAppliedIds(client: PoolClient): Promise<string[]> {
 
 /**
  * Applies every migration in `migrationsDir` that is not yet recorded in
- * `schema_migrations`, in order, each inside its own transaction. Returns
- * the ids applied. Calling this again with nothing pending is a no-op that
+ * `schema_migrations`, in order, each inside its own transaction, while
+ * holding a Postgres advisory lock so concurrent callers (several processes
+ * starting together) run one after the other and the later ones find nothing
+ * left to apply. Returns the ids applied. Calling this again with nothing pending is a no-op that
  * returns an empty array.
  */
 export async function migrateUp(
@@ -79,7 +96,10 @@ export async function migrateUp(
   const client = await pool.connect();
   let broken = false;
   const applied: string[] = [];
+  let locked = false;
   try {
+    await acquireMigrationLock(client);
+    locked = true;
     await ensureMigrationsTable(client);
     const alreadyApplied = new Set(await getAppliedIds(client));
     for (const migration of migrations) {
@@ -98,6 +118,9 @@ export async function migrateUp(
       applied.push(migration.id);
     }
   } finally {
+    if (locked && !(await releaseMigrationLock(client))) {
+      broken = true;
+    }
     client.release(broken);
   }
   return applied;
@@ -105,7 +128,8 @@ export async function migrateUp(
 
 /**
  * Reverts the most recently applied `steps` migrations, most recent first,
- * each inside its own transaction. Returns the ids reverted. Calling this
+ * each inside its own transaction, under the same advisory lock as
+ * `migrateUp`. Returns the ids reverted. Calling this
  * with fewer than `steps` migrations applied (including zero) reverts only
  * what is there and is a no-op when nothing is applied.
  */
@@ -119,7 +143,10 @@ export async function migrateDown(
   const client = await pool.connect();
   let broken = false;
   const reverted: string[] = [];
+  let locked = false;
   try {
+    await acquireMigrationLock(client);
+    locked = true;
     await ensureMigrationsTable(client);
     const appliedIds = await getAppliedIds(client);
     const toRevert = appliedIds.slice(-steps).reverse();
@@ -142,6 +169,9 @@ export async function migrateDown(
       reverted.push(id);
     }
   } finally {
+    if (locked && !(await releaseMigrationLock(client))) {
+      broken = true;
+    }
     client.release(broken);
   }
   return reverted;
