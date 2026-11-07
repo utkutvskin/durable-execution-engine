@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CliError } from "./errors.js";
 
@@ -41,12 +41,15 @@ export async function readDevState(cwd: string): Promise<DevState | undefined> {
 }
 
 /**
- * Writes `state` to `DEV_STATE_PATH` under `cwd`, creating the directory.
+ * Writes `state` to `DEV_STATE_PATH` under `cwd`, creating the directory
+ * (mode 0700). The file holds an api key, so it is created with mode 0600
+ * and an existing file is brought to 0600 as well.
  */
 export async function writeDevState(cwd: string, state: DevState): Promise<void> {
   const file = path.join(cwd, DEV_STATE_PATH);
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+  await writeFile(file, `${JSON.stringify(state, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  await chmod(file, 0o600);
 }
 
 /**

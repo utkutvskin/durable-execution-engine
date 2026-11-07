@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.js";
-import { createApiKeyStore, type ApiKeyStore } from "./api-keys.js";
+import { InvalidApiKeyError, createApiKeyStore, type ApiKeyStore } from "./api-keys.js";
 
 describe("api key store", () => {
   let database: IsolatedSchema;
@@ -61,5 +61,49 @@ describe("api key store", () => {
     const right = await store.issue("right");
     expect(left.namespaceId).not.toBe(right.namespaceId);
     expect((await store.authenticate(left.key))?.namespace).toBe("left");
+  });
+
+  it("adopts an operator chosen key and authenticates it", async () => {
+    const key = "dee_operator-chosen-key-0001";
+    const adopted = await store.adopt("adopted", key, "from env");
+    expect(adopted.namespace).toBe("adopted");
+    expect((await store.authenticate(key))?.keyId).toBe(adopted.keyId);
+  });
+
+  it("adopts the same key twice without creating a second row", async () => {
+    const key = "dee_operator-chosen-key-0002";
+    const first = await store.adopt("twice", key);
+    const second = await store.adopt("twice", key);
+    expect(second.keyId).toBe(first.keyId);
+    const rows = await database.pool.query("select 1 from api_keys where namespace_id = $1", [
+      first.namespaceId,
+    ]);
+    expect(rows.rowCount).toBe(1);
+  });
+
+  it("refuses to adopt a malformed, revoked or foreign key", async () => {
+    await expect(store.adopt("bad", "short")).rejects.toBeInstanceOf(InvalidApiKeyError);
+    await expect(store.adopt("bad", "nope_operator-chosen-key-0003")).rejects.toBeInstanceOf(
+      InvalidApiKeyError,
+    );
+    await expect(store.adopt("bad", "dee_has a space inside it!!")).rejects.toBeInstanceOf(
+      InvalidApiKeyError,
+    );
+    const revoked = await store.adopt("revoked-ns", "dee_operator-chosen-key-0004");
+    await store.revoke(revoked.keyId);
+    await expect(store.adopt("revoked-ns", "dee_operator-chosen-key-0004")).rejects.toThrow(
+      /revoked/,
+    );
+    await expect(store.adopt("other-ns", "dee_operator-chosen-key-0004")).rejects.toThrow(
+      /revoked|another namespace/,
+    );
+  });
+
+  it("tells whether a namespace has a key that is not revoked", async () => {
+    expect(await store.hasActiveKey("no-keys-yet")).toBe(false);
+    const issued = await store.issue("has-keys");
+    expect(await store.hasActiveKey("has-keys")).toBe(true);
+    await store.revoke(issued.keyId);
+    expect(await store.hasActiveKey("has-keys")).toBe(false);
   });
 });

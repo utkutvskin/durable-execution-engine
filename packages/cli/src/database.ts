@@ -20,11 +20,14 @@ export interface DatabaseEffects {
  * What `ensureDatabase` needs: the connection `url`, the `composeDirectory`
  * that holds `docker-compose.yml` (when there is one), the number of
  * `attempts` to probe after starting compose (default 30) and the effects.
+ * With `composeAllowed` false (production) compose is never started and an
+ * unreachable database is an error.
  */
 export interface EnsureDatabaseInput {
   readonly url: string;
   readonly composeDirectory?: string | undefined;
   readonly attempts?: number;
+  readonly composeAllowed?: boolean;
   readonly log: (line: string) => void;
   readonly effects?: DatabaseEffects;
 }
@@ -93,6 +96,11 @@ export async function ensureDatabase(input: EnsureDatabaseInput): Promise<void> 
   if (await effects.reachable(input.url)) {
     return;
   }
+  if (input.composeAllowed === false) {
+    throw new CliError(
+      "the database is not reachable: check DATABASE_URL (docker compose is never started when NODE_ENV=production)",
+    );
+  }
   if (input.composeDirectory === undefined) {
     throw new CliError(
       "the database is not reachable and no docker-compose.yml was found: start postgres and set DATABASE_URL",
@@ -124,4 +132,12 @@ export function databaseUrl(
   env: Readonly<Record<string, string | undefined>>,
 ): string {
   return flag ?? resolveDatabaseUrl(env);
+}
+
+/**
+ * Whether the environment says this is a production process
+ * (`NODE_ENV=production`). Production processes never start docker compose.
+ */
+export function isProduction(env: Readonly<Record<string, string | undefined>>): boolean {
+  return env["NODE_ENV"] === "production";
 }

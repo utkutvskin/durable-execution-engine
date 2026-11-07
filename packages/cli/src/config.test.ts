@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -63,5 +63,23 @@ describe("client configuration", () => {
     expect(await readDevState(directory)).toBeUndefined();
     await writeFile(path.join(directory, DEV_STATE_PATH), '{"apiUrl":1}', "utf8");
     expect(await readDevState(directory)).toBeUndefined();
+  });
+
+  it("writes the dev state with mode 0600 in a directory only the owner can enter", async () => {
+    await writeDevState(directory, { apiUrl: "http://x", apiKey: "dee_k", namespace: "default" });
+    const file = await stat(path.join(directory, DEV_STATE_PATH));
+    expect(file.mode & 0o777).toBe(0o600);
+    const folder = await stat(path.join(directory, ".wf"));
+    expect(folder.mode & 0o077).toBe(0);
+  });
+
+  it("tightens a dev state file that already exists with a wider mode", async () => {
+    await mkdir(path.join(directory, ".wf"));
+    await writeFile(path.join(directory, DEV_STATE_PATH), "{}", "utf8");
+    await chmod(path.join(directory, DEV_STATE_PATH), 0o644);
+    await writeDevState(directory, { apiUrl: "http://x", apiKey: "dee_k", namespace: "default" });
+    const file = await stat(path.join(directory, DEV_STATE_PATH));
+    expect(file.mode & 0o777).toBe(0o600);
+    expect((await readDevState(directory))?.apiKey).toBe("dee_k");
   });
 });

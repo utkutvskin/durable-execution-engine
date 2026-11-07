@@ -4,7 +4,7 @@
  */
 export const packageName = "@dee/api";
 
-export { createApiKeyStore } from "./api-keys.js";
+export { InvalidApiKeyError, createApiKeyStore } from "./api-keys.js";
 export type { ApiKeyStore, AuthenticatedNamespace, IssuedApiKey } from "./api-keys.js";
 export { buildOpenApiDocument } from "./openapi.js";
 export type { JsonObject, OpenApiOptions } from "./openapi.js";

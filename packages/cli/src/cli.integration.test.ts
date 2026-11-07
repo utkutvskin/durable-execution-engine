@@ -57,7 +57,7 @@ describe("wf against a real database", () => {
       expect(await main(["migrate", "up"], second.io)).toBe(0);
       expect(second.out).toEqual(["nothing to apply, the schema is current"]);
       const down = captureIo(directory, env);
-      expect(await main(["migrate", "down", "--steps", "2"], down.io)).toBe(0);
+      expect(await main(["migrate", "down", "--steps", "2", "--yes"], down.io)).toBe(0);
       expect(down.out).toHaveLength(2);
       expect(down.out.every((line) => line.startsWith("reverted "))).toBe(true);
       const again = captureIo(directory, env);
@@ -68,7 +68,9 @@ describe("wf against a real database", () => {
     it("rejects a bad direction and a bad step count", async () => {
       const env = { DATABASE_URL: urlForSchema(schema.schema) };
       expect(await main(["migrate", "sideways"], captureIo(directory, env).io)).toBe(2);
-      expect(await main(["migrate", "down", "--steps", "0"], captureIo(directory, env).io)).toBe(2);
+      expect(
+        await main(["migrate", "down", "--steps", "0", "--yes"], captureIo(directory, env).io),
+      ).toBe(2);
     });
   });
 

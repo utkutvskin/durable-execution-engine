@@ -1,6 +1,6 @@
-import { createPool, type Pool } from "@dee/core";
-import { startEngine } from "@dee/worker";
-import { databaseUrl, ensureDatabase, findComposeDirectory } from "../database.js";
+import { createHealthChecks, createPool, migrateUp, pendingMigrations, type Pool } from "@dee/core";
+import { startEngine, startOpsServer, type OpsServer } from "@dee/worker";
+import { databaseUrl, ensureDatabase, findComposeDirectory, isProduction } from "../database.js";
 import { CliError } from "../errors.js";
 import type { CliIo } from "../io.js";
 import {
@@ -14,6 +14,18 @@ import {
 import { writeDevState } from "../config.js";
 import { startDevEnvironment } from "../dev-environment.js";
 import type { DatabaseHooks } from "./migrate.js";
+import {
+  COMPACTION_OPTIONS,
+  OPS_OPTIONS,
+  RUNTIME_OPTIONS,
+  createCliLogger,
+  createCliTracing,
+  flagOrEnv,
+  integerOption,
+  parseCompactionSettings,
+  parseOpsSettings,
+  parseRuntimeSettings,
+} from "./runtime-flags.js";
 import {
   parseCommand,
   stringFlag,
@@ -31,7 +43,10 @@ export interface ProcessHooks extends DatabaseHooks {
   readonly shutdown?: () => Promise<void>;
 }
 
-function untilSignal(): Promise<void> {
+/**
+ * Resolves on the first `SIGINT` or `SIGTERM` of the process.
+ */
+export function untilSignal(): Promise<void> {
   return new Promise((resolve) => {
     const done = (): void => {
       process.off("SIGINT", done);
@@ -43,7 +58,12 @@ function untilSignal(): Promise<void> {
   });
 }
 
-async function selectedModule(
+/**
+ * Loads and merges the workflow modules named by `--module` and `--example`.
+ * Without any, it loads the bundled examples when `defaultToExamples`, else
+ * fails with a usage error.
+ */
+export async function selectedModule(
   parsed: ParsedCommand,
   io: CliIo,
   defaultToExamples: boolean,
@@ -70,17 +90,42 @@ async function selectedModule(
   return mergeModules(modules);
 }
 
-async function openPool(parsed: ParsedCommand, io: CliIo, hooks: DatabaseHooks): Promise<Pool> {
+/**
+ * Settings of `openPool`: the pool size, and `allowCompose` (default true
+ * outside production) which lets the command start the compose postgres
+ * service when the database does not answer.
+ */
+export interface OpenPoolOptions {
+  readonly poolSize?: number | undefined;
+  readonly allowCompose?: boolean;
+}
+
+/**
+ * Makes sure the database answers and opens a pool on it. Docker compose is
+ * only an option when `NODE_ENV` is not `production` and the command allows
+ * it. The pool keeps its idle connections open, because a process that also
+ * decides workflows patches the timers an idle timeout would use.
+ */
+export async function openPool(
+  parsed: ParsedCommand,
+  io: CliIo,
+  hooks: DatabaseHooks,
+  options: OpenPoolOptions = {},
+): Promise<Pool> {
   const url = databaseUrl(stringFlag(parsed, "database-url"), io.env);
+  const composeAllowed = (options.allowCompose ?? true) && !isProduction(io.env);
   await ensureDatabase({
     url,
-    composeDirectory: findComposeDirectory(io.cwd),
+    composeDirectory: composeAllowed ? findComposeDirectory(io.cwd) : undefined,
+    composeAllowed,
     log: io.stderr,
     ...(hooks.databaseEffects === undefined ? {} : { effects: hooks.databaseEffects }),
   });
   return createPool(
     { DATABASE_URL: url },
     {
+      idleTimeoutMillis: 0,
+      ...(options.poolSize === undefined ? {} : { max: options.poolSize }),
       onError: (error) => {
         io.stderr(`database error: ${error.message}`);
       },
@@ -88,7 +133,10 @@ async function openPool(parsed: ParsedCommand, io: CliIo, hooks: DatabaseHooks):
   );
 }
 
-const MODULE_OPTIONS = {
+/**
+ * The options that choose the database and the workflow modules.
+ */
+export const MODULE_OPTIONS = {
   module: { type: "string", multiple: true },
   example: { type: "string", multiple: true },
   "database-url": { type: "string" },
@@ -160,9 +208,18 @@ export async function devCommand(
 
 /**
  * `wf worker [--module file]... [--example name]... [--queue name]
- * [--concurrency n]`: runs workflows and steps from the chosen modules
- * against the database, without an api. It runs until `SIGINT` or
- * `SIGTERM`, finishing the tasks it holds first.
+ * [--concurrency n] [--migrate] [--pool-size n] [--log-level l]
+ * [--log-format json|text] [--otlp-endpoint url] [--sampling-ratio r]
+ * [--health-port n] [--health-host h] [--metrics-token t]
+ * [--compact-interval s] [--compact-retention s] [--compact-tail-events n]
+ * [--compact-batch n]`: runs workflows and steps from the chosen modules
+ * against the database, without an api. With `--health-port` it serves
+ * `/health`, `/ready` and `/metrics` there. With `--compact-interval` it
+ * compacts runs that closed `--compact-retention` seconds ago (default one
+ * week) every that many seconds. It never starts docker compose when
+ * `NODE_ENV=production`, and refuses to run on a schema that is behind
+ * (`wf migrate up`, or `--migrate`). It runs until `SIGINT` or `SIGTERM`,
+ * finishing the tasks it holds first.
  */
 export async function workerCommand(
   args: readonly string[],
@@ -171,35 +228,90 @@ export async function workerCommand(
 ): Promise<number> {
   const parsed = parseCommand(args, {
     ...MODULE_OPTIONS,
+    ...RUNTIME_OPTIONS,
+    ...COMPACTION_OPTIONS,
+    ...OPS_OPTIONS,
     queue: { type: "string" },
     concurrency: { type: "string" },
+    migrate: { type: "boolean" },
   });
-  const concurrency = Number(stringFlag(parsed, "concurrency") ?? "4");
-  if (!Number.isInteger(concurrency) || concurrency <= 0) {
-    throw new CliError("--concurrency must be a positive integer", 2);
-  }
+  const settings = parseRuntimeSettings(parsed, io.env);
+  const concurrency = integerOption(parsed, "concurrency", io.env, 1, 10_000) ?? 4;
+  const compaction = parseCompactionSettings(parsed, io.env);
+  const ops = parseOpsSettings(parsed, io.env);
   const module = await selectedModule(parsed, io, false);
-  const pool = await openPool(parsed, io, hooks);
+  const logger = createCliLogger(settings, io, { service: "wf-worker" });
+  const pool = await openPool(parsed, io, hooks, { poolSize: settings.poolSize });
+  const tracing = createCliTracing(settings, "wf-worker");
   try {
-    const queue = stringFlag(parsed, "queue");
+    if (booleanFlag(parsed, "migrate")) {
+      await migrateUp(pool);
+    }
+    const pending = await pendingMigrations(pool);
+    if (pending.length > 0) {
+      throw new CliError(
+        `the schema is behind by ${String(pending.length)} migration(s): run \`wf migrate up\` or pass --migrate`,
+      );
+    }
+    const queue = flagOrEnv(parsed, "queue", io.env);
     const engine = startEngine({
       pool,
       workflows: module.workflows,
       steps: module.steps,
       concurrency,
       ...(queue === undefined ? {} : { queueName: queue }),
+      ...(tracing === undefined ? {} : { tracing: tracing.tracing }),
+      ...(compaction === undefined
+        ? {}
+        : {
+            compaction: {
+              intervalMs: compaction.intervalMs,
+              policy: compaction.policy,
+              ...(compaction.batchSize === undefined ? {} : { batchSize: compaction.batchSize }),
+            },
+          }),
       onError: (error) => {
-        io.stderr(`worker error: ${error instanceof Error ? error.message : String(error)}`);
+        logger.error("worker error", {
+          error: error instanceof Error ? error.message : String(error),
+        });
       },
     });
-    io.stdout(
-      `worker running ${String(module.workflows.length)} workflows and ${String(module.steps.length)} steps on queue ${engine.queueName}`,
-    );
+    let opsServer: OpsServer | undefined;
+    try {
+      if (ops !== undefined) {
+        opsServer = await startOpsServer({
+          health: createHealthChecks(pool),
+          metrics: engine.metrics,
+          port: ops.port,
+          host: ops.host,
+          ...(ops.metricsToken === undefined ? {} : { metricsToken: ops.metricsToken }),
+          onError: (error) => {
+            logger.error("ops server error", {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          },
+        });
+      }
+    } catch (error) {
+      await engine.stop();
+      throw error;
+    }
+    logger.info("worker running", {
+      workflows: module.workflows.length,
+      steps: module.steps.length,
+      queue: engine.queueName,
+      workerId: engine.workerId,
+      concurrency,
+      ...(opsServer === undefined ? {} : { opsPort: opsServer.port }),
+      compaction: compaction !== undefined,
+    });
     await (hooks.shutdown ?? untilSignal)();
-    io.stdout("stopping");
+    logger.info("stopping");
+    await opsServer?.stop();
     const stopped = await engine.stop();
     return stopped.dropped === 0 ? 0 : 1;
   } finally {
+    await tracing?.shutdown().catch(() => undefined);
     await pool.end();
   }
 }

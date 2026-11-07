@@ -176,3 +176,24 @@ export async function migrateDown(
   }
   return reverted;
 }
+
+/**
+ * The ids in `migrationsDir` that `schema_migrations` does not list yet,
+ * oldest first. A database that was never migrated has all of them pending.
+ * It takes no lock and changes nothing.
+ */
+export async function pendingMigrations(
+  pool: Pool,
+  migrationsDir: string = defaultMigrationsDir,
+): Promise<string[]> {
+  const migrations = await loadMigrations(migrationsDir);
+  const exists = await pool.query<{ present: string | null }>(
+    "select to_regclass('schema_migrations') as present",
+  );
+  if (exists.rows[0]?.present === null || exists.rows[0] === undefined) {
+    return migrations.map((migration) => migration.id);
+  }
+  const applied = await pool.query<{ id: string }>("select id from schema_migrations");
+  const done = new Set(applied.rows.map((row) => row.id));
+  return migrations.filter((migration) => !done.has(migration.id)).map((migration) => migration.id);
+}

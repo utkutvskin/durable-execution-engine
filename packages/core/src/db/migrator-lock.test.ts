@@ -4,7 +4,13 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createIsolatedSchema, type IsolatedSchema } from "./test-harness.js";
 import { createPool } from "./pool.js";
-import { loadMigrations, defaultMigrationsDir, migrateDown, migrateUp } from "./migrator.js";
+import {
+  loadMigrations,
+  defaultMigrationsDir,
+  migrateDown,
+  migrateUp,
+  pendingMigrations,
+} from "./migrator.js";
 
 describe("migration advisory lock", () => {
   let database: IsolatedSchema;
@@ -82,5 +88,17 @@ describe("migration advisory lock", () => {
     expect(reverted).toHaveLength(1);
     const rows = await database.pool.query("select id from schema_migrations");
     expect([total - 1, total]).toContain(rows.rowCount);
+  });
+
+  it("lists every migration as pending before the first migrateUp", async () => {
+    const total = (await loadMigrations(defaultMigrationsDir)).map((entry) => entry.id);
+    expect(await pendingMigrations(database.pool)).toEqual(total);
+  });
+
+  it("lists nothing as pending after migrateUp and the reverted one after migrateDown", async () => {
+    await migrateUp(database.pool);
+    expect(await pendingMigrations(database.pool)).toEqual([]);
+    const reverted = await migrateDown(database.pool, defaultMigrationsDir, 1);
+    expect(await pendingMigrations(database.pool)).toEqual(reverted);
   });
 });

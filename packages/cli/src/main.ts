@@ -3,6 +3,7 @@ import { processIo, type CliIo } from "./io.js";
 import { exampleCommand } from "./commands/example.js";
 import { migrateCommand, type DatabaseHooks } from "./commands/migrate.js";
 import { devCommand, workerCommand, type ProcessHooks } from "./commands/process.js";
+import { serveCommand } from "./commands/serve.js";
 import { runCommand, type RunHooks } from "./commands/run.js";
 
 /**
@@ -17,8 +18,9 @@ export const HELP_TEXT = `usage: wf <command> [options]
 
 commands:
   dev                     start postgres, api, web ui and a worker in one process
+  serve                   run the api and the web ui without a worker (production)
   worker                  run workflows and steps from modules against the database
-  migrate [up|down]       apply pending migrations or revert the last ones
+  migrate [up|down]       apply pending migrations or revert the last ones (down asks first, --yes skips)
   run start <type>        start a run (--input json, --idempotency-key k, --wait)
   run signal <id> <name>  send a signal (--payload json)
   run cancel <id>         request cancellation (--reason text)
@@ -26,6 +28,29 @@ commands:
   run list                list runs (--status s, --type t, --limit n)
   example <name|all>      run a bundled example end to end (payment-saga, etl-pipeline)
   help                    show this text
+
+serve and worker options (each also reads WF_<NAME>, for example WF_POOL_SIZE):
+  --pool-size n           database connections (default: the pg default of 10)
+  --log-level l           debug, info, warn or error (default: info)
+  --log-format f          json or text (default: json)
+  --otlp-endpoint url     export traces to this OTLP HTTP endpoint
+  --sampling-ratio r      share of new traces recorded, 0 to 1 (default: 1)
+  --migrate               apply pending migrations first (default: refuse when behind)
+serve only:
+  --port n --host h       listen address (default: 8080 on 0.0.0.0)
+  --namespace name        namespace of the api key (default: default); WF_API_KEY sets the key
+  --max-concurrent-runs n --max-pending-tasks n --rate-per-second n --burst n
+                          limits of the namespace
+  --max-queue-depth n     answer 503 to writes while the queue holds this many tasks
+  --metrics-token t       require this bearer token on /metrics
+  --metrics-cache-ms n    serve one rendered scrape for this long
+worker only:
+  --queue name --concurrency n
+  --health-port n         serve /health, /ready and /metrics on this port
+  --health-host h         address for the health port (default: 0.0.0.0)
+  --compact-interval s    compact closed runs every s seconds
+  --compact-retention s   age of a closed run before compaction (default: 604800)
+  --compact-tail-events n events kept per compacted run (default: 20)
 
 common options:
   --database-url url      postgres connection string (default: DATABASE_URL)
@@ -56,6 +81,8 @@ export async function main(
         return command === undefined ? 2 : 0;
       case "dev":
         return await devCommand(rest, io, hooks);
+      case "serve":
+        return await serveCommand(rest, io, hooks);
       case "worker":
         return await workerCommand(rest, io, hooks);
       case "migrate":
