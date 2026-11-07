@@ -75,10 +75,10 @@ The image runs the same `wf` command. It needs a database:
 
 ```sh
 docker compose up -d --wait postgres
-docker compose --profile engine up --build engine
+docker compose --profile engine up -d --build --wait api worker
 ```
 
-Or build and run it by hand with `docker build -t dee .` and `docker run -p 8080:8080 -e DATABASE_URL=... dee`. See `docs/DEPLOYMENT.md`.
+That runs a one-shot `migrate`, the API (`wf serve`) and a worker as separate services; `docker compose --profile engine up -d --scale worker=3 worker` adds workers. Or build and run it by hand with `docker build -t dee .` and `docker run -p 8080:8080 -e DATABASE_URL=... dee` (the default command is `serve`). See `docs/DEPLOYMENT.md`.
 
 ### Your own workflow
 

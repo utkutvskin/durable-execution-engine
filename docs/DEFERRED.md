@@ -28,15 +28,15 @@ The payment gateway and the warehouse of the examples are in memory, so the demo
 
 ## The image was not built and is not published (day 30)
 
-The Dockerfile and the compose `engine` profile were written in a session without a Docker daemon. The build steps were reproduced outside Docker (see ADR-0040), but `docker build` has not run, and the image is not pushed anywhere. The `docker` job in CI builds it and runs a smoke test against a Postgres service. To close this: read the first CI result of that job, then add a tag triggered workflow that pushes the image to a registry.
+The Dockerfile and the compose `engine` profile were written in a session without a Docker daemon. The build steps were reproduced outside Docker (see ADR-0040), but `docker build` has not run, and the image is not pushed anywhere. The `docker` job in CI builds it and, since day 39, runs the split services (two migrations together, an `api` container, two `worker` containers, the payment saga, a metrics check and the compose services); the day 39 session had a `docker compose config` check but no daemon either, so the first CI result of that job is the first time those steps run. To close this: read the first CI result of that job, then add a tag triggered workflow that pushes the image to a registry.
 
 ## The release object (day 30)
 
 `CHANGELOG.md` holds the release note. The annotated tag `v0.1.0` is on `origin`, on commit `67c63c9` (`chore(repo): license under apache-2.0`, ADR-0041); the owner pushed it, because the session git proxy rejects tag pushes from agent sessions. A GitHub release object is not created yet, and the session tools cannot create one. To close this: in GitHub, draft a release from the `v0.1.0` tag and paste the `0.1.0` section of `CHANGELOG.md`.
 
-## Production entry points of the cli (day 30)
+## Production entry points of the cli (day 30, mostly closed on day 39)
 
-`wf dev` is the only process that serves the API, and it does not switch on tracing, quotas or the history compactor; `wf worker` takes `--queue` and `--concurrency` but not pool size. There is no admin command for namespaces, keys and quotas. To close this: see "Next" in `docs/ROADMAP.md`.
+`wf serve` runs the API alone and `wf serve` and `wf worker` take pool size, log level and format, a tracing endpoint, quotas (serve), the compactor schedule and a health port (worker). What is still missing is an admin command for namespaces, keys and quotas: `wf serve` can register one key from `WF_API_KEY` and set the quotas of its namespace, nothing lists, rotates or revokes keys. To close this: see "Next" in `docs/ROADMAP.md`.
 
 ## The quick start was verified on a checkout, not in a clean container (day 30)
 
@@ -96,3 +96,11 @@ A task parked for a code or deployment error (`NonDeterminismError`, `VersionMis
 - `maskSensitiveFields` stays unwired; the documentation now says so. Masking in the UI and the API would change what operators can debug.
 - The UI cancel and requeue confirmations use the browser `confirm` dialog, which a page cannot style and a test must answer.
 - `wf worker` can still spawn `docker compose` in production, and `migrateUp` still takes no lock (review items 1 and 2; day 39).
+
+## Metrics of a worker are scraped one by one (day 39)
+
+`dee_task_latency_seconds` and `dee_leases_reclaimed_total` live in the memory of the process that observed them, so the API process shows neither and a fleet needs every worker scraped and summed. A shared place for them (a table the workers flush into, or a push gateway) would make one scrape complete. The API's failed authentication throttle and rate limit are also per process (ADR-0048, ADR-0033).
+
+## Sticky claims cost a write per decision (day 39)
+
+A worker refreshes its claim on a run after every decision that leaves the run open (`run_stickiness` upsert) and deletes it when the run closes. That is one statement per workflow task. The claim is not checked against the cache: a worker whose cache evicted the run still holds the claim until it expires (60 seconds by default) and the other workers wait for it. Releasing the claim on eviction, and measuring the write against the replay it saves, are open.

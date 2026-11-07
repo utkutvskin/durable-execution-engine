@@ -85,6 +85,17 @@ Reviewed and left alone: the history read and the sequence check are index looku
 
 The worker takes every free slot on each poll, so its dequeue batch size is its concurrency. Over 1 to 4 workers, 4 to 32 tasks in flight each and pools of 10 to 64 connections on this machine, the end-to-end throughput stayed between 580 and 760 steps per second with no setting clearly ahead: the benchmark process is limited by the statements it issues (the profile above), and a larger pool or more concurrency only adds waiting. The defaults stay: the pool of the benchmark is 20 for 16 tasks in flight, which leaves headroom for the heartbeat, the starters and the projection refresh. With the database on another host the balance changes, since a task waiting on a round trip leaves its connection idle; raise concurrency before the pool size, and keep the pool at least as large as the tasks in flight plus a few.
 
+## Sticky routing with three workers
+
+`pnpm run bench:sticky` starts three `startEngine` instances on one fresh schema, runs 60 workflows of 4 sequential steps through them and counts, per decision, whether it advanced a cached live session or replayed the history from the top. The first decision of a run cannot hit the cache, so the hit rate is taken over the decisions after it (`BENCH_ENGINES`, `BENCH_RUNS` and `BENCH_STICKY=off` change the setup).
+
+| Sticky routing | Engines | Decisions after the first | Cache hits | Hit rate |
+| -------------- | ------: | ------------------------: | ---------: | -------: |
+| on             |       3 |                       240 |        240 |  100.0 % |
+| off            |       3 |                       240 |        139 |   57.9 % |
+
+With routing on, an engine claims a run after every decision that leaves it open and the other engines skip that run's workflow tasks; the decisions were still shared between the engines (110, 95 and 95). With routing off, a run's tasks land on any engine and a hit needs the same engine twice in a row. The test `sticky-bench.integration.test.ts` asserts a hit rate above 80 percent with routing on and below 85 percent with routing off. The figures come from one run on the machine of the other tables; the "off" figure varies from run to run.
+
 ## What to try next
 
 - `recordStepResult` reads the current sequence twice (once itself, once inside `appendEventsOnClient`). A variant that appends at the tail in one call saves one statement per step, about 5% of the statements of a run.

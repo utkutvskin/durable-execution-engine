@@ -4,7 +4,7 @@ Metrics, logs and health probes. Traces are in `docs/TRACING.md`.
 
 ## Endpoints
 
-`createApiHandler` serves three public `GET` endpoints that need no api key:
+`createApiHandler` serves three public `GET` endpoints that need no api key. `startOpsServer` (`wf worker --health-port`) serves the same three on a worker, and `/metrics` there can require a bearer token:
 
 | Endpoint   | Answer                                                                                   |
 | ---------- | ---------------------------------------------------------------------------------------- |
@@ -29,10 +29,12 @@ All eight are registered by `createEngineMetrics(pool)`. The gauges and the two 
 | `dee_tasks_quarantined`      | gauge     | Poison tasks parked by the janitor, by `queue`.                                           |
 | `dee_leases_reclaimed_total` | counter   | Leases the janitor took back in this process (needs the `recovery` option).               |
 
-Feed the histogram from a worker:
+`startEngine` feeds the histogram and the reclaim count for you: it creates the `EngineMetrics` of the process, records every settled task in `dee_task_latency_seconds` and passes its janitor's counters in as `recovery`. Read them from `engine.metrics`. The queues of the engine always have a `dee_queue_depth` and a `dee_tasks_quarantined` series, `0` when nothing waits. `wf worker --health-port <port>` serves `/health`, `/ready` and `/metrics` from `engine.metrics`, so scrape every worker and the API: the latency histogram and the reclaim count are per worker process, and the API process has neither.
+
+If you build the worker yourself, feed the histogram from `onTaskSettled`:
 
 ```ts
-const metrics = createEngineMetrics(pool, { recovery });
+const metrics = createEngineMetrics(pool, { recovery, queues: [queueName] });
 createWorker({
   queue,
   queueName,
@@ -42,7 +44,7 @@ createWorker({
 });
 ```
 
-Because a worker process is not the API process, expose its registry with `metrics.render()` on a port of its own, or pass the same `EngineMetrics` to `createApiHandler` in a single-process setup.
+A worker process is not the API process: serve its registry with `startOpsServer({ health, metrics, port })` from `@dee/worker`, or pass the same `EngineMetrics` to `createApiHandler` in a single-process setup.
 
 ## Logs
 
