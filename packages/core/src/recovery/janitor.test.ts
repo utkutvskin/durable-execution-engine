@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
+import {
+  createIsolatedDatabase,
+  createIsolatedSchema,
+  type IsolatedSchema,
+} from "../db/test-harness.js";
 import { createTaskQueue } from "../queue/task-queue.js";
 import { createJanitor } from "./janitor.js";
 import { createRecoveryMetrics } from "./metrics.js";
@@ -288,6 +292,41 @@ describe("janitor", () => {
       stalledRunsRecovered: 1,
       sweeps: 1,
     });
+  });
+
+  it("recovers stalled runs while another schema of the database holds its own recovery lock", async () => {
+    const other = await createIsolatedSchema();
+    const holder = await other.pool.connect();
+    try {
+      await holder.query("begin");
+      await holder.query("select pg_advisory_xact_lock(7201201)");
+      const clock = movableClock();
+      const janitor = createJanitor(database.pool, { clock });
+      const lostRun = await createRun(START);
+      clock.advance(60_000);
+      const recovered = await janitor.recoverStalledRuns({ graceMs: 30_000, queueName: "q" });
+      expect(recovered.map((run) => run.runId)).toEqual([lostRun]);
+    } finally {
+      await holder.query("rollback");
+      holder.release();
+      await other.close();
+    }
+  });
+
+  it("recovers nothing while another recovery of the same schema holds the lock", async () => {
+    const holder = await database.pool.connect();
+    try {
+      await holder.query("begin");
+      await holder.query("select pg_advisory_xact_lock(hashtext(current_schema()), 7201201)");
+      const clock = movableClock();
+      const janitor = createJanitor(database.pool, { clock });
+      await createRun(START);
+      clock.advance(60_000);
+      expect(await janitor.recoverStalledRuns({ graceMs: 30_000, queueName: "q" })).toEqual([]);
+    } finally {
+      await holder.query("rollback");
+      holder.release();
+    }
   });
 
   it("rejects a negative grace period", async () => {

@@ -296,7 +296,7 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
     try {
       await client.query("begin");
       const lock = await client.query<{ locked: boolean }>(
-        "select pg_try_advisory_xact_lock($1) as locked",
+        "select pg_try_advisory_xact_lock(hashtext(current_schema()), $1) as locked",
         [STALLED_RUNS_LOCK_KEY],
       );
       if (lock.rows[0]?.locked !== true) {
