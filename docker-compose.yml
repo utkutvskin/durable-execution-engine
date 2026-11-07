@@ -25,17 +25,65 @@ services:
       - "${JAEGER_UI_PORT:-16686}:16686"
       - "${JAEGER_OTLP_HTTP_PORT:-4318}:4318"
 
-  engine:
+  migrate:
     profiles: ["engine"]
     build: .
-    restart: unless-stopped
+    image: dee-engine:local
+    command: ["migrate", "up"]
+    restart: "no"
     depends_on:
       postgres:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-dee}:${POSTGRES_PASSWORD:-dee}@postgres:5432/${POSTGRES_DB:-dee}
+
+  api:
+    profiles: ["engine"]
+    build: .
+    image: dee-engine:local
+    command: ["serve"]
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-dee}:${POSTGRES_PASSWORD:-dee}@postgres:5432/${POSTGRES_DB:-dee}
+      WF_API_KEY: ${WF_API_KEY:-}
+      WF_OTLP_ENDPOINT: ${WF_OTLP_ENDPOINT:-}
     ports:
       - "${ENGINE_PORT:-8080}:8080"
+
+  worker:
+    profiles: ["engine"]
+    build: .
+    image: dee-engine:local
+    command:
+      - worker
+      - --example
+      - payment-saga
+      - --example
+      - etl-pipeline
+      - --health-port
+      - "9100"
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-dee}:${POSTGRES_PASSWORD:-dee}@postgres:5432/${POSTGRES_DB:-dee}
+      WF_OTLP_ENDPOINT: ${WF_OTLP_ENDPOINT:-}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:9100/ready').then((r)=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
 
 volumes:
   dee-postgres-data:

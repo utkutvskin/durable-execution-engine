@@ -33,7 +33,7 @@ describe(".github/workflows/ci.yml", () => {
   it("waits for /ready in the docker job and prints diagnostics when it never answers", () => {
     const dockerJob = ciSource.slice(ciSource.indexOf("  docker:"));
     expect(dockerJob).toMatch(/curl -fsS http:\/\/127\.0\.0\.1:8080\/ready/);
-    expect(dockerJob).toContain("docker logs engine");
+    expect(dockerJob).toContain('docker logs "$name"');
     expect(dockerJob).toContain("exit 1");
     expect(dockerJob).toContain("if: failure()");
   });

@@ -4,7 +4,7 @@
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
-  "description": "Developer cli: wf dev, wf worker, wf run and wf migrate commands.",
+  "description": "Command line: wf dev, wf serve, wf worker, wf run and wf migrate commands.",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "bin": {

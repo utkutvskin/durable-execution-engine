@@ -104,31 +104,77 @@ jobs:
 
       - run: docker build -t dee:ci .
 
-      - name: start the image and run a workflow through it
+      - name: apply the migrations with two processes started together
         run: |
-          docker run -d --name engine --network host \
-            -e DATABASE_URL=postgres://dee:dee@localhost:5432/dee dee:ci
+          docker run --rm --network host -e DATABASE_URL=postgres://dee:dee@localhost:5432/dee dee:ci migrate up > migrate-1.log 2>&1 &
+          first=$!
+          docker run --rm --network host -e DATABASE_URL=postgres://dee:dee@localhost:5432/dee dee:ci migrate up > migrate-2.log 2>&1 &
+          second=$!
+          wait "$first" || { cat migrate-1.log; exit 1; }
+          wait "$second" || { cat migrate-2.log; exit 1; }
+          cat migrate-1.log migrate-2.log
+
+      - name: start the api and two workers as separate containers
+        run: |
+          docker run -d --name api --network host \
+            -e DATABASE_URL=postgres://dee:dee@localhost:5432/dee \
+            -e WF_API_KEY=dee_ci-api-key-0000000000001 dee:ci
+          for port in 9101 9102; do
+            docker run -d --name "worker-$port" --network host \
+              -e DATABASE_URL=postgres://dee:dee@localhost:5432/dee \
+              dee:ci worker --example payment-saga --example etl-pipeline \
+              --health-port "$port" --health-host 127.0.0.1
+          done
           ready=false
           for attempt in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:8080/ready >/dev/null 2>&1; then ready=true; break; fi
+            if curl -fsS http://127.0.0.1:8080/ready >/dev/null 2>&1 \
+              && curl -fsS http://127.0.0.1:9101/ready >/dev/null 2>&1 \
+              && curl -fsS http://127.0.0.1:9102/ready >/dev/null 2>&1; then ready=true; break; fi
             sleep 1
           done
           if [ "$ready" != true ]; then
-            echo "::error::the image did not become ready within 60 seconds"
-            echo "--- /ready response"
-            curl -sS -i http://127.0.0.1:8080/ready || true
-            echo "--- docker logs"
-            docker logs engine 2>&1 || true
+            echo "::error::the services did not become ready within 60 seconds"
+            for name in api worker-9101 worker-9102; do echo "--- $name"; docker logs "$name" 2>&1 || true; done
             exit 1
           fi
-          key=$(docker logs engine 2>&1 | sed -n 's/^namespace default, api key //p')
-          docker exec -e WF_API_URL=http://127.0.0.1:8080 -e WF_API_KEY="$key" engine \
-            node packages/cli/bin/wf.js run start payment-saga \
-            --input '{"orderId":"o-1","customerId":"c-1","amountCents":4999}' --wait
-          docker logs engine
 
-      - name: show the image logs after a failure
+      - name: run the payment saga through the split services
+        run: |
+          for customer in c-1 c-2 customer-flaky; do
+            docker exec -e WF_API_URL=http://127.0.0.1:8080 -e WF_API_KEY=dee_ci-api-key-0000000000001 api \
+              node packages/cli/bin/wf.js run start payment-saga \
+              --input "{\"orderId\":\"o-$customer\",\"customerId\":\"$customer\",\"amountCents\":4999}" --wait
+          done
+
+      - name: check that every engine metric has a series
+        run: |
+          scrape=$(curl -fsS http://127.0.0.1:8080/metrics; curl -fsS http://127.0.0.1:9101/metrics; curl -fsS http://127.0.0.1:9102/metrics)
+          for metric in dee_queue_depth dee_task_latency_seconds_count dee_step_retries_total \
+            dee_timer_lag_seconds dee_active_workers dee_runs dee_tasks_quarantined dee_leases_reclaimed_total; do
+            if ! printf '%s\n' "$scrape" | grep -q "^$metric[ {]"; then
+              echo "::error::no series for $metric"
+              exit 1
+            fi
+          done
+
+      - name: show the container logs after a failure
         if: failure()
         run: |
+          for name in api worker-9101 worker-9102; do echo "--- $name"; docker logs "$name" 2>&1 || true; done
           curl -sS -i http://127.0.0.1:8080/ready || true
-          docker logs engine 2>&1 || true
+
+      - name: bring up the compose services and run a workflow through them
+        env:
+          POSTGRES_PORT: 5433
+          ENGINE_PORT: 8081
+          WF_API_KEY: dee_ci-compose-key-000000000001
+        run: |
+          docker rm -f api worker-9101 worker-9102
+          docker compose --profile engine up -d --build --wait api worker
+          docker compose exec -T -e WF_API_URL=http://127.0.0.1:8080 api \
+            node packages/cli/bin/wf.js run start payment-saga \
+            --input '{"orderId":"compose-1","customerId":"c-1","amountCents":1200}' --wait
+
+      - name: show the compose logs after a failure
+        if: failure()
+        run: docker compose --profile engine logs --no-color || true

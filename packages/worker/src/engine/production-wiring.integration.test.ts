@@ -82,19 +82,23 @@ describe("engine production wiring against postgres", () => {
     return result.rows.map((row) => row.worker_id);
   }
 
+  async function latencyCount(engine: Engine): Promise<number> {
+    const parsed = parsePrometheusText(await engine.metrics.render());
+    return parsed.samples
+      .filter((sample) => sample.name === "dee_task_latency_seconds_count")
+      .reduce((sum, sample) => sum + sample.value, 0);
+  }
+
   it("fills dee_task_latency_seconds from the tasks the worker settles", async () => {
     const engine = boot();
     const started = await service.startRun(namespaceId, { workflowType: "quick" });
     await waitFor(async () => (await statusOf(started.run.runId)) === "COMPLETED");
-    await waitFor(async () => {
-      const parsed = parsePrometheusText(await engine.metrics.render());
-      return parsed.samples.some((sample) => sample.name === "dee_task_latency_seconds_count");
-    });
+    await waitFor(async () => (await latencyCount(engine)) >= 3);
     const parsed = parsePrometheusText(await engine.metrics.render());
-    const count = parsed.samples
+    const outcomes = parsed.samples
       .filter((sample) => sample.name === "dee_task_latency_seconds_count")
-      .reduce((sum, sample) => sum + sample.value, 0);
-    expect(count).toBeGreaterThanOrEqual(3);
+      .map((sample) => sample.labels["outcome"]);
+    expect(outcomes).toContain("completed");
   });
 
   it("fills dee_leases_reclaimed_total from the janitor of the engine", async () => {

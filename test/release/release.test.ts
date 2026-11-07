@@ -83,7 +83,10 @@ describe("release 0.1.0", () => {
 
   it("offers the image through a compose profile that waits for a healthy database", () => {
     const compose = read("docker-compose.yml");
-    expect(compose).toMatch(/^ {2}engine:$/m);
+    expect(compose).toMatch(/^ {2}migrate:$/m);
+    expect(compose).toMatch(/^ {2}api:$/m);
+    expect(compose).toMatch(/^ {2}worker:$/m);
+    expect(compose).toContain("condition: service_completed_successfully");
     expect(compose).toContain("build: .");
     expect(compose).toContain("condition: service_healthy");
   });
