@@ -38,6 +38,9 @@ if (process.env["DEE_CHAOS_RUNTIME"] === "engine") {
         await new Promise<void>(() => undefined);
       }
     },
+  };
+  const flow = createEngineFlow(hooks);
+  startEngine({
     onDecision: (decision) => {
       const point = decision.outcome === "completed" ? "after-finish" : "after-record";
       announce(point);
@@ -45,10 +48,6 @@ if (process.env["DEE_CHAOS_RUNTIME"] === "engine") {
         freeze();
       }
     },
-  };
-  const flow = createEngineFlow(hooks);
-  startEngine({
-    onDecision: hooks.onDecision,
     pool,
     queueName: requireEnv("DEE_CHAOS_QUEUE"),
     workflows: flow.workflows,
