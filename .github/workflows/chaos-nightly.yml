@@ -1,0 +1,50 @@
+name: chaos-nightly
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  chaos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dee
+          POSTGRES_PASSWORD: dee
+          POSTGRES_DB: dee
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dee -d dee"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgres://dee:dee@localhost:5432/dee
+      DEE_CHAOS_REPETITIONS: 30
+      DEE_CHAOS_REPORT: chaos-report.md
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: run the chaos suite against the recorder and the engine runtime
+        run: pnpm exec vitest run packages/worker/src/chaos/chaos-suite.integration.test.ts
+
+      - name: keep the report in the job summary
+        if: always()
+        run: |
+          if [ -f chaos-report.md ]; then cat chaos-report.md >> "$GITHUB_STEP_SUMMARY"; fi

@@ -12,6 +12,7 @@ export interface ChaosChildOptions {
   readonly queueName: string;
   readonly crashPoint?: CrashPoint;
   readonly version?: string;
+  readonly runtime?: "recorder" | "engine";
 }
 
 /**
@@ -29,7 +30,7 @@ const registerPath = fileURLToPath(new URL("./register.ts", import.meta.url));
 const childPath = fileURLToPath(new URL("./child-worker.ts", import.meta.url));
 
 /**
- * Starts the sample flow's worker as a separate Node process running the
+ * Starts the worker of the sample flow, or the engine runtime running it, as a separate Node process running the
  * workspace's TypeScript sources. The process inherits `DATABASE_URL` and the
  * `POSTGRES_*` variables of the caller.
  */
@@ -40,6 +41,7 @@ export function spawnChaosChild(options: ChaosChildOptions): ChaosChild {
       DEE_CHAOS_SCHEMA: options.schema,
       DEE_CHAOS_QUEUE: options.queueName,
       DEE_CHAOS_VERSION: options.version ?? "0.0.0",
+      DEE_CHAOS_RUNTIME: options.runtime ?? "recorder",
       ...(options.crashPoint === undefined ? {} : { DEE_CHAOS_CRASH_POINT: options.crashPoint }),
     },
     stdio: ["ignore", "pipe", "pipe"],

@@ -4,8 +4,8 @@ import { renderChaosReport } from "./report.js";
 import { SCENARIOS, runRepetition, type RepetitionResult } from "./scenarios.js";
 import { createChaosWorld, type ChaosWorld } from "./world.js";
 
-const REPETITIONS = 10;
-const SCENARIO_TIMEOUT_MS = 240_000;
+const REPETITIONS = Number(process.env["DEE_CHAOS_REPETITIONS"] ?? 10);
+const SCENARIO_TIMEOUT_MS = 900_000;
 
 describe("chaos suite", () => {
   const results: RepetitionResult[] = [];
@@ -23,9 +23,9 @@ describe("chaos suite", () => {
     await world.database.close();
   });
 
-  it.each(SCENARIOS.map((scenario) => [scenario.name, scenario] as const))(
-    "%s: ten repetitions break no invariant",
-    async (_name, scenario) => {
+  it.each(SCENARIOS.map((scenario) => [scenario.name, scenario.runtime, scenario] as const))(
+    "%s on the %s runtime: every repetition breaks no invariant",
+    async (_name, _runtime, scenario) => {
       const own: RepetitionResult[] = [];
       for (let repetition = 0; repetition < REPETITIONS; repetition += 1) {
         own.push(await runRepetition(scenario, world, repetition));
@@ -34,7 +34,7 @@ describe("chaos suite", () => {
       const violations = own.flatMap((result) =>
         result.violations.map(
           (violation) =>
-            `${scenario.name}#${String(result.repetition)} seed ${String(result.seed)} ${violation.check}: ${violation.detail}`,
+            `${scenario.runtime}:${scenario.name}#${String(result.repetition)} seed ${String(result.seed)} ${violation.check}: ${violation.detail}`,
         ),
       );
       expect(violations).toEqual([]);

@@ -2,9 +2,14 @@ import { describe, expect, it } from "vitest";
 import { renderChaosReport } from "./report.js";
 import { SCENARIOS, type RepetitionResult } from "./scenarios.js";
 
-function result(scenario: RepetitionResult["scenario"], repetition: number): RepetitionResult {
+function result(
+  scenario: RepetitionResult["scenario"],
+  repetition: number,
+  runtime: RepetitionResult["runtime"] = "recorder",
+): RepetitionResult {
   return {
     scenario,
+    runtime,
     repetition,
     seed: 1000 + repetition,
     durationMs: 10 + repetition,
@@ -19,12 +24,14 @@ function result(scenario: RepetitionResult["scenario"], repetition: number): Rep
 
 describe("chaos report", () => {
   const clean = SCENARIOS.flatMap((scenario) =>
-    Array.from({ length: 3 }, (_, repetition) => result(scenario.name, repetition)),
+    Array.from({ length: 3 }, (_, repetition) =>
+      result(scenario.name, repetition, scenario.runtime),
+    ),
   );
 
   it("states the totals and says no violation was found", () => {
     const text = renderChaosReport(SCENARIOS, clean);
-    expect(text).toContain("18 repetitions across 6 scenarios, 0 invariant violations.");
+    expect(text).toContain("51 repetitions across 17 scenario runs, 0 invariant violations.");
     expect(text).toContain("## Violations\n\nNone.");
   });
 
@@ -40,7 +47,7 @@ describe("chaos report", () => {
       violations: [{ check: "task-not-lost", runId: "run-1", detail: "task | gone" }],
     };
     const text = renderChaosReport(SCENARIOS, [...clean, broken]);
-    expect(text).toContain("19 repetitions across 6 scenarios, 1 invariant violations.");
+    expect(text).toContain("52 repetitions across 17 scenario runs, 1 invariant violations.");
     expect(text).toContain("| slow-disk | 4 | 1004 | task-not-lost | run-1 | task \\| gone |");
   });
 

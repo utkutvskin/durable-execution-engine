@@ -178,7 +178,7 @@ export interface WorkerGroupOptions {
   readonly visibilityTimeoutMs: number;
   readonly heartbeatIntervalMs: number;
   readonly clock?: ClockSource;
-  readonly onCheckpoint?: Parameters<typeof createFlowHandler>[0]["onCheckpoint"];
+  readonly onCheckpoint?: () => Promise<void>;
 }
 
 /**
@@ -285,10 +285,14 @@ export async function verifyWorkload(
       detail: "not every run reached a terminal state before the deadline",
     });
   }
-  const rows = await world.database.pool.query<{ id: string; status: string; result: unknown }>(
-    "select id, status, result from workflow_runs where id = any($1::uuid[])",
-    [[...workload.runIds]],
-  );
+  const rows = await world.database.pool.query<{
+    id: string;
+    status: string;
+    result: unknown;
+    error: unknown;
+  }>("select id, status, result, error from workflow_runs where id = any($1::uuid[])", [
+    [...workload.runIds],
+  ]);
   for (const row of rows.rows) {
     const expected = workload.expectedResults.get(row.id);
     if (row.status === "RUNNING") {
@@ -298,7 +302,7 @@ export async function verifyWorkload(
       violations.push({
         check: "workload-result",
         runId: row.id,
-        detail: `run ended ${row.status} with result ${JSON.stringify(row.result)}, expected COMPLETED with ${String(expected)}`,
+        detail: `run ended ${row.status} with result ${JSON.stringify(row.result)} and error ${JSON.stringify(row.error)}, expected COMPLETED with ${String(expected)}`,
       });
     }
   }

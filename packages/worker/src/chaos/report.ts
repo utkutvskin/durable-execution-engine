@@ -18,6 +18,10 @@ const WORKLOAD_CHECKS: readonly (readonly [string, string])[] = [
   ["workload-converged", "Every run reached a terminal state before the deadline."],
   ["workload-result", "Every run completed with the result its inputs determine."],
   ["ack-accepted-once", "A task that was delivered several times accepted one ack."],
+  ["queue-isolation", "A task sits on the queue of its run."],
+  ["waiting-marker", "A run parked on a signal carries the waiting marker."],
+  ["waiting-not-stalled", "The checker counts runs parked on a signal as waiting, not as stalled."],
+  ["waiting-run-left-alone", "The janitor creates no task for a run that waits on a signal."],
   ["fault-injected", "The repetition really injected a fault."],
   ["scenario-error", "The harness itself did not fail."],
 ];
@@ -26,8 +30,17 @@ function sum(values: readonly number[]): number {
   return values.reduce((total, value) => total + value, 0);
 }
 
-function forScenario(results: readonly RepetitionResult[], name: string): RepetitionResult[] {
-  return results.filter((result) => result.scenario === name);
+function forScenario(
+  results: readonly RepetitionResult[],
+  scenario: ChaosScenario,
+): RepetitionResult[] {
+  return results.filter(
+    (result) => result.scenario === scenario.name && result.runtime === scenario.runtime,
+  );
+}
+
+function label(scenario: ChaosScenario): string {
+  return scenario.runtime === "engine" ? `${scenario.title} (engine)` : scenario.title;
 }
 
 function escapeCell(text: string): string {
@@ -61,15 +74,15 @@ export function renderChaosReport(
     "",
     "## Result",
     "",
-    `${String(results.length)} repetitions across ${String(scenarios.length)} scenarios, ${String(violations.length)} invariant violations.`,
+    `${String(results.length)} repetitions across ${String(scenarios.length)} scenario runs, ${String(violations.length)} invariant violations.`,
     "",
     "| Scenario | Repetitions | Runs | Faults injected | Task redeliveries | Errors survived | Violations | Slowest repetition |",
     "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
   ];
   for (const scenario of scenarios) {
-    const own = forScenario(results, scenario.name);
+    const own = forScenario(results, scenario);
     lines.push(
-      `| ${scenario.title} | ${String(own.length)} | ${String(sum(own.map((entry) => entry.runs)))} | ${String(sum(own.map((entry) => entry.faults)))} | ${String(sum(own.map((entry) => entry.redeliveries)))} | ${String(sum(own.map((entry) => entry.survivedErrors)))} | ${String(sum(own.map((entry) => entry.violations.length)))} | ${String(Math.max(0, ...own.map((entry) => entry.durationMs)))} ms |`,
+      `| ${label(scenario)} | ${String(own.length)} | ${String(sum(own.map((entry) => entry.runs)))} | ${String(sum(own.map((entry) => entry.faults)))} | ${String(sum(own.map((entry) => entry.redeliveries)))} | ${String(sum(own.map((entry) => entry.survivedErrors)))} | ${String(sum(own.map((entry) => entry.violations.length)))} | ${String(Math.max(0, ...own.map((entry) => entry.durationMs)))} ms |`,
     );
   }
   lines.push("", "## Invariants", "");
@@ -82,10 +95,10 @@ export function renderChaosReport(
   }
   lines.push("", "## Scenarios", "");
   for (const scenario of scenarios) {
-    const own = forScenario(results, scenario.name);
+    const own = forScenario(results, scenario);
     const seeds = own.map((entry) => entry.seed);
     lines.push(
-      `### ${scenario.title}`,
+      `### ${label(scenario)}`,
       "",
       scenario.injection,
       "",
@@ -114,7 +127,8 @@ export function renderChaosReport(
     "## Limits",
     "",
     "- Zero violations over ten repetitions is evidence, not proof. The workloads are small (the sample flow and a timer flow) and the fault points are the ones the harness knows about.",
-    "- The invariant checker treats a running run with nothing to wait for as stalled, so the suite cannot park runs on signals.",
+    "- A run that carries the waiting marker is reported as waiting, never as stalled, so the checker cannot tell a signal that will never come from one that is late; the signal-wait scenario sends every signal itself.",
+    "- The engine runtime scenarios use workflows with one step, one sleep or one signal wait. Child workflows, continue-as-new and compaction are not part of the chaos workloads.",
     "- Slow disk and network latency are simulated in front of Postgres, not inside it. A real fsync stall, a full disk or a restarted server are not covered.",
     "- Timings depend on the machine; the faults are seeded, the interleaving of the operating system scheduler is not.",
     "",
