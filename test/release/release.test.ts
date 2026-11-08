@@ -44,7 +44,7 @@ const DOCUMENTS = [
   "docs/EXAMPLES.md",
 ];
 
-describe("release 0.1.0", () => {
+describe("release 0.1.1", () => {
   it("gives every workspace package the version of the latest changelog entry", () => {
     const version = latestChangelogVersion();
     const versions = workspaceManifests().map((manifest) => ({
@@ -53,10 +53,13 @@ describe("release 0.1.0", () => {
     }));
     expect(versions.length).toBeGreaterThanOrEqual(8);
     expect(versions.filter((entry) => entry.version !== version)).toEqual([]);
-    expect(version).toBe("0.1.0");
+    expect(version).toBe("0.1.1");
   });
 
   it("links the changelog entry to the release tag", () => {
+    expect(read("CHANGELOG.md")).toContain(
+      "[0.1.1]: https://github.com/utkutvskin/durable-execution-engine/releases/tag/v0.1.1",
+    );
     expect(read("CHANGELOG.md")).toContain(
       "[0.1.0]: https://github.com/utkutvskin/durable-execution-engine/releases/tag/v0.1.0",
     );

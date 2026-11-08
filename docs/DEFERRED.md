@@ -104,3 +104,19 @@ A task parked for a code or deployment error (`NonDeterminismError`, `VersionMis
 ## Sticky claims cost a write per decision (day 39)
 
 A worker refreshes its claim on a run after every decision that leaves the run open (`run_stickiness` upsert) and deletes it when the run closes. That is one statement per workflow task. The claim is not checked against the cache: a worker whose cache evicted the run still holds the claim until it expires (60 seconds by default) and the other workers wait for it. Releasing the claim on eviction, and measuring the write against the replay it saves, are open.
+
+## The v0.1.1 tag (day 40)
+
+The session could not push the annotated tag `v0.1.1`, so it is not on `origin`. `CHANGELOG.md` holds the release note. To publish it, from a clone of the repository with the commit of `chore(release): v0.1.1` checked out on `main`:
+
+```sh
+git checkout main && git pull --ff-only
+git tag -a v0.1.1 -m "v0.1.1" "$(git log --format=%H --grep='^chore(release): v0.1.1' -n 1)"
+git push origin v0.1.1
+```
+
+The commit hash is also written in `STATE.md`, day 40.
+
+## Chaos limits (day 40)
+
+The engine scenarios inject faults through checkpoints of the step handler, moved clocks, proxies and a frozen process; they do not kill a process at an arbitrary instruction. The workloads use one step, one sleep or one signal wait, so child workflows, continue-as-new and compaction are not under chaos. A run that carries the waiting marker is never reported as stalled, so the checker cannot tell a signal that never arrives from one that is late. The nightly workflow is in `.github/workflows/chaos-nightly.yml`; its first scheduled run happens on `main` after the push, and a manual run can be started with `workflow_dispatch`.
