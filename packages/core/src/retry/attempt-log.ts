@@ -25,7 +25,8 @@ export interface AttemptLog {
   /**
    * Stores the failed attempt and appends a `step_attempt_failed` event in
    * one transaction. Returns false and writes nothing when this attempt
-   * number was already recorded.
+   * number was already recorded, when the step already has its terminal
+   * result, or when the run is no longer `RUNNING`.
    */
   recordFailure(input: RecordAttemptFailureInput): Promise<boolean>;
 
@@ -54,7 +55,18 @@ export function createAttemptLog(pool: Pool, codec: Codec = jsonCodec): AttemptL
       let broken = false;
       try {
         await client.query("begin");
-        await client.query("select 1 from workflow_runs where id = $1 for update", [input.runId]);
+        const locked = await client.query<{ status: string }>(
+          "select status from workflow_runs where id = $1 for update",
+          [input.runId],
+        );
+        const settled = await client.query(
+          "select 1 from step_results where run_id = $1 and step_id = $2",
+          [input.runId, input.stepId],
+        );
+        if (locked.rows[0]?.status !== "RUNNING" || (settled.rowCount ?? 0) > 0) {
+          await client.query("commit");
+          return false;
+        }
         const inserted = await client.query(
           `insert into step_attempts (run_id, step_id, attempt, error, retry_at)
            values ($1, $2, $3, $4::jsonb, $5)
