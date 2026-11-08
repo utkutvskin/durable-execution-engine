@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 40: chaos on the engine runtime and v0.1.1
+
+- **Status:** DONE
+- **Completed day:** 40
+- **Files added or changed:** `packages/core/src/invariants/invariant-checker.ts` (+ test: `waitingRuns`, a marked run is not stalled), `retry/attempt-log.ts` (new `attempt-log.test.ts`), `retry/step-task-processor.ts` (+ test), `packages/worker/src/chaos/engine-kit.ts` (new), `scenarios.ts` (runtime, five new scenarios), `world.ts`, `child-worker.ts`, `process-harness.ts`, `report.ts`, `report.test.ts`, `chaos-suite.integration.test.ts` (`DEE_CHAOS_REPETITIONS`), `.github/workflows/chaos-nightly.yml`, `test/tooling/chaos-workflow.test.ts`, `test/release/release.test.ts`, `docs/CHAOS_REPORT.md`, `CHANGELOG.md`, `docs/DECISIONS.md` (ADR-0050), `docs/DEFERRED.md`, version 0.1.1 in every `package.json`
+- **Technical decisions:** ADR-0050 in `docs/DECISIONS.md`. No new dependency, no migration.
+- **BLOCKER:** -
+- **Handoff note:** the six old scenarios and five new ones run against `startEngine` (and the six old ones also against the recorder flow): 17 scenario runs, 10 seeded repetitions each, 0 violations in `docs/CHAOS_REPORT.md`. **Two real engine bugs found by the first engine run, each fixed with a test that was red first:** `AttemptLog.recordFailure` appended `step_attempt_failed` to a run that had already completed (a late failing attempt after a redelivery succeeded), which left an invalid history; and the step task processor treated any error on its success path (a lost connection while recording the result or acking) as a failed attempt, so a database blip used up the step's retries and failed the run with `StepFailedError`. The checker now reports runs carrying the waiting marker as `waitingRuns`, not as stalled. The chaos engines use `stickyTimeoutMs: 500`, otherwise one repetition of engine worker-kill waited 60 s for the sticky claim of its killed child. **Nightly workflow:** `.github/workflows/chaos-nightly.yml` (30 repetitions, report in the job summary) is on `main` now, so it has NOT run once yet; its first scheduled run or a manual `workflow_dispatch` is the proof, read it in the next session (the "has run once green" item of the day is open until then). **Tag:** `v0.1.1` is not pushed, the session cannot push tags; the exact commands are in `docs/DEFERRED.md` (find the `chore(release): v0.1.1` commit by its message). **Things to know:** the default `verify` now runs 17 scenarios (about 2 minutes more). The engine scenarios inject faults at step-handler checkpoints, moved clocks, proxies and a frozen process, not at arbitrary instructions. I wrote the scenarios before running them; the two fixes were test first. A stray `child-worker` process from a killed test run slows later runs, kill them with `pkill -f child-worker`. Day 41 is next.
+
+---
+
 ## Day 39: production entry points
 
 - **Status:** DONE
