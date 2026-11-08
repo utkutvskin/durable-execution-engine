@@ -388,4 +388,72 @@ describe("step task processor", () => {
     await enqueueStep();
     expect(await runOnce()).toMatchObject({ status: "retry_scheduled", delayMs: 1000 });
   });
+
+  it("does not count a failure to record a result as a failed attempt of the step", async () => {
+    const real = createResultRecorder(database.pool);
+    let recordFailures = 1;
+    processor = createStepTaskProcessor({
+      pool: database.pool,
+      queue,
+      recorder: {
+        ...real,
+        async recordStepResult(input, client) {
+          if (recordFailures > 0) {
+            recordFailures -= 1;
+            throw new Error("Connection terminated unexpectedly");
+          }
+          return real.recordStepResult(input, client);
+        },
+      },
+      attempts: createAttemptLog(database.pool),
+      deadLetters,
+      lookup: (stepType) => steps.get(stepType),
+      clock,
+      random,
+    });
+    steps.set(
+      "charge",
+      defineStep("charge", { handler: () => ({ charged: true }), retry: policy }),
+    );
+    await enqueueStep();
+    const task = await lease();
+    if (task === undefined) {
+      throw new Error("no task was visible");
+    }
+    await expect(processor.process(task)).rejects.toThrow("Connection terminated unexpectedly");
+    expect(await eventTypes()).not.toContain("step_attempt_failed");
+    const attempts = await database.pool.query("select 1 from step_attempts where run_id = $1", [
+      runId,
+    ]);
+    expect(attempts.rowCount).toBe(0);
+  });
+
+  it("does not count a failure to ack the task as a failed attempt either", async () => {
+    steps.set(
+      "charge",
+      defineStep("charge", { handler: () => ({ charged: true }), retry: policy }),
+    );
+    await enqueueStep();
+    const task = await lease();
+    if (task === undefined) {
+      throw new Error("no task was visible");
+    }
+    const failingQueue: TaskQueue = {
+      ...queue,
+      ack: () => Promise.reject(new Error("Connection terminated unexpectedly")),
+    };
+    processor = createStepTaskProcessor({
+      pool: database.pool,
+      queue: failingQueue,
+      recorder: createResultRecorder(database.pool),
+      attempts: createAttemptLog(database.pool),
+      deadLetters,
+      lookup: (stepType) => steps.get(stepType),
+      clock,
+      random,
+    });
+    await expect(processor.process(task)).rejects.toThrow("Connection terminated unexpectedly");
+    expect(await eventTypes()).toContain("step_completed");
+    expect(await eventTypes()).not.toContain("step_attempt_failed");
+  });
 });

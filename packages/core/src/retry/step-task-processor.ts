@@ -237,27 +237,15 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
         },
       });
 
+      let result: unknown;
       try {
-        const result = await executeTraced(
+        result = await executeTraced(
           definition,
           payload.stepType,
           payload.input,
           span,
           context.signal,
         );
-        const recorded = await options.recorder.recordStepResult({
-          runId,
-          stepId,
-          attemptKey: `attempt-${String(attempt)}`,
-          outcome: { status: "completed", result },
-        });
-        const acked = await options.queue.ack(task.id, task.leaseToken);
-        if (!acked) {
-          return { status: "lease_lost" };
-        }
-        return recorded.recorded
-          ? { status: "completed", attempt }
-          : { status: "already_recorded" };
       } catch (thrown) {
         if (isAborted(context.signal)) {
           return { status: "lease_lost" };
@@ -314,6 +302,17 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
         }
         return { status: "dead_lettered", attempt, deadLetterId };
       }
+      const recorded = await options.recorder.recordStepResult({
+        runId,
+        stepId,
+        attemptKey: `attempt-${String(attempt)}`,
+        outcome: { status: "completed", result },
+      });
+      const acked = await options.queue.ack(task.id, task.leaseToken);
+      if (!acked) {
+        return { status: "lease_lost" };
+      }
+      return recorded.recorded ? { status: "completed", attempt } : { status: "already_recorded" };
     },
   };
 }
