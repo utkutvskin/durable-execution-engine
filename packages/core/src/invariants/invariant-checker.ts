@@ -34,12 +34,14 @@ export interface InvariantViolation {
 
 /**
  * The outcome of one `InvariantChecker.check`: how many runs and tasks were
- * examined and every violation found. An empty `violations` list means every
+ * examined, how many open runs only wait for something outside the engine
+ * (`waitingRuns`) and every violation found. An empty `violations` list means every
  * invariant held for the examined rows.
  */
 export interface InvariantReport {
   readonly runsChecked: number;
   readonly tasksChecked: number;
+  readonly waitingRuns: number;
   readonly violations: readonly InvariantViolation[];
 }
 
@@ -58,9 +60,10 @@ export interface InvariantCheckOptions {
  * Evaluates the engine's safety invariants against the database.
  *
  * - `run-terminal-or-advancing`: a `RUNNING` run has an open task, a pending
- *   timer, an open dead letter or a running child. A run with none of these
- *   can never move again. A run that waits for a signal looks the same, so the
- *   checker is meant for workloads that do not park runs on signals.
+ *   timer, an open dead letter or a running child, or it carries the waiting
+ *   marker of a decision (`waiting_on`), which is a run that waits for a
+ *   signal or a child and is reported in `waitingRuns` instead of as a
+ *   violation. A run with none of these can never move again.
  * - `task-not-lost`: a `LEASED` task carries a lease token, every expected
  *   task still exists, and a `COMPLETED` step task left its step an outcome,
  *   a failed attempt or a dead letter.
@@ -133,6 +136,7 @@ export function createInvariantChecker(pool: Pool, store: EventStore): Invariant
     const result = await pool.query<{ id: string }>(
       `select r.id from workflow_runs r
        where r.status = 'RUNNING' and ($1::uuid[] is null or r.id = any($1::uuid[]))
+         and r.waiting_on is null
          and not exists (
            select 1 from tasks t
            where t.run_id = r.id and t.state in ('PENDING', 'LEASED', 'QUARANTINED'))
@@ -151,6 +155,22 @@ export function createInvariantChecker(pool: Pool, store: EventStore): Invariant
         row.id,
       ),
     );
+  }
+
+  async function waitingRuns(runIds: string[] | null): Promise<number> {
+    const result = await pool.query<{ waiting: string }>(
+      `select count(*) as waiting from workflow_runs r
+       where r.status = 'RUNNING' and r.waiting_on is not null
+         and ($1::uuid[] is null or r.id = any($1::uuid[]))
+         and not exists (
+           select 1 from tasks t
+           where t.run_id = r.id and t.state in ('PENDING', 'LEASED', 'QUARANTINED'))
+         and not exists (select 1 from timers m where m.run_id = r.id and m.state = 'PENDING')
+         and not exists (
+           select 1 from dead_letters d where d.run_id = r.id and d.requeued_at is null)`,
+      [runIds],
+    );
+    return Number(result.rows[0]?.waiting);
   }
 
   async function lostTasks(
@@ -407,9 +427,11 @@ export function createInvariantChecker(pool: Pool, store: EventStore): Invariant
       const steps = await duplicateSteps(runIds);
       const timers = await timerViolations(runIds);
       const projections = await inconsistentProjections(runIds);
+      const waiting = await waitingRuns(runIds);
       return {
         runsChecked: projections.runsChecked,
         tasksChecked: tasks.tasksChecked,
+        waitingRuns: waiting,
         violations: [
           ...stalled,
           ...tasks.violations,

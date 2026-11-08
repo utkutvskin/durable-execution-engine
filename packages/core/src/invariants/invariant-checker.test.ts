@@ -202,4 +202,43 @@ describe("invariant checker", () => {
     expect(report.runsChecked).toBe(1);
     expect(report.violations.every((entry) => entry.runId !== stalled)).toBe(true);
   });
+
+  it("tells a run parked on a signal from a stalled run", async () => {
+    const waiting = await createRun();
+    const stalled = await createRun();
+    await database.pool.query("update workflow_runs set waiting_on = 'external' where id = $1", [
+      waiting,
+    ]);
+    const report = await checker.check({ runIds: [waiting, stalled] });
+    expect(report.waitingRuns).toBe(1);
+    expect(report.violations.map((entry) => entry.runId)).toEqual([stalled]);
+  });
+
+  it("does not count a marked run that has an open task as waiting", async () => {
+    const runId = await createRun();
+    await enqueueStepTask(runId, "s1");
+    await database.pool.query("update workflow_runs set waiting_on = 'external' where id = $1", [
+      runId,
+    ]);
+    const report = await checker.check({ runIds: [runId] });
+    expect(report.waitingRuns).toBe(0);
+    expect(report.violations).toEqual([]);
+  });
+
+  it("counts a run marked as waiting on a dead letter", async () => {
+    const runId = await createRun();
+    await database.pool.query("update workflow_runs set waiting_on = 'dead_letter' where id = $1", [
+      runId,
+    ]);
+    expect((await checker.check({ runIds: [runId] })).waitingRuns).toBe(1);
+  });
+
+  it("reports no waiting runs for a terminal run", async () => {
+    const runId = await createRun([{ type: "run_completed", result: 1 }]);
+    await refreshProjection(database.pool, store, runId);
+    await database.pool.query("update workflow_runs set waiting_on = 'external' where id = $1", [
+      runId,
+    ]);
+    expect((await checker.check({ runIds: [runId] })).waitingRuns).toBe(0);
+  });
 });
