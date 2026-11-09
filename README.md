@@ -37,6 +37,8 @@ cd durable-execution-engine
 pnpm install
 ```
 
+Outside a checkout, build and pack the packages (`pnpm run build && node scripts/pack-packages.mjs .packed`) and install the tarballs into an empty directory with `npm install`; `scripts/smoke-install.sh` does exactly that and runs the hello workflow, and CI runs it in a clean `node:22` container.
+
 **2. Start the environment** (terminal one)
 
 ```sh

@@ -83,6 +83,50 @@ jobs:
 
       - run: pnpm run example:etl
 
+  packages:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dee
+          POSTGRES_PASSWORD: dee
+          POSTGRES_DB: dee
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dee -d dee"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run build
+
+      - run: node scripts/pack-packages.mjs .packed
+
+      - name: check the packed packages with publint and attw
+        run: node scripts/check-packages.mjs .packed
+
+      - name: install the packed packages in a clean node container and run the hello workflow
+        run: |
+          docker run --rm --network host \
+            -e DATABASE_URL=postgres://dee:dee@localhost:5432/dee \
+            -v "$PWD/.packed:/packed:ro" -v "$PWD/scripts/smoke-install.sh:/smoke-install.sh:ro" \
+            node:22 sh /smoke-install.sh /packed
+
   docker:
     runs-on: ubuntu-latest
     services:

@@ -8,6 +8,8 @@ export default defineConfig(
   {
     ignores: [
       "**/dist/**",
+      "scripts/**",
+      ".packed/**",
       "**/coverage/**",
       "**/node_modules/**",
       "**/*.d.ts",

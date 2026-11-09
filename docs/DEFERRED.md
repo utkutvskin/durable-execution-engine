@@ -18,9 +18,9 @@ Code that takes a client with `pool.connect()` releases it with `client.release(
 
 `docs/BENCHMARKS.md` is measured with the benchmark process and Postgres on one 4 core machine with default settings. Not measured: workers on separate hosts, a remote database, a tuned Postgres (`shared_buffers`, `synchronous_commit`), and runs that execute through the workflow decision loop (the benchmark drives the recorder directly, as the chaos suite does). The statements per run (about 47) are the main lever left; see the "What to try next" list in that file. To close this: run `pnpm run bench` against a Postgres in compose from a second machine and add the figures next to the local ones.
 
-## `npx wf dev` on a machine without a checkout (day 29)
+## The packages are not on npm yet (day 41)
 
-`wf` runs the TypeScript sources of this repository through Node's type stripping and the workspace links, so `npx wf dev` works after `pnpm install` in a checkout, not from a published package. There is no `dist` build or published package yet. To close this: bundle the cli and its workspace dependencies into a publishable package, or compile the packages and publish them (day 30 covers the release).
+Every package builds to `dist` and the packed tarballs install into an empty directory and run `npx wf dev` (the `packages` job of `ci.yml`), so the old limit of running only from a checkout is gone. They are not published to a registry: the release pipeline, npm trusted publishing and the image push are day 42. To close this: publish a tag and install from the registry instead of from tarballs.
 
 ## Examples against a real provider and warehouse (day 29)
 
@@ -37,10 +37,6 @@ The Dockerfile and the compose `engine` profile were written in a session withou
 ## Production entry points of the cli (day 30, mostly closed on day 39)
 
 `wf serve` runs the API alone and `wf serve` and `wf worker` take pool size, log level and format, a tracing endpoint, quotas (serve), the compactor schedule and a health port (worker). What is still missing is an admin command for namespaces, keys and quotas: `wf serve` can register one key from `WF_API_KEY` and set the quotas of its namespace, nothing lists, rotates or revokes keys. To close this: see "Next" in `docs/ROADMAP.md`.
-
-## The quick start was verified on a checkout, not in a clean container (day 30)
-
-The steps of the README were run from a fresh `git clone` of the pushed commit in an empty directory with a fresh `pnpm install` against the local Postgres, and the same flow is covered by the test of the `hello` example. They were not run in a container image of a clean machine, because no Docker daemon was available. To close this: run the README steps in a `node:22` container with a Postgres service.
 
 ## Real-time pacing in polling test loops (day 31)
 

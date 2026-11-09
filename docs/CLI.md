@@ -1,6 +1,6 @@
 # Command line
 
-The `wf` command lives in `packages/cli`. In this repository it is on the path after `pnpm install` (`npx wf ...`), or run it directly with `node packages/cli/bin/wf.js ...`. It runs the TypeScript sources through Node's built in type stripping, so it needs Node 22.18 or newer, and no build step is involved.
+The `wf` command lives in `packages/cli`. In this repository it is on the path after `pnpm install` (`npx wf ...`), or run it directly with `node packages/cli/bin/wf.js ...`. Installed from the packed or published packages it runs the compiled `dist` on Node 22. In a checkout, where `pnpm run build` has not run, it falls back to the TypeScript sources through Node's built in type stripping (Node 22.18 or newer) with the `development` export condition.
 
 ```sh
 npx wf help
