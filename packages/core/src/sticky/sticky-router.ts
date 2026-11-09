@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import { systemClock, type ClockSource } from "../workflow/sources.js";
+import { systemClock, type ClockSource } from "../workflow/sources.ts";
 
 /**
  * A live sticky claim: `workerId` is preferred for the run's workflow tasks

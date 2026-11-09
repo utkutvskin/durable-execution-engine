@@ -1,6 +1,6 @@
-import type { DemoContext, DemoReport } from "@dee/cli";
-import { ETL_PIPELINE, NIGHTLY_CRON, type PipelineInput } from "./workflows.js";
-import type { DaySummary, Warehouse } from "./warehouse.js";
+import type { DemoContext, DemoReport } from "@dee/core";
+import { ETL_PIPELINE, NIGHTLY_CRON, type PipelineInput } from "./workflows.ts";
+import type { DaySummary, Warehouse } from "./warehouse.ts";
 
 const DAY = "2026-01-15";
 

@@ -1,7 +1,7 @@
 import { defineStep, defineWorkflow, type Pool } from "@dee/core";
-import { createRunService } from "../../../api/src/index.js";
-import { createIsolatedDatabase } from "../../../core/src/db/test-harness.js";
-import { startEngine, type Engine } from "../engine/runtime.js";
+import { createRunService } from "../../../api/src/index.ts";
+import { createIsolatedDatabase } from "../../../core/src/db/test-harness.ts";
+import { startEngine, type Engine } from "../engine/runtime.ts";
 
 /**
  * Knobs of `runStickyBenchmark`: how many `engines` (worker processes in one

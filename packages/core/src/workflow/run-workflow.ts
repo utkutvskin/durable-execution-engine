@@ -1,4 +1,4 @@
-import type { WorkflowCommand } from "./commands.js";
+import type { WorkflowCommand } from "./commands.ts";
 import type {
   ChildHandle,
   ChildOptions,
@@ -7,13 +7,13 @@ import type {
   SelectResult,
   WorkflowContext,
   WorkflowHandler,
-} from "./context.js";
-import { toRecordedError } from "./error-serialization.js";
-import { ChildLimitExceededError, sleepDurationError } from "./errors.js";
-import { fulfilledValues, runParallel } from "./parallel.js";
-import type { ClockSource, RandomSource } from "./sources.js";
-import type { StepRegistry } from "./step-registry.js";
-import type { WorkflowRegistry } from "./workflow-registry.js";
+} from "./context.ts";
+import { toRecordedError } from "./error-serialization.ts";
+import { ChildLimitExceededError, sleepDurationError } from "./errors.ts";
+import { fulfilledValues, runParallel } from "./parallel.ts";
+import type { ClockSource, RandomSource } from "./sources.ts";
+import type { StepRegistry } from "./step-registry.ts";
+import type { WorkflowRegistry } from "./workflow-registry.ts";
 
 /**
  * Everything `runWorkflowInMemory` needs beyond the workflow itself: where

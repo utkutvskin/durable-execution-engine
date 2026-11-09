@@ -1,7 +1,7 @@
 import pg from "pg";
 import { describe, expect, it } from "vitest";
-import { resolveDatabaseUrl } from "./env.js";
-import { createIsolatedDatabase } from "./test-harness.js";
+import { resolveDatabaseUrl } from "./env.ts";
+import { createIsolatedDatabase } from "./test-harness.ts";
 
 const { Pool } = pg;
 

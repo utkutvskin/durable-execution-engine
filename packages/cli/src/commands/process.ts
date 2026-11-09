@@ -1,8 +1,8 @@
 import { createHealthChecks, createPool, migrateUp, pendingMigrations, type Pool } from "@dee/core";
 import { startEngine, startOpsServer, type OpsServer } from "@dee/worker";
-import { databaseUrl, ensureDatabase, findComposeDirectory, isProduction } from "../database.js";
-import { CliError } from "../errors.js";
-import type { CliIo } from "../io.js";
+import { databaseUrl, ensureDatabase, findComposeDirectory, isProduction } from "../database.ts";
+import { CliError } from "../errors.ts";
+import type { CliIo } from "../io.ts";
 import {
   EXAMPLE_NAMES,
   loadExample,
@@ -10,10 +10,10 @@ import {
   mergeModules,
   type ExampleName,
   type WorkflowModule,
-} from "../modules.js";
-import { writeDevState } from "../config.js";
-import { startDevEnvironment } from "../dev-environment.js";
-import type { DatabaseHooks } from "./migrate.js";
+} from "../modules.ts";
+import { writeDevState } from "../config.ts";
+import { startDevEnvironment } from "../dev-environment.ts";
+import type { DatabaseHooks } from "./migrate.ts";
 import {
   COMPACTION_OPTIONS,
   OPS_OPTIONS,
@@ -25,14 +25,14 @@ import {
   parseCompactionSettings,
   parseOpsSettings,
   parseRuntimeSettings,
-} from "./runtime-flags.js";
+} from "./runtime-flags.ts";
 import {
   parseCommand,
   stringFlag,
   stringFlags,
   booleanFlag,
   type ParsedCommand,
-} from "./shared.js";
+} from "./shared.ts";
 
 /**
  * Hooks of the commands that run until stopped. `shutdown` resolves when the

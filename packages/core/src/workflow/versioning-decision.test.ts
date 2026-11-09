@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { WorkflowEvent } from "../event-store/events.js";
-import { commandToEvent } from "./command-events.js";
-import { runDecisionLoop } from "./decision-loop.js";
-import { defineWorkflow } from "./define-workflow.js";
-import { VersionMismatchError } from "./errors.js";
-import { runQuery } from "./query.js";
-import type { ClockSource, RandomSource } from "./sources.js";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import { commandToEvent } from "./command-events.ts";
+import { runDecisionLoop } from "./decision-loop.ts";
+import { defineWorkflow } from "./define-workflow.ts";
+import { VersionMismatchError } from "./errors.ts";
+import { runQuery } from "./query.ts";
+import type { ClockSource, RandomSource } from "./sources.ts";
 
 const sources: { clock: ClockSource; random: RandomSource } = {
   clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },

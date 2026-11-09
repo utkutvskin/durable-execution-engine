@@ -7,7 +7,7 @@ import {
   MAX_PAGE_LIMIT,
   UnknownWorkflowTypeError,
   type RunService,
-} from "./run-service.js";
+} from "./run-service.ts";
 
 /**
  * What a route handler produces: a status code and a JSON body.

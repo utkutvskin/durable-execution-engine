@@ -1,12 +1,12 @@
-import { createRunService, type RunService } from "../../../api/src/index.js";
+import { createRunService, type RunService } from "../../../api/src/index.ts";
 import { defineStep, defineWorkflow, type ClockSource, type Pool } from "@dee/core";
-import { startEngine, type Engine } from "../engine/runtime.js";
+import { startEngine, type Engine } from "../engine/runtime.ts";
 import type {
   AnyStepDefinition,
   AnyWorkflowDefinition,
   DecisionReport,
-} from "../engine/task-handler.js";
-import type { ChaosWorld, Workload, WorkerGroup } from "./world.js";
+} from "../engine/task-handler.ts";
+import type { ChaosWorld, Workload, WorkerGroup } from "./world.ts";
 
 /**
  * Behavior a scenario can attach to the workflows of the engine flow.

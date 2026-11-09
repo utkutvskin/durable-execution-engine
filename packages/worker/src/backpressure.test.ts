@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createDepthBackpressure, pollBudgetForDepth } from "./backpressure.js";
-import { createMemoryQueue, createVirtualTime, waitFor } from "./test-support.js";
-import { createWorker } from "./worker.js";
+import { createDepthBackpressure, pollBudgetForDepth } from "./backpressure.ts";
+import { createMemoryQueue, createVirtualTime, waitFor } from "./test-support.ts";
+import { createWorker } from "./worker.ts";
 
 const marks = { lowWatermark: 10, highWatermark: 110 };
 

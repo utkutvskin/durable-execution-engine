@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import type { ClockSource } from "../workflow/sources.js";
-import { createTaskQueue, taskQueueName, type TaskQueue } from "./task-queue.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import type { ClockSource } from "../workflow/sources.ts";
+import { createTaskQueue, taskQueueName, type TaskQueue } from "./task-queue.ts";
 
 interface FakeClock extends ClockSource {
   advance(ms: number): void;

@@ -1,8 +1,8 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it } from "vitest";
-import { installShutdownHandlers, type ProcessLike } from "./shutdown.js";
-import { createDeferred, createMemoryQueue, createVirtualTime, waitFor } from "./test-support.js";
-import { createWorker } from "./worker.js";
+import { installShutdownHandlers, type ProcessLike } from "./shutdown.ts";
+import { createDeferred, createMemoryQueue, createVirtualTime, waitFor } from "./test-support.ts";
+import { createWorker } from "./worker.ts";
 
 function fakeProcess(): ProcessLike & EventEmitter & { codes: number[] } {
   const emitter = new EventEmitter() as ProcessLike & EventEmitter & { codes: number[] };

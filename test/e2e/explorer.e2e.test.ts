@@ -22,13 +22,13 @@ import {
   type StepDefinition,
   type TaskQueue,
 } from "@dee/core";
-import { createApiServer, type ApiHandler } from "../../packages/api/src/index.js";
+import { createApiServer, type ApiHandler } from "../../packages/api/src/index.ts";
 import {
   createIsolatedDatabase,
   type IsolatedSchema,
-} from "../../packages/core/src/db/test-harness.js";
-import { planBrowser } from "./browser.js";
-import { createUiHandler } from "../../apps/ui/src/server.js";
+} from "../../packages/core/src/db/test-harness.ts";
+import { planBrowser } from "./browser.ts";
+import { createUiHandler } from "../../apps/ui/src/server.ts";
 
 const STEP_QUEUE = "default/steps";
 const BROWSER = planBrowser({ env: process.env });

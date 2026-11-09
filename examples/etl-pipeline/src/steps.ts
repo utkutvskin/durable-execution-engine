@@ -1,5 +1,5 @@
 import { defineStep, type StepDefinition } from "@dee/core";
-import type { DaySummary, SourceRow, TargetRow, Warehouse } from "./warehouse.js";
+import type { DaySummary, SourceRow, TargetRow, Warehouse } from "./warehouse.ts";
 
 /**
  * The step types of the pipeline, as `ctx.step()` names them.

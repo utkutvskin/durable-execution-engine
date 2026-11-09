@@ -1,5 +1,5 @@
-import type { SerializedError } from "../workflow/error-serialization.js";
-import type { RandomSource } from "../workflow/sources.js";
+import type { SerializedError } from "../workflow/error-serialization.ts";
+import type { RandomSource } from "../workflow/sources.ts";
 
 /**
  * How a failing step is retried. `maxAttempts` counts every attempt including

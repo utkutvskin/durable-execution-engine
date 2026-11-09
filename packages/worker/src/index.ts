@@ -4,12 +4,12 @@
  */
 export const packageName = "@dee/worker";
 
-export { LeaseLostError, ParkTaskError, ShutdownTimeoutError } from "./errors.js";
-export { installShutdownHandlers } from "./shutdown.js";
-export type { ProcessLike } from "./shutdown.js";
-export { systemTimers } from "./timers.js";
-export type { Timers } from "./timers.js";
-export { createWorker, nackDelayFor } from "./worker.js";
+export { LeaseLostError, ParkTaskError, ShutdownTimeoutError } from "./errors.ts";
+export { installShutdownHandlers } from "./shutdown.ts";
+export type { ProcessLike } from "./shutdown.ts";
+export { systemTimers } from "./timers.ts";
+export type { Timers } from "./timers.ts";
+export { createWorker, nackDelayFor } from "./worker.ts";
 export type {
   NackBackoff,
   SettledTask,
@@ -18,27 +18,27 @@ export type {
   TaskHandler,
   Worker,
   WorkerOptions,
-} from "./worker.js";
-export { createWorkerIdentity } from "./identity.js";
-export type { WorkerIdentity, WorkerIdentityOptions } from "./identity.js";
-export { startJanitorLoop } from "./janitor-loop.js";
-export type { JanitorLoop, JanitorLoopOptions } from "./janitor-loop.js";
-export { startTimerLoop } from "./timer-loop.js";
-export type { TimerLoop, TimerLoopOptions } from "./timer-loop.js";
-export { startScheduleLoop } from "./schedule-loop.js";
-export type { ScheduleLoop, ScheduleLoopOptions } from "./schedule-loop.js";
-export { createDepthBackpressure, pollBudgetForDepth } from "./backpressure.js";
-export type { DepthBackpressureOptions } from "./backpressure.js";
-export { UnknownWorkflowError, createEngineTaskHandler } from "./engine/task-handler.js";
+} from "./worker.ts";
+export { createWorkerIdentity } from "./identity.ts";
+export type { WorkerIdentity, WorkerIdentityOptions } from "./identity.ts";
+export { startJanitorLoop } from "./janitor-loop.ts";
+export type { JanitorLoop, JanitorLoopOptions } from "./janitor-loop.ts";
+export { startTimerLoop } from "./timer-loop.ts";
+export type { TimerLoop, TimerLoopOptions } from "./timer-loop.ts";
+export { startScheduleLoop } from "./schedule-loop.ts";
+export type { ScheduleLoop, ScheduleLoopOptions } from "./schedule-loop.ts";
+export { createDepthBackpressure, pollBudgetForDepth } from "./backpressure.ts";
+export type { DepthBackpressureOptions } from "./backpressure.ts";
+export { UnknownWorkflowError, createEngineTaskHandler } from "./engine/task-handler.ts";
 export type {
   AnyStepDefinition,
   AnyWorkflowDefinition,
   DecisionReport,
   EngineTaskHandlerOptions,
-} from "./engine/task-handler.js";
-export { DEFAULT_QUEUE_NAME, startEngine } from "./engine/runtime.js";
-export type { CompactionOptions, DecisionTotals, Engine, EngineOptions } from "./engine/runtime.js";
-export { startCompactorLoop } from "./compactor-loop.js";
-export type { CompactorLoop, CompactorLoopOptions } from "./compactor-loop.js";
-export { startOpsServer } from "./ops-server.js";
-export type { OpsServer, OpsServerOptions } from "./ops-server.js";
+} from "./engine/task-handler.ts";
+export { DEFAULT_QUEUE_NAME, startEngine } from "./engine/runtime.ts";
+export type { CompactionOptions, DecisionTotals, Engine, EngineOptions } from "./engine/runtime.ts";
+export { startCompactorLoop } from "./compactor-loop.ts";
+export type { CompactorLoop, CompactorLoopOptions } from "./compactor-loop.ts";
+export { startOpsServer } from "./ops-server.ts";
+export type { OpsServer, OpsServerOptions } from "./ops-server.ts";

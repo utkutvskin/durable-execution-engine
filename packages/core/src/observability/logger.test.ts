@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createLogger, resolveCorrelationId, withCorrelationId } from "./logger.js";
+import { createLogger, resolveCorrelationId, withCorrelationId } from "./logger.ts";
 
 function capture(level?: "debug" | "info" | "warn" | "error") {
   const lines: (Record<string, unknown> & Line)[] = [];

@@ -9,10 +9,10 @@ import {
   type Pool,
   type TaskQueue,
 } from "@dee/core";
-import { createIsolatedDatabase } from "../../../core/src/db/test-harness.js";
-import { createWorkerIdentity } from "../identity.js";
-import { createWorker } from "../worker.js";
-import { perSecond, summarizeLatencies, type LatencySummary } from "./stats.js";
+import { createIsolatedDatabase } from "../../../core/src/db/test-harness.ts";
+import { createWorkerIdentity } from "../identity.ts";
+import { createWorker } from "../worker.ts";
+import { perSecond, summarizeLatencies, type LatencySummary } from "./stats.ts";
 
 /**
  * Knobs of one benchmark run. `runs` and `stepsPerRun` size the end-to-end

@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createPostgresEventStore, type EventStore } from "../event-store/event-store.js";
-import { createResultRecorder } from "../idempotency/recorder.js";
-import { refreshProjection } from "../run/projection-store.js";
-import { createAttemptLog, type AttemptLog } from "./attempt-log.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createPostgresEventStore, type EventStore } from "../event-store/event-store.ts";
+import { createResultRecorder } from "../idempotency/recorder.ts";
+import { refreshProjection } from "../run/projection-store.ts";
+import { createAttemptLog, type AttemptLog } from "./attempt-log.ts";
 
 describe("attempt log", () => {
   let database: IsolatedSchema;

@@ -1,7 +1,7 @@
-import type { WorkflowEvent } from "../event-store/events.js";
-import type { StoredEvent } from "../event-store/event-store.js";
-import { InvalidTransitionError } from "./errors.js";
-import { assertTransition, isTerminalState, type RunState } from "./state-machine.js";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import type { StoredEvent } from "../event-store/event-store.ts";
+import { InvalidTransitionError } from "./errors.ts";
+import { assertTransition, isTerminalState, type RunState } from "./state-machine.ts";
 
 /**
  * The read model of one run, derived purely from its event log.

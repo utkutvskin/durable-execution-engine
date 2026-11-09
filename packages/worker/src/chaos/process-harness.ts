@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import type { CrashPoint } from "./flow.js";
+import type { CrashPoint } from "./flow.ts";
 
 /**
  * How to start a chaos child: the schema and queue it works on, the
@@ -26,7 +26,6 @@ export interface ChaosChild {
   kill(signal: NodeJS.Signals): Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
 }
 
-const registerPath = fileURLToPath(new URL("./register.ts", import.meta.url));
 const childPath = fileURLToPath(new URL("./child-worker.ts", import.meta.url));
 
 /**
@@ -35,7 +34,7 @@ const childPath = fileURLToPath(new URL("./child-worker.ts", import.meta.url));
  * `POSTGRES_*` variables of the caller.
  */
 export function spawnChaosChild(options: ChaosChildOptions): ChaosChild {
-  const child: ChildProcess = spawn(process.execPath, ["--import", registerPath, childPath], {
+  const child: ChildProcess = spawn(process.execPath, ["--conditions=development", childPath], {
     env: {
       ...process.env,
       DEE_CHAOS_SCHEMA: options.schema,

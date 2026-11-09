@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createPostgresEventStore, type EventStore } from "../event-store/event-store.js";
-import type { WorkflowEvent } from "../event-store/events.js";
-import { createTaskQueue } from "../queue/task-queue.js";
-import { refreshProjection } from "../run/projection-store.js";
-import { createResultRecorder } from "../idempotency/recorder.js";
-import { createInvariantChecker, type InvariantChecker } from "./invariant-checker.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createPostgresEventStore, type EventStore } from "../event-store/event-store.ts";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import { createTaskQueue } from "../queue/task-queue.ts";
+import { refreshProjection } from "../run/projection-store.ts";
+import { createResultRecorder } from "../idempotency/recorder.ts";
+import { createInvariantChecker, type InvariantChecker } from "./invariant-checker.ts";
 
 describe("invariant checker", () => {
   let database: IsolatedSchema;

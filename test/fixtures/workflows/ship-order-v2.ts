@@ -1,6 +1,6 @@
-import { defineWorkflow } from "../../../packages/core/src/workflow/define-workflow.js";
-import type { WorkflowDefinition } from "../../../packages/core/src/workflow/workflow-registry.js";
-import type { ShipOrderInput, ShipOrderResult } from "./ship-order.js";
+import { defineWorkflow } from "../../../packages/core/src/workflow/define-workflow.ts";
+import type { WorkflowDefinition } from "../../../packages/core/src/workflow/workflow-registry.ts";
+import type { ShipOrderInput, ShipOrderResult } from "./ship-order.ts";
 
 /**
  * The second version of the `ship-order` workflow: a `fraud-check` step is

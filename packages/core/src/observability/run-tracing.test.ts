@@ -5,22 +5,22 @@ import {
   type ReadableSpan,
 } from "@opentelemetry/sdk-trace-base";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createPostgresEventStore, type EventStore } from "../event-store/event-store.js";
-import type { WorkflowEvent } from "../event-store/events.js";
-import { createResultRecorder, type ResultRecorder } from "../idempotency/recorder.js";
-import { createTaskQueue, type TaskQueue } from "../queue/task-queue.js";
-import { createAttemptLog } from "../retry/attempt-log.js";
-import { createDeadLetterQueue } from "../retry/dead-letters.js";
-import { createStepTaskProcessor, type StepTaskProcessor } from "../retry/step-task-processor.js";
-import { createScheduleManager } from "../schedules/schedule-manager.js";
-import { createTimerScheduler, type TimerScheduler } from "../timers/timer-scheduler.js";
-import { commandToEvent } from "../workflow/command-events.js";
-import { runDecisionLoop } from "../workflow/decision-loop.js";
-import { defineStep, type StepDefinition } from "../workflow/define-step.js";
-import { defineWorkflow } from "../workflow/define-workflow.js";
-import type { WorkflowHandler } from "../workflow/context.js";
-import { createTracingProvider, type TracingProvider } from "./provider.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createPostgresEventStore, type EventStore } from "../event-store/event-store.ts";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import { createResultRecorder, type ResultRecorder } from "../idempotency/recorder.ts";
+import { createTaskQueue, type TaskQueue } from "../queue/task-queue.ts";
+import { createAttemptLog } from "../retry/attempt-log.ts";
+import { createDeadLetterQueue } from "../retry/dead-letters.ts";
+import { createStepTaskProcessor, type StepTaskProcessor } from "../retry/step-task-processor.ts";
+import { createScheduleManager } from "../schedules/schedule-manager.ts";
+import { createTimerScheduler, type TimerScheduler } from "../timers/timer-scheduler.ts";
+import { commandToEvent } from "../workflow/command-events.ts";
+import { runDecisionLoop } from "../workflow/decision-loop.ts";
+import { defineStep, type StepDefinition } from "../workflow/define-step.ts";
+import { defineWorkflow } from "../workflow/define-workflow.ts";
+import type { WorkflowHandler } from "../workflow/context.ts";
+import { createTracingProvider, type TracingProvider } from "./provider.ts";
 
 const STEP_QUEUE = "default/steps";
 const T0 = new Date("2026-03-01T10:00:00.000Z").getTime();

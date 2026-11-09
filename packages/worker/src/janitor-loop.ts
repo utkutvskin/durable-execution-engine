@@ -1,5 +1,5 @@
 import type { Janitor, RecoverStalledRunsOptions, SweepReport } from "@dee/core";
-import { systemTimers, type Timers } from "./timers.js";
+import { systemTimers, type Timers } from "./timers.ts";
 
 /**
  * Configuration for `startJanitorLoop`. `stalledRuns`, when given, makes

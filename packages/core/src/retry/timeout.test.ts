@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { EventStore, StoredEvent } from "../event-store/event-store.js";
-import type { WorkflowEvent } from "../event-store/events.js";
-import type { ClockSource } from "../workflow/sources.js";
+import type { EventStore, StoredEvent } from "../event-store/event-store.ts";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import type { ClockSource } from "../workflow/sources.ts";
 import {
   StepTimeoutError,
   enforceWorkflowTimeout,
   runWithTimeout,
   workflowDeadline,
   type TimeoutTimers,
-} from "./timeout.js";
+} from "./timeout.ts";
 
 interface PendingTimer {
   readonly id: number;

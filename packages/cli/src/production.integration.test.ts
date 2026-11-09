@@ -6,11 +6,11 @@ import {
   createIsolatedDatabase,
   createIsolatedSchema,
   type IsolatedSchema,
-} from "../../core/src/db/test-harness.js";
-import type { DatabaseEffects } from "./database.js";
-import type { CliIo } from "./io.js";
-import { main } from "./main.js";
-import { urlForSchema } from "./test-support.js";
+} from "../../core/src/db/test-harness.ts";
+import type { DatabaseEffects } from "./database.ts";
+import type { CliIo } from "./io.ts";
+import { main } from "./main.ts";
+import { urlForSchema } from "./test-support.ts";
 
 interface Captured {
   readonly io: CliIo;

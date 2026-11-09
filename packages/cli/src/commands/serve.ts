@@ -1,15 +1,15 @@
 import { createWorkflowRegistry, pendingMigrations, migrateUp } from "@dee/core";
-import { isProduction } from "../database.js";
-import { CliError } from "../errors.js";
-import type { CliIo } from "../io.js";
-import { startServeEnvironment } from "../serve-environment.js";
+import { isProduction } from "../database.ts";
+import { CliError } from "../errors.ts";
+import type { CliIo } from "../io.ts";
+import { startServeEnvironment } from "../serve-environment.ts";
 import {
   MODULE_OPTIONS,
   openPool,
   selectedModule,
   untilSignal,
   type ProcessHooks,
-} from "./process.js";
+} from "./process.ts";
 import {
   QUOTA_OPTIONS,
   RUNTIME_OPTIONS,
@@ -19,8 +19,8 @@ import {
   integerOption,
   parseRuntimeSettings,
   parseServeLimits,
-} from "./runtime-flags.js";
-import { booleanFlag, parseCommand, stringFlags } from "./shared.js";
+} from "./runtime-flags.ts";
+import { booleanFlag, parseCommand, stringFlags } from "./shared.ts";
 
 /**
  * `wf serve [--port n] [--host h] [--namespace name] [--queue name]

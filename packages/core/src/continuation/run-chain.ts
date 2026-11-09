@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import type { RunState } from "../run/state-machine.js";
+import type { RunState } from "../run/state-machine.ts";
 
 /**
  * One run of a chain: the runs a workflow went through by continuing as new,

@@ -2,16 +2,37 @@
   "name": "@dee/core",
   "version": "0.1.1",
   "license": "Apache-2.0",
-  "private": true,
   "type": "module",
   "description": "Core runtime: event store, replay engine, workflow dsl and persistence.",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "migrations"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build": "tsc -p tsconfig.json",
     "migrate:up": "pnpm run build && node dist/db/cli.js up",
-    "migrate:down": "pnpm run build && node dist/db/cli.js down"
+    "migrate:down": "pnpm run build && node dist/db/cli.js down",
+    "build": "tsc -b tsconfig.build.json"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
@@ -23,5 +44,13 @@
   },
   "devDependencies": {
     "@types/pg": "^8.23.1"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/utkutvskin/durable-execution-engine.git",
+    "directory": "packages/core"
   }
 }

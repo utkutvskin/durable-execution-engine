@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import type { Codec } from "../event-store/codec.js";
-import { jsonCodec } from "../event-store/codec.js";
-import { ConcurrencyError } from "../event-store/errors.js";
-import { createPostgresEventStore, type EventStore } from "../event-store/event-store.js";
-import { createResultRecorder, type ResultRecorder } from "./recorder.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import type { Codec } from "../event-store/codec.ts";
+import { jsonCodec } from "../event-store/codec.ts";
+import { ConcurrencyError } from "../event-store/errors.ts";
+import { createPostgresEventStore, type EventStore } from "../event-store/event-store.ts";
+import { createResultRecorder, type ResultRecorder } from "./recorder.ts";
 
 describe("result recorder", () => {
   let database: IsolatedSchema;

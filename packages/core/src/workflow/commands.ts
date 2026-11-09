@@ -1,4 +1,4 @@
-import type { ParentClosePolicy, RecordedError } from "../event-store/events.js";
+import type { ParentClosePolicy, RecordedError } from "../event-store/events.ts";
 
 /**
  * A step was scheduled for execution as part of a run's decision.

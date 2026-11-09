@@ -1,5 +1,5 @@
-import { createEngineTaskHandler } from "../engine/task-handler.js";
-import type { TaskHandler } from "../worker.js";
+import { createEngineTaskHandler } from "../engine/task-handler.ts";
+import type { TaskHandler } from "../worker.ts";
 import {
   ENGINE_RUN_RESULT,
   createEngineFlow,
@@ -7,7 +7,7 @@ import {
   startEngineRuns,
   startEngines,
   type EngineFlowHooks,
-} from "./engine-kit.js";
+} from "./engine-kit.ts";
 import {
   createJanitor,
   createPool,
@@ -17,11 +17,11 @@ import {
   type ClockSource,
   type LeasedTask,
 } from "@dee/core";
-import { CRASH_POINTS, createFlowHandler } from "./flow.js";
-import { startFaultProxy } from "./fault-proxy.js";
-import { spawnChaosChild } from "./process-harness.js";
-import { createSlowDiskPool } from "./slow-pool.js";
-import { createSeededRandom } from "./seeded-random.js";
+import { CRASH_POINTS, createFlowHandler } from "./flow.ts";
+import { startFaultProxy } from "./fault-proxy.ts";
+import { spawnChaosChild } from "./process-harness.ts";
+import { createSlowDiskPool } from "./slow-pool.ts";
+import { createSeededRandom } from "./seeded-random.ts";
 import {
   createChaosHandler,
   createShiftableClock,
@@ -40,7 +40,7 @@ import {
   type WorkerGroup,
   type WorkerGroupOptions,
   type Workload,
-} from "./world.js";
+} from "./world.ts";
 
 /**
  * The failure scenarios of the chaos suite.

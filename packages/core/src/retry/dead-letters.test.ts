@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createTaskQueue, type TaskQueue } from "../queue/task-queue.js";
-import { createDeadLetterQueue, type DeadLetterQueue } from "./dead-letters.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createTaskQueue, type TaskQueue } from "../queue/task-queue.ts";
+import { createDeadLetterQueue, type DeadLetterQueue } from "./dead-letters.ts";
 
 describe("dead letter queue", () => {
   let database: IsolatedSchema;

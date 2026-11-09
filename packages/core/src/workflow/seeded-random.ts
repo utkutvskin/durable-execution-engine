@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { RandomSource } from "./sources.js";
+import type { RandomSource } from "./sources.ts";
 
 const RANDOM_BYTES = 6;
 const UUID_BYTES = 16;

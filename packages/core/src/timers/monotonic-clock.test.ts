@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createMonotonicClock } from "./monotonic-clock.js";
+import { createMonotonicClock } from "./monotonic-clock.ts";
 
 function steppedClock(times: readonly string[]) {
   let index = 0;

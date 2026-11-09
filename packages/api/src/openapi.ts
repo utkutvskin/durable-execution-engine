@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { errorResponseSchema, type Route } from "./routes.js";
+import { errorResponseSchema, type Route } from "./routes.ts";
 
 /**
  * A JSON object as it appears in the generated OpenAPI document.

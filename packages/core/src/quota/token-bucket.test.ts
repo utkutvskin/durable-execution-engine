@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createRateLimiter } from "./token-bucket.js";
+import { createRateLimiter } from "./token-bucket.ts";
 
 function movableClock(): { now(): Date; advance(ms: number): void } {
   let elapsed = 0;

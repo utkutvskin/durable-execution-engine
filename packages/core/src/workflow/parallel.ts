@@ -1,4 +1,4 @@
-import type { ParallelOptions, ParallelTask } from "./context.js";
+import type { ParallelOptions, ParallelTask } from "./context.ts";
 
 /**
  * Picks which running task the parallel loop waits on next, by index.

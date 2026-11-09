@@ -1,19 +1,19 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createPostgresEventStore, type EventStore } from "../event-store/event-store.js";
-import type { WorkflowEvent } from "../event-store/events.js";
-import { createResultRecorder, type ResultRecorder } from "../idempotency/recorder.js";
-import { createRunCache } from "../sticky/run-cache.js";
-import { createStickyDecider } from "../sticky/sticky-decider.js";
-import { commandToEvent } from "../workflow/command-events.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createPostgresEventStore, type EventStore } from "../event-store/event-store.ts";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import { createResultRecorder, type ResultRecorder } from "../idempotency/recorder.ts";
+import { createRunCache } from "../sticky/run-cache.ts";
+import { createStickyDecider } from "../sticky/sticky-decider.ts";
+import { commandToEvent } from "../workflow/command-events.ts";
 import {
   runDecisionLoop,
   type DecisionLoopOptions,
   type DecisionResult,
-} from "../workflow/decision-loop.js";
-import { defineWorkflow } from "../workflow/define-workflow.js";
-import { VersionMismatchError } from "../workflow/errors.js";
-import type { LiveSession } from "../workflow/live-session.js";
+} from "../workflow/decision-loop.ts";
+import { defineWorkflow } from "../workflow/define-workflow.ts";
+import { VersionMismatchError } from "../workflow/errors.ts";
+import type { LiveSession } from "../workflow/live-session.ts";
 
 const base: DecisionLoopOptions = {
   clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },

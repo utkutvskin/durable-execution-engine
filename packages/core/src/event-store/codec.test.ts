@@ -1,12 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { PayloadTooLargeError } from "./errors.js";
+import { PayloadTooLargeError } from "./errors.ts";
 import {
   createGzipCodec,
   createSizeLimitedCodec,
   jsonCodec,
   maskSensitiveFields,
-} from "./codec.js";
+} from "./codec.ts";
 
 describe("jsonCodec", () => {
   it("round-trips a nested object through encode and decode", () => {

@@ -7,11 +7,11 @@ import {
   type Pool,
   type TaskQueue,
 } from "@dee/core";
-import { createRunService, type RunService } from "../../../api/src/index.js";
-import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.js";
-import { createVirtualTime, waitFor, type VirtualTime } from "../test-support.js";
-import { createWorker } from "../worker.js";
-import { createEngineTaskHandler, type AnyWorkflowDefinition } from "./task-handler.js";
+import { createRunService, type RunService } from "../../../api/src/index.ts";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.ts";
+import { createVirtualTime, waitFor, type VirtualTime } from "../test-support.ts";
+import { createWorker } from "../worker.ts";
+import { createEngineTaskHandler, type AnyWorkflowDefinition } from "./task-handler.ts";
 
 const signal = new AbortController().signal;
 

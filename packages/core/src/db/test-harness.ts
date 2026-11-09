@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
 import type { Pool } from "pg";
-import { resolveDatabaseUrl } from "./env.js";
-import { migrateUp } from "./migrator.js";
+import { resolveDatabaseUrl } from "./env.ts";
+import { migrateUp } from "./migrator.ts";
 
 const { Pool: PoolConstructor } = pg;
 

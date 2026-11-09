@@ -4,12 +4,12 @@
  */
 export const packageName = "@dee/cli";
 
-export { ApiError, CliError } from "./errors.js";
-export { HELP_TEXT, main } from "./main.js";
-export type { CliHooks } from "./main.js";
-export { processIo } from "./io.js";
-export type { CliIo } from "./io.js";
-export { createApiClient } from "./run-client.js";
+export { ApiError, CliError } from "./errors.ts";
+export { HELP_TEXT, main } from "./main.ts";
+export type { CliHooks } from "./main.ts";
+export { processIo } from "./io.ts";
+export type { CliIo } from "./io.ts";
+export { createApiClient } from "./run-client.ts";
 export type {
   ApiClientOptions,
   HistoryItem,
@@ -18,9 +18,9 @@ export type {
   RunListPage,
   RunSnapshot,
   WaitOptions,
-} from "./run-client.js";
-export { startDevEnvironment } from "./dev-environment.js";
-export type { DevEnvironment, DevEnvironmentOptions } from "./dev-environment.js";
+} from "./run-client.ts";
+export { startDevEnvironment } from "./dev-environment.ts";
+export type { DevEnvironment, DevEnvironmentOptions } from "./dev-environment.ts";
 export {
   EXAMPLE_NAMES,
   loadExample,
@@ -28,15 +28,10 @@ export {
   loadWorkflowModule,
   mergeModules,
   toWorkflowModule,
-} from "./modules.js";
-export type {
-  DemoContext,
-  DemoReport,
-  ExampleDemo,
-  ExampleName,
-  WorkflowModule,
-} from "./modules.js";
-export { DEV_STATE_PATH, readDevState, resolveClientConfig, writeDevState } from "./config.js";
-export type { ClientConfig, DevState } from "./config.js";
-export { ensureDatabase, findComposeDirectory } from "./database.js";
-export type { DatabaseEffects, EnsureDatabaseInput } from "./database.js";
+} from "./modules.ts";
+export type { ExampleDemo, ExampleName, WorkflowModule } from "./modules.ts";
+export { DEV_STATE_PATH, readDevState, resolveClientConfig, writeDevState } from "./config.ts";
+export type { ClientConfig, DevState } from "./config.ts";
+export { ensureDatabase, findComposeDirectory } from "./database.ts";
+export type { DatabaseEffects, EnsureDatabaseInput } from "./database.ts";
+export type { DemoContext, DemoReport } from "@dee/core";

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { createPool, type Pool } from "@dee/core";
-import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.js";
-import { startFaultProxy, type FaultProxy } from "./fault-proxy.js";
-import { databaseTarget, proxiedEnv } from "./world.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.ts";
+import { startFaultProxy, type FaultProxy } from "./fault-proxy.ts";
+import { databaseTarget, proxiedEnv } from "./world.ts";
 
 describe("fault proxy", () => {
   let proxy: FaultProxy | undefined;

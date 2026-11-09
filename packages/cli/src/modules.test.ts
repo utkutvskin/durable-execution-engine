@@ -1,7 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { defineStep, defineWorkflow } from "@dee/core";
-import { CliError } from "./errors.js";
+import { CliError } from "./errors.ts";
 import {
   EXAMPLE_NAMES,
   loadExample,
@@ -9,7 +9,7 @@ import {
   loadWorkflowModule,
   mergeModules,
   toWorkflowModule,
-} from "./modules.js";
+} from "./modules.ts";
 
 describe("workflow modules", () => {
   const workflow = defineWorkflow("one", (ctx) => ctx.step("one.step", {}));

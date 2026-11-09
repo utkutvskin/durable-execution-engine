@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createRunControl, type RunControl } from "../cancellation/run-control.js";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createPostgresEventStore, type EventStore } from "../event-store/event-store.js";
-import type { ParentClosePolicy, WorkflowEvent } from "../event-store/events.js";
-import { createResultRecorder, type ResultRecorder } from "../idempotency/recorder.js";
-import { commandToEvent } from "../workflow/command-events.js";
-import { runDecisionLoop } from "../workflow/decision-loop.js";
-import { defineWorkflow } from "../workflow/define-workflow.js";
-import type { ClockSource, RandomSource } from "../workflow/sources.js";
+import { createRunControl, type RunControl } from "../cancellation/run-control.ts";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createPostgresEventStore, type EventStore } from "../event-store/event-store.ts";
+import type { ParentClosePolicy, WorkflowEvent } from "../event-store/events.ts";
+import { createResultRecorder, type ResultRecorder } from "../idempotency/recorder.ts";
+import { commandToEvent } from "../workflow/command-events.ts";
+import { runDecisionLoop } from "../workflow/decision-loop.ts";
+import { defineWorkflow } from "../workflow/define-workflow.ts";
+import type { ClockSource, RandomSource } from "../workflow/sources.ts";
 
 const sources: { clock: ClockSource; random: RandomSource } = {
   clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },

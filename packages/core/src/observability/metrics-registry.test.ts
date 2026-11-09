@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createMetricsRegistry } from "./metrics-registry.js";
-import { parsePrometheusText } from "./prometheus-text.js";
+import { createMetricsRegistry } from "./metrics-registry.ts";
+import { parsePrometheusText } from "./prometheus-text.ts";
 
 describe("metrics registry", () => {
   it("renders a counter and a gauge with help, type and labels", async () => {

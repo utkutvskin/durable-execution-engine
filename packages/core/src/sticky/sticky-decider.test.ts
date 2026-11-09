@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { WorkflowEvent } from "../event-store/events.js";
-import { commandToEvent } from "../workflow/command-events.js";
-import type { WorkflowHandler } from "../workflow/context.js";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import { commandToEvent } from "../workflow/command-events.ts";
+import type { WorkflowHandler } from "../workflow/context.ts";
 import {
   runDecisionLoop,
   type DecisionLoopOptions,
   type DecisionResult,
-} from "../workflow/decision-loop.js";
-import { NonDeterminismError } from "../workflow/errors.js";
-import type { LiveSession } from "../workflow/live-session.js";
-import { createRunCache } from "./run-cache.js";
-import { createStickyDecider, type StickyDecider } from "./sticky-decider.js";
+} from "../workflow/decision-loop.ts";
+import { NonDeterminismError } from "../workflow/errors.ts";
+import type { LiveSession } from "../workflow/live-session.ts";
+import { createRunCache } from "./run-cache.ts";
+import { createStickyDecider, type StickyDecider } from "./sticky-decider.ts";
 
 const options: DecisionLoopOptions = {
   clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },

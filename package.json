@@ -18,17 +18,20 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --if-present run typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
-    "bench:sticky": "node --import ./packages/worker/src/chaos/register.ts ./packages/worker/src/bench/run-sticky-bench.ts",
-    "bench:explain": "node --import ./packages/worker/src/chaos/register.ts ./packages/worker/src/bench/run-explain.ts",
-    "bench": "node --import ./packages/worker/src/chaos/register.ts ./packages/worker/src/bench/run-bench.ts",
+    "bench:sticky": "node --conditions=development ./packages/worker/src/bench/run-sticky-bench.ts",
+    "bench:explain": "node --conditions=development ./packages/worker/src/bench/run-explain.ts",
+    "bench": "node --conditions=development ./packages/worker/src/bench/run-bench.ts",
     "migrate:up": "pnpm --filter @dee/core run migrate:up",
     "migrate:down": "pnpm --filter @dee/core run migrate:down",
     "example:payment": "node packages/cli/bin/wf.js example payment-saga",
     "example:etl": "node packages/cli/bin/wf.js example etl-pipeline",
-    "test:examples": "vitest run examples packages/cli"
+    "test:examples": "vitest run examples packages/cli",
+    "build": "tsc -b tsconfig.build.json"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@dee/cli": "workspace:*",
+    "@dee/core": "workspace:*",
     "@eslint/js": "^10.0.1",
     "@types/node": "^22.20.4",
     "@vitest/coverage-v8": "^5.0.1",
@@ -37,6 +40,7 @@
     "fast-check": "^4.10.2",
     "playwright-core": "^1.64.1",
     "prettier": "^3.9.8",
+    "publint": "^0.3.25",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.70.0",
     "vitest": "^5.0.1"

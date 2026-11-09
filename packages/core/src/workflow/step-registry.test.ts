@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createStepRegistry } from "./step-registry.js";
+import { createStepRegistry } from "./step-registry.ts";
 
 describe("createStepRegistry", () => {
   it("returns the registered handler for its step type", () => {

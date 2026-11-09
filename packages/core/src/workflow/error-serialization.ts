@@ -1,4 +1,4 @@
-import type { RecordedError } from "../event-store/events.js";
+import type { RecordedError } from "../event-store/events.ts";
 
 /**
  * The wire form of an `Error`: everything a step's thrown error needs to

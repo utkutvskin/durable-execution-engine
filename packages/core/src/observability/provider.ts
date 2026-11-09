@@ -8,7 +8,7 @@ import {
   type SpanExporter,
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
-import { createTracing, type Tracing } from "./tracing.js";
+import { createTracing, type Tracing } from "./tracing.ts";
 
 /**
  * Settings for `createTracingProvider`. `samplingRatio` (default 1) is the

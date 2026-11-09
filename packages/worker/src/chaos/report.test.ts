@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { renderChaosReport } from "./report.js";
-import { SCENARIOS, type RepetitionResult } from "./scenarios.js";
+import { renderChaosReport } from "./report.ts";
+import { SCENARIOS, type RepetitionResult } from "./scenarios.ts";
 
 function result(
   scenario: RepetitionResult["scenario"],

@@ -1,0 +1,43 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "customConditions": [],
+    "declarationMap": false,
+    "sourceMap": false,
+    "types": ["node"]
+  },
+  "include": ["src"],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/test-support.ts",
+    "src/client",
+    "src/fixtures",
+    "src/chaos",
+    "src/bench",
+    "src/run.ts"
+  ],
+  "references": [
+    {
+      "path": "../../packages/core/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/worker/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/api/tsconfig.build.json"
+    },
+    {
+      "path": "../../apps/ui/tsconfig.build.json"
+    },
+    {
+      "path": "../../examples/payment-saga/tsconfig.build.json"
+    },
+    {
+      "path": "../../examples/etl-pipeline/tsconfig.build.json"
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createJanitor } from "../recovery/janitor.js";
-import { createTaskQueue } from "./task-queue.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createJanitor } from "../recovery/janitor.ts";
+import { createTaskQueue } from "./task-queue.ts";
 
 const SKEW_MS = 30_000;
 

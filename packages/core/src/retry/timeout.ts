@@ -1,7 +1,7 @@
-import type { ClockSource } from "../workflow/sources.js";
-import type { EventStore } from "../event-store/event-store.js";
-import { isTerminalState } from "../run/state-machine.js";
-import { foldRunEvents } from "../run/projection.js";
+import type { ClockSource } from "../workflow/sources.ts";
+import type { EventStore } from "../event-store/event-store.ts";
+import { isTerminalState } from "../run/state-machine.ts";
+import { foldRunEvents } from "../run/projection.ts";
 
 /**
  * The timer functions `runWithTimeout` schedules its deadline with.

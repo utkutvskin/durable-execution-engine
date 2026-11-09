@@ -1,6 +1,6 @@
 import type { z } from "zod";
-import { resolveRetryPolicy, type RetryPolicy } from "../retry/retry-policy.js";
-import type { StepContext, StepHandler } from "./step-registry.js";
+import { resolveRetryPolicy, type RetryPolicy } from "../retry/retry-policy.ts";
+import type { StepContext, StepHandler } from "./step-registry.ts";
 
 /**
  * A step registered under `stepType`: its handler, wrapped with whatever

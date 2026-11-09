@@ -1,6 +1,6 @@
-import type { RecordedError, WorkflowEvent } from "../event-store/events.js";
-import { deserializeError, toRecordedError } from "./error-serialization.js";
-import type { WorkflowCommand } from "./commands.js";
+import type { RecordedError, WorkflowEvent } from "../event-store/events.ts";
+import { deserializeError, toRecordedError } from "./error-serialization.ts";
+import type { WorkflowCommand } from "./commands.ts";
 import type {
   ChildHandle,
   ChildOptions,
@@ -11,7 +11,7 @@ import type {
   SelectResult,
   WorkflowContext,
   WorkflowHandler,
-} from "./context.js";
+} from "./context.ts";
 import {
   CancelledError,
   ChildLimitExceededError,
@@ -19,18 +19,18 @@ import {
   StepFailedError,
   VersionMismatchError,
   sleepDurationError,
-} from "./errors.js";
-import { createCommandMatcher, recordedCommandOf } from "./command-matcher.js";
-import { createContextValues } from "./context-values.js";
-import { fulfilledValues, runParallel } from "./parallel.js";
+} from "./errors.ts";
+import { createCommandMatcher, recordedCommandOf } from "./command-matcher.ts";
+import { createContextValues } from "./context-values.ts";
+import { fulfilledValues, runParallel } from "./parallel.ts";
 import {
   ForbiddenApiError,
   guardAgainstForbiddenApis,
   runUnguarded,
   waitForMacrotask,
   WorkflowActiveAfterQuiescenceError,
-} from "./sandbox.js";
-import type { ClockSource, RandomSource } from "./sources.js";
+} from "./sandbox.ts";
+import type { ClockSource, RandomSource } from "./sources.ts";
 
 /**
  * Everything `runDecisionLoop` needs beyond the workflow itself and its

@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { workflowEventSchema, type WorkflowEvent } from "../event-store/events.js";
-import { commandToEvent } from "./command-events.js";
-import { runDecisionLoop } from "./decision-loop.js";
-import { defineWorkflow } from "./define-workflow.js";
-import { serializeError } from "./error-serialization.js";
-import { InvalidSleepDurationError, StepFailedError } from "./errors.js";
-import { createLiveSession } from "./live-session.js";
-import { runWorkflowInMemory } from "./run-workflow.js";
-import { createStepRegistry } from "./step-registry.js";
+import { workflowEventSchema, type WorkflowEvent } from "../event-store/events.ts";
+import { commandToEvent } from "./command-events.ts";
+import { runDecisionLoop } from "./decision-loop.ts";
+import { defineWorkflow } from "./define-workflow.ts";
+import { serializeError } from "./error-serialization.ts";
+import { InvalidSleepDurationError, StepFailedError } from "./errors.ts";
+import { createLiveSession } from "./live-session.ts";
+import { runWorkflowInMemory } from "./run-workflow.ts";
+import { createStepRegistry } from "./step-registry.ts";
 
 const sources = {
   clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },

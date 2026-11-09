@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createScheduleManager, type CreateScheduleInput } from "./schedule-manager.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createScheduleManager, type CreateScheduleInput } from "./schedule-manager.ts";
 
 const START = new Date("2026-06-01T00:00:00.000Z");
 const MINUTE = 60_000;

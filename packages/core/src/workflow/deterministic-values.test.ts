@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { WorkflowEvent } from "../event-store/events.js";
-import { createRunCache } from "../sticky/run-cache.js";
-import { createStickyDecider } from "../sticky/sticky-decider.js";
-import { commandToEvent } from "./command-events.js";
-import type { WorkflowHandler } from "./context.js";
-import { runDecisionLoop, type DecisionResult } from "./decision-loop.js";
-import { NonDeterminismError } from "./errors.js";
-import type { LiveSession } from "./live-session.js";
-import { WorkflowActiveAfterQuiescenceError } from "./sandbox.js";
-import { systemClock } from "./sources.js";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import { createRunCache } from "../sticky/run-cache.ts";
+import { createStickyDecider } from "../sticky/sticky-decider.ts";
+import { commandToEvent } from "./command-events.ts";
+import type { WorkflowHandler } from "./context.ts";
+import { runDecisionLoop, type DecisionResult } from "./decision-loop.ts";
+import { NonDeterminismError } from "./errors.ts";
+import type { LiveSession } from "./live-session.ts";
+import { WorkflowActiveAfterQuiescenceError } from "./sandbox.ts";
+import { systemClock } from "./sources.ts";
 
 type Mode = "cold" | "sticky";
 

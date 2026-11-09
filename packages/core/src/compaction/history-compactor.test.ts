@@ -1,14 +1,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { findCurrentRun, readRunChain } from "../continuation/run-chain.js";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { ConcurrencyError } from "../event-store/errors.js";
-import { createPostgresEventStore, type EventStore } from "../event-store/event-store.js";
-import type { WorkflowEvent } from "../event-store/events.js";
-import { createResultRecorder, type ResultRecorder } from "../idempotency/recorder.js";
-import { rebuildProjection } from "../run/projection-store.js";
-import type { ClockSource } from "../workflow/sources.js";
-import { createHistoryCompactor, type HistoryCompactor } from "./history-compactor.js";
-import { readSnapshotOnClient } from "./snapshot.js";
+import { findCurrentRun, readRunChain } from "../continuation/run-chain.ts";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { ConcurrencyError } from "../event-store/errors.ts";
+import { createPostgresEventStore, type EventStore } from "../event-store/event-store.ts";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import { createResultRecorder, type ResultRecorder } from "../idempotency/recorder.ts";
+import { rebuildProjection } from "../run/projection-store.ts";
+import type { ClockSource } from "../workflow/sources.ts";
+import { createHistoryCompactor, type HistoryCompactor } from "./history-compactor.ts";
+import { readSnapshotOnClient } from "./snapshot.ts";
 
 const HOUR_MS = 3_600_000;
 

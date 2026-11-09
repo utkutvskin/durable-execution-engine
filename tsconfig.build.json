@@ -1,0 +1,29 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/core/tsconfig.build.json"
+    },
+    {
+      "path": "./packages/worker/tsconfig.build.json"
+    },
+    {
+      "path": "./packages/api/tsconfig.build.json"
+    },
+    {
+      "path": "./apps/ui/tsconfig.build.json"
+    },
+    {
+      "path": "./examples/hello/tsconfig.build.json"
+    },
+    {
+      "path": "./examples/payment-saga/tsconfig.build.json"
+    },
+    {
+      "path": "./examples/etl-pipeline/tsconfig.build.json"
+    },
+    {
+      "path": "./packages/cli/tsconfig.build.json"
+    }
+  ]
+}

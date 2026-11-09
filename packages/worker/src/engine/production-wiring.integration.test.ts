@@ -7,12 +7,12 @@ import {
   ENGINE_METRIC_NAMES,
   type Pool,
 } from "@dee/core";
-import { parsePrometheusText } from "../../../core/src/observability/prometheus-text.js";
-import { createRunService, type RunService } from "../../../api/src/index.js";
-import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.js";
-import { startOpsServer, type OpsServer } from "../ops-server.js";
-import { waitFor } from "../test-support.js";
-import { startEngine, type Engine } from "./runtime.js";
+import { parsePrometheusText } from "../../../core/src/observability/prometheus-text.ts";
+import { createRunService, type RunService } from "../../../api/src/index.ts";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.ts";
+import { startOpsServer, type OpsServer } from "../ops-server.ts";
+import { waitFor } from "../test-support.ts";
+import { startEngine, type Engine } from "./runtime.ts";
 
 describe("engine production wiring against postgres", () => {
   let database: IsolatedSchema;

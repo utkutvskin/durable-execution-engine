@@ -9,7 +9,7 @@ import {
 } from "@dee/core";
 import { createApiKeyStore, createApiServer } from "@dee/api";
 import { createUiHandler } from "@dee/ui";
-import type { ServeLimits } from "./commands/runtime-flags.js";
+import type { ServeLimits } from "./commands/runtime-flags.ts";
 
 /**
  * Configuration of `startServeEnvironment`. `port` 0 picks a free port.

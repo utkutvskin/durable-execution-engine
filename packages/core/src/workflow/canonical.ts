@@ -1,4 +1,4 @@
-import { jsonCodec } from "../event-store/codec.js";
+import { jsonCodec } from "../event-store/codec.ts";
 
 function sortKeys(value: unknown): unknown {
   if (Array.isArray(value)) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_STICKY_BENCHMARK_CONFIG, runStickyBenchmark } from "./sticky-bench.js";
+import { DEFAULT_STICKY_BENCHMARK_CONFIG, runStickyBenchmark } from "./sticky-bench.ts";
 
 describe("sticky routing benchmark", () => {
   it("serves more than 80 percent of the resumed decisions from the cache with 3 engines", async () => {

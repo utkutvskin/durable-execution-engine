@@ -1,5 +1,5 @@
 import type { DequeueOptions, EnqueueInput, LeasedTask, TaskQueue } from "@dee/core";
-import type { Timers } from "./timers.js";
+import type { Timers } from "./timers.ts";
 
 export interface VirtualTime {
   readonly timers: Timers;

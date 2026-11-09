@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.js";
-import { createSlowDiskPool } from "./slow-pool.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.ts";
+import { createSlowDiskPool } from "./slow-pool.ts";
 
 describe("slow disk pool", () => {
   let database: IsolatedSchema;

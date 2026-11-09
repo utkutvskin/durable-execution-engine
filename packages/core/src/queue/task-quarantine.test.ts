@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createJanitor } from "../recovery/janitor.js";
-import { createTaskQueue, type TaskQueue } from "./task-queue.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createJanitor } from "../recovery/janitor.ts";
+import { createTaskQueue, type TaskQueue } from "./task-queue.ts";
 
 const START = new Date("2026-02-01T00:00:00.000Z");
 

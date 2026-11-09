@@ -1,4 +1,4 @@
-import { DEFAULT_STICKY_BENCHMARK_CONFIG, runStickyBenchmark } from "./sticky-bench.js";
+import { DEFAULT_STICKY_BENCHMARK_CONFIG, runStickyBenchmark } from "./sticky-bench.ts";
 
 const enginesFlag = Number(process.env["BENCH_ENGINES"] ?? DEFAULT_STICKY_BENCHMARK_CONFIG.engines);
 const runsFlag = Number(process.env["BENCH_RUNS"] ?? DEFAULT_STICKY_BENCHMARK_CONFIG.runs);

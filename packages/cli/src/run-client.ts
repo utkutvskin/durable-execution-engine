@@ -1,4 +1,4 @@
-import { ApiError } from "./errors.js";
+import { ApiError } from "./errors.ts";
 
 /**
  * A run as the api reports it.

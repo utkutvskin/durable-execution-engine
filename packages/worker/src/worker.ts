@@ -1,7 +1,7 @@
 import type { LeasedTask, TaskQueue } from "@dee/core";
-import type { WorkerIdentity } from "./identity.js";
-import { LeaseLostError, ParkTaskError, ShutdownTimeoutError } from "./errors.js";
-import { systemTimers, type Timers } from "./timers.js";
+import type { WorkerIdentity } from "./identity.ts";
+import { LeaseLostError, ParkTaskError, ShutdownTimeoutError } from "./errors.ts";
+import { systemTimers, type Timers } from "./timers.ts";
 
 /**
  * What a task handler receives besides the task. `signal` aborts when the

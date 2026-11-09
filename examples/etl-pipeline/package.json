@@ -2,15 +2,44 @@
   "name": "@dee/example-etl-pipeline",
   "version": "0.1.1",
   "license": "Apache-2.0",
-  "private": true,
   "type": "module",
   "description": "Example: an etl pipeline with fan-out, retries and a nightly schedule.",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc -b tsconfig.build.json"
   },
   "dependencies": {
     "@dee/core": "workspace:*"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/utkutvskin/durable-execution-engine.git",
+    "directory": "examples/etl-pipeline"
   }
 }

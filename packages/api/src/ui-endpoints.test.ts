@@ -1,8 +1,8 @@
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDeadLetterQueue, createPostgresEventStore } from "@dee/core";
-import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.js";
-import { createApiServer } from "./server.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.ts";
+import { createApiServer } from "./server.ts";
 
 interface SseFrame {
   readonly event: string;

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { WorkflowEvent } from "../event-store/events.js";
-import { runDecisionLoop } from "./decision-loop.js";
-import { defineWorkflow } from "./define-workflow.js";
-import { ChildLimitExceededError, NonDeterminismError } from "./errors.js";
-import type { ClockSource, RandomSource } from "./sources.js";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import { runDecisionLoop } from "./decision-loop.ts";
+import { defineWorkflow } from "./define-workflow.ts";
+import { ChildLimitExceededError, NonDeterminismError } from "./errors.ts";
+import type { ClockSource, RandomSource } from "./sources.ts";
 
 const sources: { clock: ClockSource; random: RandomSource } = {
   clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },

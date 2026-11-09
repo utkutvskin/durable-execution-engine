@@ -1,9 +1,9 @@
 import { isDeepStrictEqual } from "node:util";
 import type { Pool } from "pg";
-import { readSnapshotOnClient } from "../compaction/snapshot.js";
-import type { EventStore } from "../event-store/event-store.js";
-import { createInitialProjection, foldRunEvents, type RunProjection } from "../run/projection.js";
-import { isTerminalState } from "../run/state-machine.js";
+import { readSnapshotOnClient } from "../compaction/snapshot.ts";
+import type { EventStore } from "../event-store/event-store.ts";
+import { createInitialProjection, foldRunEvents, type RunProjection } from "../run/projection.ts";
+import { isTerminalState } from "../run/state-machine.ts";
 
 /**
  * The names of the invariants `createInvariantChecker` evaluates.

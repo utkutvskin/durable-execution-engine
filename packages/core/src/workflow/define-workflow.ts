@@ -1,5 +1,5 @@
-import type { WorkflowHandler } from "./context.js";
-import type { WorkflowDefinition } from "./workflow-registry.js";
+import type { WorkflowHandler } from "./context.ts";
+import type { WorkflowDefinition } from "./workflow-registry.ts";
 
 /**
  * Declares a workflow: pairs a `workflowType` name with its handler. The

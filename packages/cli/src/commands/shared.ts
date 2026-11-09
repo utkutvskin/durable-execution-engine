@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { CliError } from "../errors.js";
+import { CliError } from "../errors.ts";
 
 /**
  * The shape of the options of one command, as `node:util` `parseArgs` takes

@@ -1,26 +1,26 @@
 import type { Pool, PoolClient } from "pg";
-import { withClient, withTransaction } from "../db/transaction.js";
-import { enqueueStepTaskOnClient } from "../queue/step-task-enqueue.js";
-import { systemClock, type ClockSource } from "../workflow/sources.js";
-import { jsonCodec, type Codec } from "../event-store/codec.js";
+import { withClient, withTransaction } from "../db/transaction.ts";
+import { enqueueStepTaskOnClient } from "../queue/step-task-enqueue.ts";
+import { systemClock, type ClockSource } from "../workflow/sources.ts";
+import { jsonCodec, type Codec } from "../event-store/codec.ts";
 import {
   appendEventsOnClient,
   readCurrentSequenceOnClient,
   type StoredEvent,
-} from "../event-store/event-store.js";
-import { closeRunIfTerminal } from "../cancellation/close-run.js";
-import { createContinuedRunOnClient } from "../continuation/continued-run.js";
-import { createChildRunOnClient } from "../children/child-runs.js";
-import { lockRunWithParent } from "../children/run-locks.js";
-import { isTerminalState, type RunState } from "../run/state-machine.js";
-import { insertTimerOnClient } from "../timers/timer-scheduler.js";
-import { noopTracing, type TraceSpan, type Tracing } from "../observability/tracing.js";
+} from "../event-store/event-store.ts";
+import { closeRunIfTerminal } from "../cancellation/close-run.ts";
+import { createContinuedRunOnClient } from "../continuation/continued-run.ts";
+import { createChildRunOnClient } from "../children/child-runs.ts";
+import { lockRunWithParent } from "../children/run-locks.ts";
+import { isTerminalState, type RunState } from "../run/state-machine.ts";
+import { insertTimerOnClient } from "../timers/timer-scheduler.ts";
+import { noopTracing, type TraceSpan, type Tracing } from "../observability/tracing.ts";
 import {
   workflowEventSchema,
   type RecordedError,
   type WorkflowEvent,
-} from "../event-store/events.js";
-import type { SerializedError } from "../workflow/error-serialization.js";
+} from "../event-store/events.ts";
+import type { SerializedError } from "../workflow/error-serialization.ts";
 
 /**
  * The outcome of one step attempt: the value the step returned, or the

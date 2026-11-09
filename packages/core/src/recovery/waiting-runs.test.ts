@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createJanitor, MAX_RECOVERY_BACKOFF_MS } from "./janitor.js";
-import { markRunWaiting } from "./run-waiting.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createJanitor, MAX_RECOVERY_BACKOFF_MS } from "./janitor.ts";
+import { markRunWaiting } from "./run-waiting.ts";
 
 const START = new Date("2026-04-01T00:00:00.000Z");
 const GRACE_MS = 30_000;

@@ -1,6 +1,6 @@
 import pg from "pg";
-import { resolveDatabaseUrl } from "./env.js";
-import { migrateDown, migrateUp } from "./migrator.js";
+import { resolveDatabaseUrl } from "./env.ts";
+import { migrateDown, migrateUp } from "./migrator.ts";
 
 const { Pool } = pg;
 

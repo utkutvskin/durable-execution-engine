@@ -1,20 +1,13 @@
-import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: {
-    alias: {
-      "@dee/core": fileURLToPath(new URL("./packages/core/src/index.ts", import.meta.url)),
-      "@dee/worker": fileURLToPath(new URL("./packages/worker/src/index.ts", import.meta.url)),
-      "@dee/api": fileURLToPath(new URL("./packages/api/src/index.ts", import.meta.url)),
-      "@dee/ui": fileURLToPath(new URL("./apps/ui/src/index.ts", import.meta.url)),
-      "@dee/cli": fileURLToPath(new URL("./packages/cli/src/index.ts", import.meta.url)),
-      "@dee/example-payment-saga": fileURLToPath(
-        new URL("./examples/payment-saga/src/index.ts", import.meta.url),
-      ),
-      "@dee/example-etl-pipeline": fileURLToPath(
-        new URL("./examples/etl-pipeline/src/index.ts", import.meta.url),
-      ),
+    conditions: ["development"],
+  },
+  ssr: {
+    resolve: {
+      conditions: ["development"],
+      externalConditions: ["development"],
     },
   },
   test: {

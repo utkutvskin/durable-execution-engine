@@ -1,11 +1,11 @@
 import type { Pool } from "pg";
-import { jsonCodec, type Codec } from "../event-store/codec.js";
-import { readEventsOnClient } from "../event-store/event-store.js";
-import { createInitialProjection, foldRunEvents } from "../run/projection.js";
-import { RUN_STATES, type RunState } from "../run/state-machine.js";
-import type { ClockSource } from "../workflow/sources.js";
-import { readSnapshotOnClient, serializeProjection, type RunSnapshot } from "./snapshot.js";
-import { rollbackQuietly } from "../db/transaction.js";
+import { jsonCodec, type Codec } from "../event-store/codec.ts";
+import { readEventsOnClient } from "../event-store/event-store.ts";
+import { createInitialProjection, foldRunEvents } from "../run/projection.ts";
+import { RUN_STATES, type RunState } from "../run/state-machine.ts";
+import type { ClockSource } from "../workflow/sources.ts";
+import { readSnapshotOnClient, serializeProjection, type RunSnapshot } from "./snapshot.ts";
+import { rollbackQuietly } from "../db/transaction.ts";
 
 /**
  * How long a closed run keeps its full history, and how much of it survives

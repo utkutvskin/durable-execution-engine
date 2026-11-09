@@ -1,9 +1,9 @@
 import type { Pool } from "pg";
-import { jsonCodec, type Codec } from "../event-store/codec.js";
-import { appendEventsOnClient, readCurrentSequenceOnClient } from "../event-store/event-store.js";
-import { workflowEventSchema } from "../event-store/events.js";
-import type { SerializedError } from "../workflow/error-serialization.js";
-import { rollbackQuietly } from "../db/transaction.js";
+import { jsonCodec, type Codec } from "../event-store/codec.ts";
+import { appendEventsOnClient, readCurrentSequenceOnClient } from "../event-store/event-store.ts";
+import { workflowEventSchema } from "../event-store/events.ts";
+import type { SerializedError } from "../workflow/error-serialization.ts";
+import { rollbackQuietly } from "../db/transaction.ts";
 
 /**
  * What `AttemptLog.recordFailure` needs. `retryAt` is when the next attempt

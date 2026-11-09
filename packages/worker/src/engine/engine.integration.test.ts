@@ -1,15 +1,15 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createTaskQueue, defineStep, defineWorkflow, type Pool } from "@dee/core";
-import { createRunService, type RunService } from "../../../api/src/index.js";
-import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.js";
-import { createShiftableClock, type ShiftableClock } from "../chaos/world.js";
-import { startEngine, type Engine } from "./runtime.js";
+import { createRunService, type RunService } from "../../../api/src/index.ts";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.ts";
+import { createShiftableClock, type ShiftableClock } from "../chaos/world.ts";
+import { startEngine, type Engine } from "./runtime.ts";
 import {
   UnknownWorkflowError,
   createEngineTaskHandler,
   type AnyStepDefinition,
   type AnyWorkflowDefinition,
-} from "./task-handler.js";
+} from "./task-handler.ts";
 
 interface RunRow {
   status: string;

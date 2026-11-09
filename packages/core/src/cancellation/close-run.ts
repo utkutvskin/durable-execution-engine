@@ -1,11 +1,11 @@
 import type { PoolClient } from "pg";
-import type { Codec } from "../event-store/codec.js";
-import { appendEventsOnClient, readCurrentSequenceOnClient } from "../event-store/event-store.js";
-import type { WorkflowEvent } from "../event-store/events.js";
-import { refreshProjectionOnClient } from "../run/projection-store.js";
-import type { RunProjection } from "../run/projection.js";
-import { isTerminalState, type RunState } from "../run/state-machine.js";
-import { requestCancellationOnClient } from "./request-cancellation.js";
+import type { Codec } from "../event-store/codec.ts";
+import { appendEventsOnClient, readCurrentSequenceOnClient } from "../event-store/event-store.ts";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import { refreshProjectionOnClient } from "../run/projection-store.ts";
+import type { RunProjection } from "../run/projection.ts";
+import { isTerminalState, type RunState } from "../run/state-machine.ts";
+import { requestCancellationOnClient } from "./request-cancellation.ts";
 
 interface ChildLink {
   parent_run_id: string | null;

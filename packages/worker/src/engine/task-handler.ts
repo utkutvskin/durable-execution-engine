@@ -34,8 +34,8 @@ import {
   type WaitingOn,
   type WorkflowHandler,
 } from "@dee/core";
-import { ParkTaskError } from "../errors.js";
-import type { TaskHandler } from "../worker.js";
+import { ParkTaskError } from "../errors.ts";
+import type { TaskHandler } from "../worker.ts";
 
 /**
  * A workflow definition of any input and result type, as the engine accepts

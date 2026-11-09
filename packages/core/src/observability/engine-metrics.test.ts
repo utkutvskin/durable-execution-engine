@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createTaskQueue } from "../queue/task-queue.js";
-import { createRecoveryMetrics } from "../recovery/metrics.js";
-import { ENGINE_METRIC_NAMES, createEngineMetrics } from "./engine-metrics.js";
-import { parsePrometheusText } from "./prometheus-text.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createTaskQueue } from "../queue/task-queue.ts";
+import { createRecoveryMetrics } from "../recovery/metrics.ts";
+import { ENGINE_METRIC_NAMES, createEngineMetrics } from "./engine-metrics.ts";
+import { parsePrometheusText } from "./prometheus-text.ts";
 
 describe("engine metrics", () => {
   let database: IsolatedSchema;

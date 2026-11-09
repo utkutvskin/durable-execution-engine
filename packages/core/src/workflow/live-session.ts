@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
-import type { WorkflowEvent } from "../event-store/events.js";
-import type { WorkflowCommand } from "./commands.js";
-import type { QueryHandler, WorkflowContext, WorkflowHandler } from "./context.js";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import type { WorkflowCommand } from "./commands.ts";
+import type { QueryHandler, WorkflowContext, WorkflowHandler } from "./context.ts";
 import {
   drainToQuiescence,
   isIntegrityError,
@@ -9,12 +9,12 @@ import {
   toError,
   type DecisionLoopOptions,
   type DecisionResult,
-} from "./decision-loop.js";
-import { toRecordedError } from "./error-serialization.js";
-import { StepFailedError, sleepDurationError } from "./errors.js";
-import { createCommandMatcher, recordedCommandOf } from "./command-matcher.js";
-import { createContextValues } from "./context-values.js";
-import { guardAgainstForbiddenApis, runUnguarded } from "./sandbox.js";
+} from "./decision-loop.ts";
+import { toRecordedError } from "./error-serialization.ts";
+import { StepFailedError, sleepDurationError } from "./errors.ts";
+import { createCommandMatcher, recordedCommandOf } from "./command-matcher.ts";
+import { createContextValues } from "./context-values.ts";
+import { guardAgainstForbiddenApis, runUnguarded } from "./sandbox.ts";
 
 /**
  * What `LiveSession.advance` reports. `decided` carries the decision for the

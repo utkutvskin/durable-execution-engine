@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CliError } from "../errors.js";
+import { CliError } from "../errors.ts";
 import {
   booleanFlag,
   parseCommand,
@@ -7,7 +7,7 @@ import {
   requirePositional,
   stringFlag,
   stringFlags,
-} from "./shared.js";
+} from "./shared.ts";
 
 describe("command argument parsing", () => {
   const spec = {

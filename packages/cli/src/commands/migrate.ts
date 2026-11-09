@@ -5,10 +5,10 @@ import {
   findComposeDirectory,
   isProduction,
   type DatabaseEffects,
-} from "../database.js";
-import { CliError } from "../errors.js";
-import type { CliIo } from "../io.js";
-import { booleanFlag, parseCommand, stringFlag } from "./shared.js";
+} from "../database.ts";
+import { CliError } from "../errors.ts";
+import type { CliIo } from "../io.ts";
+import { booleanFlag, parseCommand, stringFlag } from "./shared.ts";
 
 /**
  * Hooks of the commands that reach for a database, so tests can replace

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { defineWorkflow } from "./define-workflow.js";
-import { runWorkflowInMemory } from "./run-workflow.js";
-import { createStepRegistry } from "./step-registry.js";
-import { createWorkflowRegistry } from "./workflow-registry.js";
+import { defineWorkflow } from "./define-workflow.ts";
+import { runWorkflowInMemory } from "./run-workflow.ts";
+import { createStepRegistry } from "./step-registry.ts";
+import { createWorkflowRegistry } from "./workflow-registry.ts";
 
 const sources = {
   clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },

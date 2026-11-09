@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildOpenApiDocument } from "./openapi.js";
-import { validateOpenApiDocument } from "./openapi-validator.js";
-import { createRoutes } from "./routes.js";
-import type { RunService } from "./run-service.js";
+import { buildOpenApiDocument } from "./openapi.ts";
+import { validateOpenApiDocument } from "./openapi-validator.ts";
+import { createRoutes } from "./routes.ts";
+import type { RunService } from "./run-service.ts";
 
 const unusedService = {} as RunService;
 const routes = createRoutes(unusedService);

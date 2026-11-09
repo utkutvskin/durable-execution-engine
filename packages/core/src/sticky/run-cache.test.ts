@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createRunCache } from "./run-cache.js";
+import { createRunCache } from "./run-cache.ts";
 
 function fakeClock(): { now: () => Date; advance: (ms: number) => void } {
   let current = Date.parse("2026-01-01T00:00:00.000Z");

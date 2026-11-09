@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
-import type { RecoveryMetrics } from "../recovery/metrics.js";
-import { createMetricsRegistry, type MetricsRegistry } from "./metrics-registry.js";
+import type { RecoveryMetrics } from "../recovery/metrics.ts";
+import { createMetricsRegistry, type MetricsRegistry } from "./metrics-registry.ts";
 
 /**
  * The names of the eight metrics `createEngineMetrics` registers.

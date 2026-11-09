@@ -1,10 +1,10 @@
 import type { Pool, PoolClient } from "pg";
-import type { Codec } from "../event-store/codec.js";
-import { readEventsOnClient, type EventStore } from "../event-store/event-store.js";
-import { readSnapshotOnClient } from "../compaction/snapshot.js";
-import { RUN_STATES, type RunState } from "./state-machine.js";
-import { createInitialProjection, foldRunEvents, type RunProjection } from "./projection.js";
-import { rollbackQuietly } from "../db/transaction.js";
+import type { Codec } from "../event-store/codec.ts";
+import { readEventsOnClient, type EventStore } from "../event-store/event-store.ts";
+import { readSnapshotOnClient } from "../compaction/snapshot.ts";
+import { RUN_STATES, type RunState } from "./state-machine.ts";
+import { createInitialProjection, foldRunEvents, type RunProjection } from "./projection.ts";
+import { rollbackQuietly } from "../db/transaction.ts";
 
 interface RunRow {
   status: string;

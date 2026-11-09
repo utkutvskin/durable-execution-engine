@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createPostgresEventStore, type EventStore } from "../event-store/event-store.js";
-import type { WorkflowEvent } from "../event-store/events.js";
-import { createRunCache } from "../sticky/run-cache.js";
-import { createStickyDecider } from "../sticky/sticky-decider.js";
-import type { WorkflowHandler } from "../workflow/context.js";
-import { runDecisionLoop, type DecisionLoopOptions } from "../workflow/decision-loop.js";
-import type { LiveSession } from "../workflow/live-session.js";
-import { createResultRecorder, type ResultRecorder } from "./recorder.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createPostgresEventStore, type EventStore } from "../event-store/event-store.ts";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import { createRunCache } from "../sticky/run-cache.ts";
+import { createStickyDecider } from "../sticky/sticky-decider.ts";
+import type { WorkflowHandler } from "../workflow/context.ts";
+import { runDecisionLoop, type DecisionLoopOptions } from "../workflow/decision-loop.ts";
+import type { LiveSession } from "../workflow/live-session.ts";
+import { createResultRecorder, type ResultRecorder } from "./recorder.ts";
 
 const options: DecisionLoopOptions = {
   clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },

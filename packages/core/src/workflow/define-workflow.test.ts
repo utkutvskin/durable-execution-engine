@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defineWorkflow } from "./define-workflow.js";
+import { defineWorkflow } from "./define-workflow.ts";
 
 describe("defineWorkflow", () => {
   it("returns a definition carrying the workflow type and handler unchanged", () => {

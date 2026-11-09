@@ -1,5 +1,5 @@
-import type { WorkflowCommand } from "../workflow/commands.js";
-import { InvalidTransitionError } from "./errors.js";
+import type { WorkflowCommand } from "../workflow/commands.ts";
+import { InvalidTransitionError } from "./errors.ts";
 
 /**
  * Every state a workflow run can be in.

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createPool } from "./pool.js";
-import { createIsolatedSchema, type IsolatedSchema } from "./test-harness.js";
-import { withClient, withTransaction } from "./transaction.js";
+import { createPool } from "./pool.ts";
+import { createIsolatedSchema, type IsolatedSchema } from "./test-harness.ts";
+import { withClient, withTransaction } from "./transaction.ts";
 
 describe("transactions and broken clients", () => {
   let database: IsolatedSchema;

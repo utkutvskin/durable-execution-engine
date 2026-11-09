@@ -1,8 +1,8 @@
 import type { PoolClient } from "pg";
-import type { Codec } from "../event-store/codec.js";
-import { appendEventsOnClient } from "../event-store/event-store.js";
-import type { WorkflowEvent } from "../event-store/events.js";
-import { applyRunTimeoutsOnClient } from "../timeouts/run-timeouts.js";
+import type { Codec } from "../event-store/codec.ts";
+import { appendEventsOnClient } from "../event-store/event-store.ts";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import { applyRunTimeoutsOnClient } from "../timeouts/run-timeouts.ts";
 
 /**
  * Creates the run for a `child_started` event inside the caller's

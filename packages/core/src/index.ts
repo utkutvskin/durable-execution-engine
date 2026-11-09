@@ -4,17 +4,17 @@
  */
 export const packageName = "@dee/core";
 
-export type { Codec } from "./event-store/codec.js";
+export type { Codec } from "./event-store/codec.ts";
 export {
   createGzipCodec,
   createSizeLimitedCodec,
   DEFAULT_MAX_PAYLOAD_BYTES,
   jsonCodec,
   maskSensitiveFields,
-} from "./event-store/codec.js";
-export { appendEventsOnClient, createPostgresEventStore } from "./event-store/event-store.js";
-export type { EventStore, StoredEvent } from "./event-store/event-store.js";
-export { ConcurrencyError, PayloadTooLargeError } from "./event-store/errors.js";
+} from "./event-store/codec.ts";
+export { appendEventsOnClient, createPostgresEventStore } from "./event-store/event-store.ts";
+export type { EventStore, StoredEvent } from "./event-store/event-store.ts";
+export { ConcurrencyError, PayloadTooLargeError } from "./event-store/errors.ts";
 export {
   runCompletedEventSchema,
   runCancelledEventSchema,
@@ -28,8 +28,8 @@ export {
   timerFiredEventSchema,
   timerStartedEventSchema,
   workflowEventSchema,
-} from "./event-store/events.js";
-export type { WorkflowEvent } from "./event-store/events.js";
+} from "./event-store/events.ts";
+export type { WorkflowEvent } from "./event-store/events.ts";
 
 export type {
   CompleteRunCommand,
@@ -37,64 +37,64 @@ export type {
   ScheduleStepCommand,
   StartTimerCommand,
   WorkflowCommand,
-} from "./workflow/commands.js";
-export type { WorkflowContext, WorkflowHandler } from "./workflow/context.js";
-export { runDecisionLoop } from "./workflow/decision-loop.js";
-export type { DecisionLoopOptions, DecisionResult } from "./workflow/decision-loop.js";
-export { InvalidTransitionError } from "./run/errors.js";
+} from "./workflow/commands.ts";
+export type { WorkflowContext, WorkflowHandler } from "./workflow/context.ts";
+export { runDecisionLoop } from "./workflow/decision-loop.ts";
+export type { DecisionLoopOptions, DecisionResult } from "./workflow/decision-loop.ts";
+export { InvalidTransitionError } from "./run/errors.ts";
 export {
   assertRunAcceptsCommand,
   assertTransition,
   isTerminalState,
   RUN_STATES,
   RUN_STATE_TRANSITIONS,
-} from "./run/state-machine.js";
-export type { RunState } from "./run/state-machine.js";
+} from "./run/state-machine.ts";
+export type { RunState } from "./run/state-machine.ts";
 export {
   applyEventToProjection,
   createInitialProjection,
   foldRunEvents,
-} from "./run/projection.js";
-export type { RunProjection } from "./run/projection.js";
-export { rebuildProjection, refreshProjection } from "./run/projection-store.js";
-export { defineStep } from "./workflow/define-step.js";
-export type { DefineStepOptions, StepDefinition } from "./workflow/define-step.js";
-export { defineWorkflow } from "./workflow/define-workflow.js";
-export { deserializeError, serializeError } from "./workflow/error-serialization.js";
-export type { SerializedError } from "./workflow/error-serialization.js";
+} from "./run/projection.ts";
+export type { RunProjection } from "./run/projection.ts";
+export { rebuildProjection, refreshProjection } from "./run/projection-store.ts";
+export { defineStep } from "./workflow/define-step.ts";
+export type { DefineStepOptions, StepDefinition } from "./workflow/define-step.ts";
+export { defineWorkflow } from "./workflow/define-workflow.ts";
+export { deserializeError, serializeError } from "./workflow/error-serialization.ts";
+export type { SerializedError } from "./workflow/error-serialization.ts";
 export {
   CancelledError,
   InvalidSleepDurationError,
   NonDeterminismError,
   StepFailedError,
   VersionMismatchError,
-} from "./workflow/errors.js";
+} from "./workflow/errors.ts";
 export {
   EXECUTION_TIMEOUT_TIMER_ID,
   RUN_TIMEOUT_TIMER_ID,
   applyRunTimeoutsOnClient,
   timeOutRunOnClient,
   validateTimeoutMs,
-} from "./timeouts/run-timeouts.js";
-export { RunHistoryCompactedError } from "./signals/signal-service.js";
-export { ForbiddenApiError } from "./workflow/sandbox.js";
-export { runRegisteredWorkflowInMemory, runWorkflowInMemory } from "./workflow/run-workflow.js";
-export type { RunWorkflowOptions, RunWorkflowResult } from "./workflow/run-workflow.js";
-export { systemClock, systemRandomSource } from "./workflow/sources.js";
-export type { ClockSource, RandomSource } from "./workflow/sources.js";
-export { createStepRegistry } from "./workflow/step-registry.js";
-export type { StepContext, StepHandler, StepRegistry } from "./workflow/step-registry.js";
-export { createWorkflowRegistry } from "./workflow/workflow-registry.js";
-export type { WorkflowDefinition, WorkflowRegistry } from "./workflow/workflow-registry.js";
-export { TASK_TYPES, createTaskQueue, taskQueueName } from "./queue/task-queue.js";
+} from "./timeouts/run-timeouts.ts";
+export { RunHistoryCompactedError } from "./signals/signal-service.ts";
+export { ForbiddenApiError } from "./workflow/sandbox.ts";
+export { runRegisteredWorkflowInMemory, runWorkflowInMemory } from "./workflow/run-workflow.ts";
+export type { RunWorkflowOptions, RunWorkflowResult } from "./workflow/run-workflow.ts";
+export { systemClock, systemRandomSource } from "./workflow/sources.ts";
+export type { ClockSource, RandomSource } from "./workflow/sources.ts";
+export { createStepRegistry } from "./workflow/step-registry.ts";
+export type { StepContext, StepHandler, StepRegistry } from "./workflow/step-registry.ts";
+export { createWorkflowRegistry } from "./workflow/workflow-registry.ts";
+export type { WorkflowDefinition, WorkflowRegistry } from "./workflow/workflow-registry.ts";
+export { TASK_TYPES, createTaskQueue, taskQueueName } from "./queue/task-queue.ts";
 export type {
   DequeueOptions,
   EnqueueInput,
   LeasedTask,
   TaskQueue,
   TaskType,
-} from "./queue/task-queue.js";
-export { createResultRecorder } from "./idempotency/recorder.js";
+} from "./queue/task-queue.ts";
+export { createResultRecorder } from "./idempotency/recorder.ts";
 export type {
   RecordStepResultInput,
   RecordWorkflowTaskResultInput,
@@ -102,17 +102,17 @@ export type {
   RecordedWorkflowTaskResult,
   ResultRecorder,
   StepOutcome,
-} from "./idempotency/recorder.js";
-export { createPool, DEFAULT_ACQUIRE_TIMEOUT_MS } from "./db/pool.js";
-export { rollbackQuietly, withClient, withTransaction } from "./db/transaction.js";
-export { enqueueStepTaskOnClient } from "./queue/step-task-enqueue.js";
-export type { StepTaskEnqueueInput } from "./queue/step-task-enqueue.js";
-export type { CreatePoolOptions } from "./db/pool.js";
+} from "./idempotency/recorder.ts";
+export { createPool, DEFAULT_ACQUIRE_TIMEOUT_MS } from "./db/pool.ts";
+export { rollbackQuietly, withClient, withTransaction } from "./db/transaction.ts";
+export { enqueueStepTaskOnClient } from "./queue/step-task-enqueue.ts";
+export type { StepTaskEnqueueInput } from "./queue/step-task-enqueue.ts";
+export type { CreatePoolOptions } from "./db/pool.ts";
 export {
   DEFAULT_POISON_THRESHOLD,
   MAX_RECOVERY_BACKOFF_MS,
   createJanitor,
-} from "./recovery/janitor.js";
+} from "./recovery/janitor.ts";
 export type {
   Janitor,
   JanitorOptions,
@@ -122,13 +122,13 @@ export type {
   StalledRun,
   StalledRunOptions,
   SweepReport,
-} from "./recovery/janitor.js";
-export { markRunWaiting } from "./recovery/run-waiting.js";
-export type { RunWaitingMark, WaitingOn } from "./recovery/run-waiting.js";
-export { createRecoveryMetrics } from "./recovery/metrics.js";
-export type { RecoveryMetrics, RecoveryMetricsSnapshot } from "./recovery/metrics.js";
-export { resolveDatabaseUrl } from "./db/env.js";
-export type { DatabaseUrlEnv } from "./db/env.js";
+} from "./recovery/janitor.ts";
+export { markRunWaiting } from "./recovery/run-waiting.ts";
+export type { RunWaitingMark, WaitingOn } from "./recovery/run-waiting.ts";
+export { createRecoveryMetrics } from "./recovery/metrics.ts";
+export type { RecoveryMetrics, RecoveryMetricsSnapshot } from "./recovery/metrics.ts";
+export { resolveDatabaseUrl } from "./db/env.ts";
+export type { DatabaseUrlEnv } from "./db/env.ts";
 export type { Pool } from "pg";
 export {
   DEFAULT_RETRY_POLICY,
@@ -137,35 +137,35 @@ export {
   decideRetry,
   isNonRetryable,
   resolveRetryPolicy,
-} from "./retry/retry-policy.js";
-export type { GiveUpReason, RetryDecision, RetryPolicy } from "./retry/retry-policy.js";
+} from "./retry/retry-policy.ts";
+export type { GiveUpReason, RetryDecision, RetryPolicy } from "./retry/retry-policy.ts";
 export {
   StepTimeoutError,
   enforceWorkflowTimeout,
   runWithTimeout,
   workflowDeadline,
-} from "./retry/timeout.js";
-export type { TimeoutTimers, WorkflowTimeoutOutcome } from "./retry/timeout.js";
-export { createAttemptLog } from "./retry/attempt-log.js";
-export type { AttemptLog, RecordAttemptFailureInput } from "./retry/attempt-log.js";
-export { createDeadLetterQueue } from "./retry/dead-letters.js";
+} from "./retry/timeout.ts";
+export type { TimeoutTimers, WorkflowTimeoutOutcome } from "./retry/timeout.ts";
+export { createAttemptLog } from "./retry/attempt-log.ts";
+export type { AttemptLog, RecordAttemptFailureInput } from "./retry/attempt-log.ts";
+export { createDeadLetterQueue } from "./retry/dead-letters.ts";
 export type {
   AddDeadLetterInput,
   DeadLetter,
   DeadLetterQueue,
   DeadLetterReason,
   ListDeadLettersOptions,
-} from "./retry/dead-letters.js";
-export { createStepTaskProcessor } from "./retry/step-task-processor.js";
+} from "./retry/dead-letters.ts";
+export { createStepTaskProcessor } from "./retry/step-task-processor.ts";
 export type {
   StepTaskOutcome,
   StepTaskPayload,
   StepTaskProcessor,
   StepTaskProcessorOptions,
-} from "./retry/step-task-processor.js";
-export { createMonotonicClock } from "./timers/monotonic-clock.js";
-export type { MonotonicClock } from "./timers/monotonic-clock.js";
-export { createTimerScheduler, insertTimerOnClient } from "./timers/timer-scheduler.js";
+} from "./retry/step-task-processor.ts";
+export { createMonotonicClock } from "./timers/monotonic-clock.ts";
+export type { MonotonicClock } from "./timers/monotonic-clock.ts";
+export { createTimerScheduler, insertTimerOnClient } from "./timers/timer-scheduler.ts";
 export type {
   CatchUpReport,
   FiredTimer,
@@ -173,19 +173,19 @@ export type {
   TickReport,
   TimerScheduler,
   TimerSchedulerOptions,
-} from "./timers/timer-scheduler.js";
+} from "./timers/timer-scheduler.ts";
 export {
   InvalidScheduleError,
   cronTimesBetween,
   nextCronTime,
   parseCron,
-} from "./schedules/cron.js";
-export type { CronSchedule } from "./schedules/cron.js";
+} from "./schedules/cron.ts";
+export type { CronSchedule } from "./schedules/cron.ts";
 export {
   ScheduleAlreadyExistsError,
   ScheduleNotFoundError,
   createScheduleManager,
-} from "./schedules/schedule-manager.js";
+} from "./schedules/schedule-manager.ts";
 export type {
   CreateScheduleInput,
   CatchUpPolicy,
@@ -196,102 +196,102 @@ export type {
   ScheduleTickReport,
   ScheduleTrigger,
   TriggerOutcome,
-} from "./schedules/schedule-manager.js";
-export { UnknownQueryError, runQuery } from "./workflow/query.js";
-export { replayHistory } from "./workflow/decision-loop.js";
-export type { ReplayOutcome } from "./workflow/decision-loop.js";
-export type { CompensationHandler, QueryHandler, SelectResult } from "./workflow/context.js";
+} from "./schedules/schedule-manager.ts";
+export { UnknownQueryError, runQuery } from "./workflow/query.ts";
+export { replayHistory } from "./workflow/decision-loop.ts";
+export type { ReplayOutcome } from "./workflow/decision-loop.ts";
+export type { CompensationHandler, QueryHandler, SelectResult } from "./workflow/context.ts";
 export {
   RunNotFoundError,
   RunNotOpenError,
   createRunInteractions,
-} from "./signals/signal-service.js";
+} from "./signals/signal-service.ts";
 export type {
   RunInteractions,
   RunInteractionsOptions,
   SignalReceipt,
-} from "./signals/signal-service.js";
-export { RunAlreadyClosedError, createRunControl } from "./cancellation/run-control.js";
+} from "./signals/signal-service.ts";
+export { RunAlreadyClosedError, createRunControl } from "./cancellation/run-control.ts";
 export type {
   CancelReceipt,
   RunControl,
   RunControlOptions,
   TerminateReceipt,
-} from "./cancellation/run-control.js";
-export { closeRunIfTerminal } from "./cancellation/close-run.js";
-export { commandToEvent } from "./workflow/command-events.js";
-export { DEFAULT_MAX_CHILDREN } from "./workflow/decision-loop.js";
-export { ChildLimitExceededError } from "./workflow/errors.js";
+} from "./cancellation/run-control.ts";
+export { closeRunIfTerminal } from "./cancellation/close-run.ts";
+export { commandToEvent } from "./workflow/command-events.ts";
+export { DEFAULT_MAX_CHILDREN } from "./workflow/decision-loop.ts";
+export { ChildLimitExceededError } from "./workflow/errors.ts";
 export type {
   ChildHandle,
   ChildOptions,
   ParallelOptions,
   ParallelTask,
-} from "./workflow/context.js";
-export type { StartChildCommand } from "./workflow/commands.js";
+} from "./workflow/context.ts";
+export type { StartChildCommand } from "./workflow/commands.ts";
 export {
   childCompletedEventSchema,
   childFailedEventSchema,
   childStartedEventSchema,
   parentClosePolicySchema,
-} from "./event-store/events.js";
-export type { ParentClosePolicy } from "./event-store/events.js";
-export type { ResultRecorderOptions } from "./idempotency/recorder.js";
-export { createChildRunOnClient } from "./children/child-runs.js";
-export { lockRunWithParent } from "./children/run-locks.js";
-export type { LockedRun } from "./children/run-locks.js";
-export { requestCancellationOnClient } from "./cancellation/request-cancellation.js";
+} from "./event-store/events.ts";
+export type { ParentClosePolicy } from "./event-store/events.ts";
+export type { ResultRecorderOptions } from "./idempotency/recorder.ts";
+export { createChildRunOnClient } from "./children/child-runs.ts";
+export { lockRunWithParent } from "./children/run-locks.ts";
+export type { LockedRun } from "./children/run-locks.ts";
+export { requestCancellationOnClient } from "./cancellation/request-cancellation.ts";
 
-export { createContinuedRunOnClient } from "./continuation/continued-run.js";
-export { findCurrentRun, readRunChain } from "./continuation/run-chain.js";
-export type { ChainRun } from "./continuation/run-chain.js";
-export { createHistoryCompactor } from "./compaction/history-compactor.js";
+export { createContinuedRunOnClient } from "./continuation/continued-run.ts";
+export { findCurrentRun, readRunChain } from "./continuation/run-chain.ts";
+export type { ChainRun } from "./continuation/run-chain.ts";
+export { createHistoryCompactor } from "./compaction/history-compactor.ts";
 export type {
   CompactionReport,
   CompactionResult,
   HistoryCompactor,
   HistoryCompactorOptions,
   RetentionPolicy,
-} from "./compaction/history-compactor.js";
-export { readSnapshotOnClient } from "./compaction/snapshot.js";
-export type { RunSnapshot } from "./compaction/snapshot.js";
-export type { HistoryWarning } from "./workflow/decision-loop.js";
-export { createLiveSession } from "./workflow/live-session.js";
-export type { LiveAdvance, LiveSession } from "./workflow/live-session.js";
-export { createRunCache } from "./sticky/run-cache.js";
-export type { RunCache, RunCacheOptions, RunCacheStats } from "./sticky/run-cache.js";
-export { createStickyDecider } from "./sticky/sticky-decider.js";
+} from "./compaction/history-compactor.ts";
+export { readSnapshotOnClient } from "./compaction/snapshot.ts";
+export type { RunSnapshot } from "./compaction/snapshot.ts";
+export type { HistoryWarning } from "./workflow/decision-loop.ts";
+export { createLiveSession } from "./workflow/live-session.ts";
+export type { LiveAdvance, LiveSession } from "./workflow/live-session.ts";
+export { createRunCache } from "./sticky/run-cache.ts";
+export type { RunCache, RunCacheOptions, RunCacheStats } from "./sticky/run-cache.ts";
+export { createStickyDecider } from "./sticky/sticky-decider.ts";
 export type {
   DecisionSource,
   StickyDecider,
   StickyDeciderOptions,
   StickyDeciderStats,
   StickyDecision,
-} from "./sticky/sticky-decider.js";
-export { createStickyRouter } from "./sticky/sticky-router.js";
-export type { StickyClaim, StickyRouter } from "./sticky/sticky-router.js";
+} from "./sticky/sticky-decider.ts";
+export { createStickyRouter } from "./sticky/sticky-router.ts";
+export type { StickyClaim, StickyRouter } from "./sticky/sticky-router.ts";
 
-export { createRateLimiter } from "./quota/token-bucket.js";
-export type { RateLimitDecision, RateLimiter, TokenBucketConfig } from "./quota/token-bucket.js";
-export { UNLIMITED_QUOTA, createQuotaStore } from "./quota/quota-store.js";
-export type { NamespaceQuota, NamespaceUsage, QuotaStore } from "./quota/quota-store.js";
+export { createRateLimiter } from "./quota/token-bucket.ts";
+export type { RateLimitDecision, RateLimiter, TokenBucketConfig } from "./quota/token-bucket.ts";
+export { UNLIMITED_QUOTA, createQuotaStore } from "./quota/quota-store.ts";
+export type { NamespaceQuota, NamespaceUsage, QuotaStore } from "./quota/quota-store.ts";
 
 export {
   createTracing,
   formatTraceparent,
   noopTracing,
   parseTraceparent,
-} from "./observability/tracing.js";
+} from "./observability/tracing.ts";
 export type {
   ParsedTraceparent,
   StartSpanOptions,
   TraceSpan,
   Tracing,
-} from "./observability/tracing.js";
-export { createTracingProvider } from "./observability/provider.js";
-export type { TracingProvider, TracingProviderOptions } from "./observability/provider.js";
+} from "./observability/tracing.ts";
+export { createTracingProvider } from "./observability/provider.ts";
+export type { TracingProvider, TracingProviderOptions } from "./observability/provider.ts";
 
-export { METRICS_CONTENT_TYPE, createMetricsRegistry } from "./observability/metrics-registry.js";
+export { METRICS_CONTENT_TYPE, createMetricsRegistry } from "./observability/metrics-registry.ts";
 export type {
   Counter,
   Gauge,
@@ -299,40 +299,42 @@ export type {
   Labels,
   MetricDefinition,
   MetricsRegistry,
-} from "./observability/metrics-registry.js";
+} from "./observability/metrics-registry.ts";
 export {
   ENGINE_METRIC_NAMES,
   TASK_LATENCY_BUCKETS,
   createEngineMetrics,
-} from "./observability/engine-metrics.js";
+} from "./observability/engine-metrics.ts";
 export type {
   EngineMetrics,
   EngineMetricsOptions,
   TaskOutcome,
-} from "./observability/engine-metrics.js";
+} from "./observability/engine-metrics.ts";
 export {
   createLogger,
   currentCorrelationId,
   resolveCorrelationId,
   silentLogger,
   withCorrelationId,
-} from "./observability/logger.js";
-export type { LogFields, LogLevel, Logger, LoggerOptions } from "./observability/logger.js";
-export { createHealthChecks } from "./observability/health.js";
-export type { HealthChecks, HealthChecksOptions, ReadinessResult } from "./observability/health.js";
-export { INVARIANT_NAMES, createInvariantChecker } from "./invariants/invariant-checker.js";
+} from "./observability/logger.ts";
+export type { LogFields, LogLevel, Logger, LoggerOptions } from "./observability/logger.ts";
+export { createHealthChecks } from "./observability/health.ts";
+export type { HealthChecks, HealthChecksOptions, ReadinessResult } from "./observability/health.ts";
+export { INVARIANT_NAMES, createInvariantChecker } from "./invariants/invariant-checker.ts";
 export type {
   InvariantCheckOptions,
   InvariantChecker,
   InvariantName,
   InvariantReport,
   InvariantViolation,
-} from "./invariants/invariant-checker.js";
+} from "./invariants/invariant-checker.ts";
 export {
   defaultMigrationsDir,
   loadMigrations,
   migrateDown,
   migrateUp,
   pendingMigrations,
-} from "./db/migrator.js";
-export type { Migration } from "./db/migrator.js";
+} from "./db/migrator.ts";
+export type { Migration } from "./db/migrator.ts";
+
+export type { DemoContext, DemoReport, DemoRunClient, DemoRunSnapshot } from "./demo/demo-types.ts";

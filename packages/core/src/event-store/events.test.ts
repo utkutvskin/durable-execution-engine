@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { workflowEventSchema } from "./events.js";
+import { workflowEventSchema } from "./events.ts";
 
 describe("workflowEventSchema", () => {
   it("accepts a well-formed run_started event", () => {

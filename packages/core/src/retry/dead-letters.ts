@@ -1,8 +1,8 @@
 import type { Pool } from "pg";
 import type { PoolClient } from "pg";
-import { withTransaction } from "../db/transaction.js";
-import type { SerializedError } from "../workflow/error-serialization.js";
-import { systemClock, type ClockSource } from "../workflow/sources.js";
+import { withTransaction } from "../db/transaction.ts";
+import type { SerializedError } from "../workflow/error-serialization.ts";
+import { systemClock, type ClockSource } from "../workflow/sources.ts";
 
 /**
  * Why a step task was dead-lettered: it used every attempt its policy allows.

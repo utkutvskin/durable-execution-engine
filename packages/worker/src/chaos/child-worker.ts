@@ -1,10 +1,10 @@
 import { createPool, createPostgresEventStore, createTaskQueue } from "@dee/core";
 import { writeSync } from "node:fs";
-import { createEngineFlow, type EngineFlowHooks } from "./engine-kit.js";
-import { startEngine } from "../engine/runtime.js";
-import { createWorkerIdentity } from "../identity.js";
-import { createWorker } from "../worker.js";
-import { CRASH_POINTS, createFlowHandler, type CrashPoint } from "./flow.js";
+import { createEngineFlow, type EngineFlowHooks } from "./engine-kit.ts";
+import { startEngine } from "../engine/runtime.ts";
+import { createWorkerIdentity } from "../identity.ts";
+import { createWorker } from "../worker.ts";
+import { CRASH_POINTS, createFlowHandler, type CrashPoint } from "./flow.ts";
 
 function requireEnv(name: string): string {
   const value = process.env[name];

@@ -4,4 +4,4 @@
  */
 export const packageName = "@dee/ui";
 
-export { UI_BASE_PATH, createUiHandler } from "./server.js";
+export { UI_BASE_PATH, createUiHandler } from "./server.ts";

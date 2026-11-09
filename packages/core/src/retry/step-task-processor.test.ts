@@ -1,17 +1,17 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createPostgresEventStore, type EventStore } from "../event-store/event-store.js";
-import { createResultRecorder } from "../idempotency/recorder.js";
-import { createTaskQueue, type LeasedTask, type TaskQueue } from "../queue/task-queue.js";
-import { defineStep, type StepDefinition } from "../workflow/define-step.js";
-import { createAttemptLog } from "./attempt-log.js";
-import { createDeadLetterQueue, type DeadLetterQueue } from "./dead-letters.js";
-import { NonRetryableError } from "./retry-policy.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createPostgresEventStore, type EventStore } from "../event-store/event-store.ts";
+import { createResultRecorder } from "../idempotency/recorder.ts";
+import { createTaskQueue, type LeasedTask, type TaskQueue } from "../queue/task-queue.ts";
+import { defineStep, type StepDefinition } from "../workflow/define-step.ts";
+import { createAttemptLog } from "./attempt-log.ts";
+import { createDeadLetterQueue, type DeadLetterQueue } from "./dead-letters.ts";
+import { NonRetryableError } from "./retry-policy.ts";
 import {
   createStepTaskProcessor,
   type StepTaskOutcome,
   type StepTaskProcessor,
-} from "./step-task-processor.js";
+} from "./step-task-processor.ts";
 
 const QUEUE = "default/steps";
 const T0 = new Date("2026-03-01T10:00:00.000Z").getTime();

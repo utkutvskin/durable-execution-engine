@@ -4,8 +4,8 @@ import {
   ensureDatabase,
   findComposeDirectory,
   type DatabaseEffects,
-} from "./database.js";
-import { CliError } from "./errors.js";
+} from "./database.ts";
+import { CliError } from "./errors.ts";
 
 interface Calls {
   probes: number;

@@ -1,20 +1,20 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { WorkflowModule } from "@dee/cli";
-import { createShiftableClock } from "../../../packages/worker/src/chaos/world.js";
+import { createShiftableClock } from "../../../packages/worker/src/chaos/world.ts";
 import {
   startTestEnvironment,
   type TestEnvironment,
-} from "../../../packages/cli/src/test-support.js";
-import { createInMemoryGateway, type InMemoryGateway } from "./gateway.js";
-import { demo, gateway as demoGateway, steps as demoSteps } from "./index.js";
-import { createPaymentSteps } from "./steps.js";
+} from "../../../packages/cli/src/test-support.ts";
+import { createInMemoryGateway, type InMemoryGateway } from "./gateway.ts";
+import { demo, gateway as demoGateway, steps as demoSteps } from "./index.ts";
+import { createPaymentSteps } from "./steps.ts";
 import {
   APPROVAL_THRESHOLD_CENTS,
   PAYMENT_SAGA,
   paymentSaga,
   type PaymentInput,
   type PaymentResult,
-} from "./workflow.js";
+} from "./workflow.ts";
 
 describe("payment saga", () => {
   let current: TestEnvironment | undefined;

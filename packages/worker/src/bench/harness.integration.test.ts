@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { formatBenchmarkMarkdown } from "./format.js";
-import { DEFAULT_BENCHMARK_CONFIG, runBenchmark, type BenchmarkConfig } from "./harness.js";
+import { formatBenchmarkMarkdown } from "./format.ts";
+import { DEFAULT_BENCHMARK_CONFIG, runBenchmark, type BenchmarkConfig } from "./harness.ts";
 
 const SMALL: BenchmarkConfig = {
   ...DEFAULT_BENCHMARK_CONFIG,

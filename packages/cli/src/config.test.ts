@@ -8,8 +8,8 @@ import {
   readDevState,
   resolveClientConfig,
   writeDevState,
-} from "./config.js";
-import { CliError } from "./errors.js";
+} from "./config.ts";
+import { CliError } from "./errors.ts";
 
 describe("client configuration", () => {
   let directory: string;

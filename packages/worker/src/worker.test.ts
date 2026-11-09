@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { LeaseLostError, ShutdownTimeoutError } from "./errors.js";
-import { createDeferred, createMemoryQueue, createVirtualTime, waitFor } from "./test-support.js";
-import { createWorker, type TaskHandler } from "./worker.js";
+import { LeaseLostError, ShutdownTimeoutError } from "./errors.ts";
+import { createDeferred, createMemoryQueue, createVirtualTime, waitFor } from "./test-support.ts";
+import { createWorker, type TaskHandler } from "./worker.ts";
 
 const noop: TaskHandler = () => Promise.resolve();
 

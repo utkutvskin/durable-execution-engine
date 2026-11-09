@@ -1,19 +1,19 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createPostgresEventStore, type EventStore } from "../event-store/event-store.js";
-import { runDecisionLoop } from "../workflow/decision-loop.js";
-import { defineWorkflow } from "../workflow/define-workflow.js";
-import { UnknownQueryError } from "../workflow/query.js";
-import type { ClockSource, RandomSource } from "../workflow/sources.js";
-import { createWorkflowRegistry } from "../workflow/workflow-registry.js";
-import { createHistoryCompactor } from "../compaction/history-compactor.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createPostgresEventStore, type EventStore } from "../event-store/event-store.ts";
+import { runDecisionLoop } from "../workflow/decision-loop.ts";
+import { defineWorkflow } from "../workflow/define-workflow.ts";
+import { UnknownQueryError } from "../workflow/query.ts";
+import type { ClockSource, RandomSource } from "../workflow/sources.ts";
+import { createWorkflowRegistry } from "../workflow/workflow-registry.ts";
+import { createHistoryCompactor } from "../compaction/history-compactor.ts";
 import {
   RunHistoryCompactedError,
   RunNotFoundError,
   RunNotOpenError,
   createRunInteractions,
   type RunInteractions,
-} from "./signal-service.js";
+} from "./signal-service.ts";
 
 const sources: { clock: ClockSource; random: RandomSource } = {
   clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },

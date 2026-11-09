@@ -11,10 +11,10 @@ import {
   type LeasedTask,
   type Pool,
 } from "@dee/core";
-import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.js";
-import { createWorkerIdentity } from "../identity.js";
-import { createWorker, type TaskHandler, type Worker } from "../worker.js";
-import { createFlowHandler } from "./flow.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.ts";
+import { createWorkerIdentity } from "../identity.ts";
+import { createWorker, type TaskHandler, type Worker } from "../worker.ts";
+import { createFlowHandler } from "./flow.ts";
 
 /**
  * One violation found by a chaos repetition: either a broken engine

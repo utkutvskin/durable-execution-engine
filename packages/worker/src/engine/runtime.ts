@@ -16,18 +16,18 @@ import {
   type ScheduleManager,
   type Tracing,
 } from "@dee/core";
-import { startCompactorLoop, type CompactorLoop } from "../compactor-loop.js";
-import { createWorkerIdentity } from "../identity.js";
-import { startJanitorLoop, type JanitorLoop } from "../janitor-loop.js";
-import { startScheduleLoop, type ScheduleLoop } from "../schedule-loop.js";
-import { startTimerLoop, type TimerLoop } from "../timer-loop.js";
-import { createWorker, type NackBackoff, type StopResult, type Worker } from "../worker.js";
+import { startCompactorLoop, type CompactorLoop } from "../compactor-loop.ts";
+import { createWorkerIdentity } from "../identity.ts";
+import { startJanitorLoop, type JanitorLoop } from "../janitor-loop.ts";
+import { startScheduleLoop, type ScheduleLoop } from "../schedule-loop.ts";
+import { startTimerLoop, type TimerLoop } from "../timer-loop.ts";
+import { createWorker, type NackBackoff, type StopResult, type Worker } from "../worker.ts";
 import {
   createEngineTaskHandler,
   type AnyStepDefinition,
   type AnyWorkflowDefinition,
   type DecisionReport,
-} from "./task-handler.js";
+} from "./task-handler.ts";
 
 /**
  * Configuration of `startEngine`. The loops run every `loopIntervalMs`

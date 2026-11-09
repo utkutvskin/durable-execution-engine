@@ -1,12 +1,12 @@
-import { CliError } from "../errors.js";
-import { readDevState, resolveClientConfig } from "../config.js";
-import type { CliIo } from "../io.js";
+import { CliError } from "../errors.ts";
+import { readDevState, resolveClientConfig } from "../config.ts";
+import type { CliIo } from "../io.ts";
 import {
   MAX_LIST_LIMIT,
   createApiClient,
   type RunClient,
   type RunSnapshot,
-} from "../run-client.js";
+} from "../run-client.ts";
 import {
   booleanFlag,
   parseCommand,
@@ -14,7 +14,7 @@ import {
   requirePositional,
   stringFlag,
   type ParsedCommand,
-} from "./shared.js";
+} from "./shared.ts";
 
 const CLIENT_OPTIONS = {
   "api-url": { type: "string" },

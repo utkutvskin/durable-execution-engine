@@ -1,5 +1,5 @@
 import { gunzipSync, gzipSync } from "node:zlib";
-import { PayloadTooLargeError } from "./errors.js";
+import { PayloadTooLargeError } from "./errors.ts";
 
 /**
  * Converts a validated event to and from the string form stored in

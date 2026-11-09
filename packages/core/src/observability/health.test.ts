@@ -1,6 +1,6 @@
 import pg from "pg";
 import { describe, expect, it } from "vitest";
-import { createHealthChecks } from "./health.js";
+import { createHealthChecks } from "./health.ts";
 
 describe("health checks", () => {
   it("reports liveness without touching the database", () => {

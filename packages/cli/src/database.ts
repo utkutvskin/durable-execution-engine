@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { createPool, resolveDatabaseUrl } from "@dee/core";
-import { CliError } from "./errors.js";
+import { CliError } from "./errors.ts";
 
 /**
  * The effects `ensureDatabase` needs, so tests can replace them.

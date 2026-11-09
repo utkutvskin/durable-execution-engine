@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Janitor, SweepReport } from "@dee/core";
 import { createRecoveryMetrics } from "@dee/core";
-import { startJanitorLoop } from "./janitor-loop.js";
-import { createDeferred, createVirtualTime, waitFor } from "./test-support.js";
+import { startJanitorLoop } from "./janitor-loop.ts";
+import { createDeferred, createVirtualTime, waitFor } from "./test-support.ts";
 
 const emptyReport: SweepReport = { reclaimed: [], stalled: [], recovered: [] };
 

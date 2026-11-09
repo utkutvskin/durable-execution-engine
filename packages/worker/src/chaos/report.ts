@@ -1,5 +1,5 @@
 import { INVARIANT_NAMES, type InvariantName } from "@dee/core";
-import type { ChaosScenario, RepetitionResult } from "./scenarios.js";
+import type { ChaosScenario, RepetitionResult } from "./scenarios.ts";
 
 const INVARIANT_TEXT: Record<InvariantName, string> = {
   "run-terminal-or-advancing":

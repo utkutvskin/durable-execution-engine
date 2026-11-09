@@ -1,14 +1,14 @@
 import type { Pool } from "pg";
-import { jsonCodec, type Codec } from "../event-store/codec.js";
+import { jsonCodec, type Codec } from "../event-store/codec.ts";
 import {
   appendEventsOnClient,
   createPostgresEventStore,
   readCurrentSequenceOnClient,
-} from "../event-store/event-store.js";
-import type { ClockSource, RandomSource } from "../workflow/sources.js";
-import { runQuery } from "../workflow/query.js";
-import type { WorkflowRegistry } from "../workflow/workflow-registry.js";
-import { rollbackQuietly } from "../db/transaction.js";
+} from "../event-store/event-store.ts";
+import type { ClockSource, RandomSource } from "../workflow/sources.ts";
+import { runQuery } from "../workflow/query.ts";
+import type { WorkflowRegistry } from "../workflow/workflow-registry.ts";
+import { rollbackQuietly } from "../db/transaction.ts";
 
 /**
  * Raised when a query names a run whose history was compacted, so the

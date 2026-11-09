@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RandomSource } from "../workflow/sources.js";
+import type { RandomSource } from "../workflow/sources.ts";
 import {
   DEFAULT_RETRY_POLICY,
   NonRetryableError,
@@ -7,7 +7,7 @@ import {
   decideRetry,
   isNonRetryable,
   resolveRetryPolicy,
-} from "./retry-policy.js";
+} from "./retry-policy.ts";
 
 function fixedRandom(value: number): RandomSource {
   return { random: () => value, uuid: () => "00000000-0000-0000-0000-000000000000" };

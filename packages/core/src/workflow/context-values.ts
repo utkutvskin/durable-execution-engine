@@ -1,7 +1,7 @@
-import type { WorkflowCommand } from "./commands.js";
-import type { DecisionLoopOptions } from "./decision-loop.js";
-import { createSeededRandomSource } from "./seeded-random.js";
-import { runUnguarded } from "./sandbox.js";
+import type { WorkflowCommand } from "./commands.ts";
+import type { DecisionLoopOptions } from "./decision-loop.ts";
+import { createSeededRandomSource } from "./seeded-random.ts";
+import { runUnguarded } from "./sandbox.ts";
 
 /**
  * The three values a workflow reads from its context, as one replay or live

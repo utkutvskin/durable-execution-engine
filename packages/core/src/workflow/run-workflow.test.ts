@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import type { WorkflowCommand } from "./commands.js";
-import { defineWorkflow } from "./define-workflow.js";
-import { createStepRegistry } from "./step-registry.js";
-import type { ClockSource, RandomSource } from "./sources.js";
-import { systemClock, systemRandomSource } from "./sources.js";
-import { createWorkflowRegistry } from "./workflow-registry.js";
-import { runRegisteredWorkflowInMemory, runWorkflowInMemory } from "./run-workflow.js";
+import type { WorkflowCommand } from "./commands.ts";
+import { defineWorkflow } from "./define-workflow.ts";
+import { createStepRegistry } from "./step-registry.ts";
+import type { ClockSource, RandomSource } from "./sources.ts";
+import { systemClock, systemRandomSource } from "./sources.ts";
+import { createWorkflowRegistry } from "./workflow-registry.ts";
+import { runRegisteredWorkflowInMemory, runWorkflowInMemory } from "./run-workflow.ts";
 
 interface ShipOrderInput {
   readonly orderId: string;

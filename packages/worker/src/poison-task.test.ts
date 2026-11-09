@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { ParkTaskError } from "./errors.js";
-import { createMemoryQueue, createVirtualTime, waitFor } from "./test-support.js";
-import { createWorker, nackDelayFor } from "./worker.js";
+import { ParkTaskError } from "./errors.ts";
+import { createMemoryQueue, createVirtualTime, waitFor } from "./test-support.ts";
+import { createWorker, nackDelayFor } from "./worker.ts";
 
 const failing = (): Promise<void> => Promise.reject(new Error("boom"));
 

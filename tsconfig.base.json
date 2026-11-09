@@ -24,6 +24,8 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
-    "erasableSyntaxOnly": true
+    "erasableSyntaxOnly": true,
+    "rewriteRelativeImportExtensions": true,
+    "customConditions": ["development"]
   }
 }

@@ -1,17 +1,17 @@
 import type { Pool, PoolClient } from "pg";
-import { jsonCodec, type Codec } from "../event-store/codec.js";
-import { appendEventsOnClient } from "../event-store/event-store.js";
-import { systemClock, type ClockSource } from "../workflow/sources.js";
-import { noopTracing, type TraceSpan, type Tracing } from "../observability/tracing.js";
-import { createMonotonicClock } from "../timers/monotonic-clock.js";
+import { jsonCodec, type Codec } from "../event-store/codec.ts";
+import { appendEventsOnClient } from "../event-store/event-store.ts";
+import { systemClock, type ClockSource } from "../workflow/sources.ts";
+import { noopTracing, type TraceSpan, type Tracing } from "../observability/tracing.ts";
+import { createMonotonicClock } from "../timers/monotonic-clock.ts";
 import {
   cronTimesBetween,
   nextCronTime,
   parseCron,
   InvalidScheduleError,
   type CronSchedule,
-} from "./cron.js";
-import { rollbackQuietly } from "../db/transaction.js";
+} from "./cron.ts";
+import { rollbackQuietly } from "../db/transaction.ts";
 
 /**
  * What to do when a schedule fires while a run it started earlier is still

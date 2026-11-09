@@ -1,4 +1,4 @@
-import type { WorkflowHandler } from "./context.js";
+import type { WorkflowHandler } from "./context.ts";
 
 /**
  * A workflow registered under `workflowType`: its handler, as returned by

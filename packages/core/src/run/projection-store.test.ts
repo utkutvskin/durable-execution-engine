@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createPool } from "../db/pool.js";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createPostgresEventStore, type EventStore } from "../event-store/event-store.js";
-import type { WorkflowEvent } from "../event-store/events.js";
-import { InvalidTransitionError } from "./errors.js";
-import { rebuildProjection, refreshProjection } from "./projection-store.js";
+import { createPool } from "../db/pool.ts";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createPostgresEventStore, type EventStore } from "../event-store/event-store.ts";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import { InvalidTransitionError } from "./errors.ts";
+import { rebuildProjection, refreshProjection } from "./projection-store.ts";
 
 function createRandom(seed: number): () => number {
   let state = seed >>> 0;

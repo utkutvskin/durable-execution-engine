@@ -5,7 +5,7 @@ import {
   type EventStore,
   type LeasedTask,
 } from "@dee/core";
-import type { TaskHandler } from "../worker.js";
+import type { TaskHandler } from "../worker.ts";
 
 /**
  * The points of the sample flow where a chaos child can be told to hang so

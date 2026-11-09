@@ -1,6 +1,6 @@
 import { defineWorkflow } from "@dee/core";
-import { STEP_TYPES, type Transformed } from "./steps.js";
-import type { DaySummary, SourceRow } from "./warehouse.js";
+import { STEP_TYPES, type Transformed } from "./steps.ts";
+import type { DaySummary, SourceRow } from "./warehouse.ts";
 
 /**
  * The names the workflows are started under.

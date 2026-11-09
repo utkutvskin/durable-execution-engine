@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createRunControl } from "../cancellation/run-control.js";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createPostgresEventStore, type EventStore } from "../event-store/event-store.js";
-import { createJanitor } from "../recovery/janitor.js";
-import { createScheduleManager } from "../schedules/schedule-manager.js";
-import { createRunInteractions } from "../signals/signal-service.js";
-import { createTimerScheduler } from "../timers/timer-scheduler.js";
-import { createWorkflowRegistry } from "../workflow/workflow-registry.js";
+import { createRunControl } from "../cancellation/run-control.ts";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createPostgresEventStore, type EventStore } from "../event-store/event-store.ts";
+import { createJanitor } from "../recovery/janitor.ts";
+import { createScheduleManager } from "../schedules/schedule-manager.ts";
+import { createRunInteractions } from "../signals/signal-service.ts";
+import { createTimerScheduler } from "../timers/timer-scheduler.ts";
+import { createWorkflowRegistry } from "../workflow/workflow-registry.ts";
 
 const START = new Date("2026-05-01T00:00:00.000Z");
 const LATER = new Date(Date.now() + 3_600_000);

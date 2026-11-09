@@ -1,5 +1,5 @@
-import type { LatencySummary } from "./stats.js";
-import type { BenchmarkResult } from "./harness.js";
+import type { LatencySummary } from "./stats.ts";
+import type { BenchmarkResult } from "./harness.ts";
 
 function fixed(value: number, digits = 1): string {
   return value.toFixed(digits);

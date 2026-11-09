@@ -1,8 +1,8 @@
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.ts";
 import { createTracingProvider, parseTraceparent, type TracingProvider } from "@dee/core";
-import { createApiServer } from "./server.js";
+import { createApiServer } from "./server.ts";
 
 interface ExportedSpan {
   readonly name: string;

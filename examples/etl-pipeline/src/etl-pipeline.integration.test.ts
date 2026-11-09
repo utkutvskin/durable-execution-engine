@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { WorkflowModule } from "@dee/cli";
-import { createShiftableClock } from "../../../packages/worker/src/chaos/world.js";
+import { createShiftableClock } from "../../../packages/worker/src/chaos/world.ts";
 import {
   startTestEnvironment,
   type TestEnvironment,
-} from "../../../packages/cli/src/test-support.js";
-import { demo, steps as demoSteps } from "./index.js";
-import { scheduleNightlyEtl } from "./demo.js";
-import { createEtlSteps } from "./steps.js";
-import { createWarehouse, type DaySummary, type Warehouse } from "./warehouse.js";
-import { ETL_PIPELINE, partitionWorkflow, pipelineWorkflow } from "./workflows.js";
+} from "../../../packages/cli/src/test-support.ts";
+import { demo, steps as demoSteps } from "./index.ts";
+import { scheduleNightlyEtl } from "./demo.ts";
+import { createEtlSteps } from "./steps.ts";
+import { createWarehouse, type DaySummary, type Warehouse } from "./warehouse.ts";
+import { ETL_PIPELINE, partitionWorkflow, pipelineWorkflow } from "./workflows.ts";
 
 describe("etl pipeline", () => {
   let current: TestEnvironment | undefined;

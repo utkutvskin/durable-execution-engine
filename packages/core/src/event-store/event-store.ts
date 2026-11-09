@@ -1,8 +1,8 @@
 import type { Pool, PoolClient } from "pg";
-import { jsonCodec, type Codec } from "./codec.js";
-import { ConcurrencyError } from "./errors.js";
-import { workflowEventSchema, type WorkflowEvent } from "./events.js";
-import { rollbackQuietly } from "../db/transaction.js";
+import { jsonCodec, type Codec } from "./codec.ts";
+import { ConcurrencyError } from "./errors.ts";
+import { workflowEventSchema, type WorkflowEvent } from "./events.ts";
+import { rollbackQuietly } from "../db/transaction.ts";
 
 /**
  * A single event as stored in and returned from the event log: the

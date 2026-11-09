@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CliError } from "../errors.js";
+import { CliError } from "../errors.ts";
 import {
   COMPACTION_OPTIONS,
   OPS_OPTIONS,
@@ -12,8 +12,8 @@ import {
   parseOpsSettings,
   parseRuntimeSettings,
   parseServeLimits,
-} from "./runtime-flags.js";
-import { parseCommand } from "./shared.js";
+} from "./runtime-flags.ts";
+import { parseCommand } from "./shared.ts";
 
 const ALL = { ...RUNTIME_OPTIONS, ...QUOTA_OPTIONS, ...COMPACTION_OPTIONS, ...OPS_OPTIONS };
 

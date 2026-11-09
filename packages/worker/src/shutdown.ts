@@ -1,4 +1,4 @@
-import type { Worker } from "./worker.js";
+import type { Worker } from "./worker.ts";
 
 /**
  * The slice of Node's `process` that signal handling needs, so tests can

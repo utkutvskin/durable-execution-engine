@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { packageName } from "./index.js";
+import { packageName } from "./index.ts";
 
 describe("@dee/core package identity", () => {
   it("exposes its own package name", () => {

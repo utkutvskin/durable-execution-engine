@@ -2,7 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Pool, PoolClient } from "pg";
-import { rollbackQuietly } from "./transaction.js";
+import { rollbackQuietly } from "./transaction.ts";
 
 /**
  * A single up/down migration pair, identified by the shared filename prefix

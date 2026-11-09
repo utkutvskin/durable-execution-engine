@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTaskQueue, type TaskQueue } from "@dee/core";
-import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.js";
-import { createDeferred, createVirtualTime, waitFor } from "./test-support.js";
-import { createWorker } from "./worker.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.ts";
+import { createDeferred, createVirtualTime, waitFor } from "./test-support.ts";
+import { createWorker } from "./worker.ts";
 
 describe("worker lease against postgres", () => {
   let database: IsolatedSchema;

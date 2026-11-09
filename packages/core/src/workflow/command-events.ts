@@ -1,5 +1,5 @@
-import type { WorkflowEvent } from "../event-store/events.js";
-import type { WorkflowCommand } from "./commands.js";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import type { WorkflowCommand } from "./commands.ts";
 
 /**
  * Turns a command a decision produced into the event that records it in the

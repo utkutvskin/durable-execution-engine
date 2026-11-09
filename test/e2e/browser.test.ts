@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CHROMIUM_PATH, planBrowser } from "./browser.js";
+import { DEFAULT_CHROMIUM_PATH, planBrowser } from "./browser.ts";
 
 describe("planBrowser", () => {
   it("runs the test when the default browser exists", () => {

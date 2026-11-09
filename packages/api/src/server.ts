@@ -4,8 +4,8 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { z } from "zod";
 import type { Pool } from "@dee/core";
-import { createApiKeyStore, type ApiKeyStore, type AuthenticatedNamespace } from "./api-keys.js";
-import { buildOpenApiDocument, type JsonObject } from "./openapi.js";
+import { createApiKeyStore, type ApiKeyStore, type AuthenticatedNamespace } from "./api-keys.ts";
+import { buildOpenApiDocument, type JsonObject } from "./openapi.ts";
 import {
   METRICS_CONTENT_TYPE,
   createEngineMetrics,
@@ -19,15 +19,15 @@ import {
   type Tracing,
   type WorkflowRegistry,
 } from "@dee/core";
-import { createQuotaGuard, type QuotaGuard, type RequestKind } from "./quota-guard.js";
+import { createQuotaGuard, type QuotaGuard, type RequestKind } from "./quota-guard.ts";
 import {
   createRoutes,
   toErrorResult,
   type ErrorResult,
   type RawRequest,
   type Route,
-} from "./routes.js";
-import { createRunService, type RunService } from "./run-service.js";
+} from "./routes.ts";
+import { createRunService, type RunService } from "./run-service.ts";
 
 /**
  * Serves requests the api does not own, such as the web ui's static files.

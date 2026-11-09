@@ -1,14 +1,14 @@
-import type { DemoContext, DemoReport } from "@dee/cli";
-import { runEtlDemo } from "./demo.js";
-import { createEtlSteps } from "./steps.js";
-import { createWarehouse, type Warehouse } from "./warehouse.js";
-import { partitionWorkflow, pipelineWorkflow } from "./workflows.js";
+import type { DemoContext, DemoReport } from "@dee/core";
+import { runEtlDemo } from "./demo.ts";
+import { createEtlSteps } from "./steps.ts";
+import { createWarehouse, type Warehouse } from "./warehouse.ts";
+import { partitionWorkflow, pipelineWorkflow } from "./workflows.ts";
 
-export { runEtlDemo, scheduleNightlyEtl } from "./demo.js";
-export { STEP_TYPES, createEtlSteps } from "./steps.js";
-export type { SummaryInput, Transformed } from "./steps.js";
-export { createWarehouse, partitionId } from "./warehouse.js";
-export type { DaySummary, SourceRow, TargetRow, Warehouse, WarehouseOptions } from "./warehouse.js";
+export { runEtlDemo, scheduleNightlyEtl } from "./demo.ts";
+export { STEP_TYPES, createEtlSteps } from "./steps.ts";
+export type { SummaryInput, Transformed } from "./steps.ts";
+export { createWarehouse, partitionId } from "./warehouse.ts";
+export type { DaySummary, SourceRow, TargetRow, Warehouse, WarehouseOptions } from "./warehouse.ts";
 export {
   DEFAULT_BATCH_SIZE,
   DEFAULT_PARTITION_CONCURRENCY,
@@ -17,8 +17,8 @@ export {
   NIGHTLY_CRON,
   partitionWorkflow,
   pipelineWorkflow,
-} from "./workflows.js";
-export type { PartitionInput, PartitionResult, PipelineInput } from "./workflows.js";
+} from "./workflows.ts";
+export type { PartitionInput, PartitionResult, PipelineInput } from "./workflows.ts";
 
 /**
  * Creates the warehouse the demo expects: the first read of partition `p2`

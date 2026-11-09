@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
-import { DEFAULT_POISON_THRESHOLD } from "../recovery/janitor.js";
-import type { ClockSource } from "../workflow/sources.js";
+import { DEFAULT_POISON_THRESHOLD } from "../recovery/janitor.ts";
+import type { ClockSource } from "../workflow/sources.ts";
 
 /**
  * The kinds of work a queue carries: a `WORKFLOW_TASK` asks a worker to run

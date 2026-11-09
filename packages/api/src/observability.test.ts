@@ -1,9 +1,9 @@
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ENGINE_METRIC_NAMES, createLogger, createPool, type Logger, type Pool } from "@dee/core";
-import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.js";
-import { parsePrometheusText } from "../../core/src/observability/prometheus-text.js";
-import { createApiServer, type ApiOptions } from "./server.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.ts";
+import { parsePrometheusText } from "../../core/src/observability/prometheus-text.ts";
+import { createApiServer, type ApiOptions } from "./server.ts";
 
 interface Running {
   readonly baseUrl: string;

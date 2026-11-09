@@ -1,10 +1,10 @@
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createQuotaStore, createRateLimiter, createTaskQueue } from "@dee/core";
-import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.js";
-import { validateOpenApiDocument } from "./openapi-validator.js";
-import { createQuotaGuard } from "./quota-guard.js";
-import { createApiServer } from "./server.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.ts";
+import { validateOpenApiDocument } from "./openapi-validator.ts";
+import { createQuotaGuard } from "./quota-guard.ts";
+import { createApiServer } from "./server.ts";
 
 interface Reply {
   readonly status: number;

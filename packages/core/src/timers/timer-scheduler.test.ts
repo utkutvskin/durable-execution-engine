@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createPostgresEventStore } from "../event-store/event-store.js";
-import { createResultRecorder } from "../idempotency/recorder.js";
-import { createTaskQueue } from "../queue/task-queue.js";
-import { runDecisionLoop } from "../workflow/decision-loop.js";
-import { createTimerScheduler } from "./timer-scheduler.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createPostgresEventStore } from "../event-store/event-store.ts";
+import { createResultRecorder } from "../idempotency/recorder.ts";
+import { createTaskQueue } from "../queue/task-queue.ts";
+import { runDecisionLoop } from "../workflow/decision-loop.ts";
+import { createTimerScheduler } from "./timer-scheduler.ts";
 
 const QUEUE = "default/workflows";
 const START = new Date("2026-03-01T10:00:00.000Z");

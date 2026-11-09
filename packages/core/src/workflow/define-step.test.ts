@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { describe, expect, it } from "vitest";
-import { defineStep } from "./define-step.js";
-import { createStepRegistry } from "./step-registry.js";
+import { defineStep } from "./define-step.ts";
+import { createStepRegistry } from "./step-registry.ts";
 
 describe("defineStep", () => {
   it("runs the handler unchanged when no schema is given", async () => {

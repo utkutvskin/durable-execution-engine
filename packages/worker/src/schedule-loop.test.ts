@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ScheduleManager, ScheduleTickReport } from "@dee/core";
-import { startScheduleLoop } from "./schedule-loop.js";
-import { createVirtualTime, waitFor } from "./test-support.js";
+import { startScheduleLoop } from "./schedule-loop.ts";
+import { createVirtualTime, waitFor } from "./test-support.ts";
 
 const emptyReport: ScheduleTickReport = { triggers: [] };
 

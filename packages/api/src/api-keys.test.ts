@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.js";
-import { InvalidApiKeyError, createApiKeyStore, type ApiKeyStore } from "./api-keys.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.ts";
+import { InvalidApiKeyError, createApiKeyStore, type ApiKeyStore } from "./api-keys.ts";
 
 describe("api key store", () => {
   let database: IsolatedSchema;

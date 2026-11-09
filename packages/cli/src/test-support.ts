@@ -1,7 +1,7 @@
-import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.ts";
 import type { ClockSource } from "@dee/core";
-import { startDevEnvironment, type DevEnvironment } from "./dev-environment.js";
-import type { WorkflowModule } from "./modules.js";
+import { startDevEnvironment, type DevEnvironment } from "./dev-environment.ts";
+import type { WorkflowModule } from "./modules.ts";
 
 /**
  * A dev environment over an isolated schema, for tests. `close` stops the

@@ -1,4 +1,4 @@
-import type { ParentClosePolicy } from "../event-store/events.js";
+import type { ParentClosePolicy } from "../event-store/events.ts";
 
 /**
  * What `ctx.select()` resolves with: the position in the branch list of the

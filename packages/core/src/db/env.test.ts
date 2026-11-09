@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveDatabaseUrl } from "./env.js";
+import { resolveDatabaseUrl } from "./env.ts";
 
 describe("resolveDatabaseUrl", () => {
   it("returns DATABASE_URL verbatim when it is set", () => {

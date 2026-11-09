@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deserializeError, serializeError } from "./error-serialization.js";
+import { deserializeError, serializeError } from "./error-serialization.ts";
 
 class CardDeclinedError extends Error {
   readonly cardId: string;

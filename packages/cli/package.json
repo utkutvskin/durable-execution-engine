@@ -2,16 +2,38 @@
   "name": "@dee/cli",
   "version": "0.1.1",
   "license": "Apache-2.0",
-  "private": true,
   "type": "module",
   "description": "Command line: wf dev, wf serve, wf worker, wf run and wf migrate commands.",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
   "bin": {
     "wf": "./bin/wf.js"
   },
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "bin"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build": "tsc -b tsconfig.build.json"
   },
   "dependencies": {
     "@dee/api": "workspace:*",
@@ -20,5 +42,13 @@
     "@dee/example-payment-saga": "workspace:*",
     "@dee/ui": "workspace:*",
     "@dee/worker": "workspace:*"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/utkutvskin/durable-execution-engine.git",
+    "directory": "packages/cli"
   }
 }

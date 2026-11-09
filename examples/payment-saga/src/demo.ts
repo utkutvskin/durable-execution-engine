@@ -1,6 +1,6 @@
-import type { DemoContext, DemoReport, RunSnapshot } from "@dee/cli";
-import type { InMemoryGateway } from "./gateway.js";
-import { PAYMENT_SAGA, type PaymentInput, type PaymentResult } from "./workflow.js";
+import type { DemoContext, DemoReport, DemoRunSnapshot } from "@dee/core";
+import type { InMemoryGateway } from "./gateway.ts";
+import { PAYMENT_SAGA, type PaymentInput, type PaymentResult } from "./workflow.ts";
 
 /**
  * The story `wf example payment-saga` plays through the api: five orders that
@@ -25,7 +25,7 @@ export async function runPaymentDemo(
     }
   }
 
-  function resultOf(run: RunSnapshot): PaymentResult | undefined {
+  function resultOf(run: DemoRunSnapshot): PaymentResult | undefined {
     return run.result as PaymentResult | undefined;
   }
 

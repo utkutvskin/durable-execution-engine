@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.js";
-import { explainHotQueries, seedHotTables, type QueryPlan } from "./hot-queries.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.ts";
+import { explainHotQueries, seedHotTables, type QueryPlan } from "./hot-queries.ts";
 
 describe("hot query plans", () => {
   let database: IsolatedSchema;

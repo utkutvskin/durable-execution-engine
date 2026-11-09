@@ -1,6 +1,6 @@
 import type { PoolClient } from "pg";
-import { RUN_STATES, type RunState } from "../run/state-machine.js";
-import type { RunProjection } from "../run/projection.js";
+import { RUN_STATES, type RunState } from "../run/state-machine.ts";
+import type { RunProjection } from "../run/projection.ts";
 
 interface StoredProjection {
   state: string;

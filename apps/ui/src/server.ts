@@ -12,7 +12,7 @@ interface Asset {
   readonly body: string;
 }
 
-const CLIENT_DIRECTORY = new URL("./client/", import.meta.url);
+const CLIENT_DIRECTORY = new URL("../src/client/", import.meta.url);
 const ASSET_NAME = /^[a-z][a-z-]*\.(?:js|css)$/;
 
 function loadAssets(): ReadonlyMap<string, Asset> {

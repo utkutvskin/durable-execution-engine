@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { systemClock, systemRandomSource } from "./sources.js";
+import { systemClock, systemRandomSource } from "./sources.ts";
 
 describe("systemClock", () => {
   it("returns the current wall-clock time", () => {

@@ -1,13 +1,13 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import type { WorkflowEvent } from "../event-store/events.js";
-import { createRunCache } from "../sticky/run-cache.js";
-import { createStickyDecider } from "../sticky/sticky-decider.js";
-import { commandToEvent } from "./command-events.js";
-import type { WorkflowHandler } from "./context.js";
-import { runDecisionLoop, type DecisionResult } from "./decision-loop.js";
-import type { LiveSession } from "./live-session.js";
-import type { ClockSource } from "./sources.js";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import { createRunCache } from "../sticky/run-cache.ts";
+import { createStickyDecider } from "../sticky/sticky-decider.ts";
+import { commandToEvent } from "./command-events.ts";
+import type { WorkflowHandler } from "./context.ts";
+import { runDecisionLoop, type DecisionResult } from "./decision-loop.ts";
+import type { LiveSession } from "./live-session.ts";
+import type { ClockSource } from "./sources.ts";
 
 type Operation =
   | { readonly kind: "step" }

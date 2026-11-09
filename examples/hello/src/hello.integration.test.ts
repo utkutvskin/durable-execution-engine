@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createShiftableClock } from "../../../packages/worker/src/chaos/world.js";
+import { createShiftableClock } from "../../../packages/worker/src/chaos/world.ts";
 import {
   startTestEnvironment,
   type TestEnvironment,
-} from "../../../packages/cli/src/test-support.js";
-import { steps, workflows, type HelloResult } from "./index.js";
+} from "../../../packages/cli/src/test-support.ts";
+import { steps, workflows, type HelloResult } from "./index.ts";
 
 describe("hello", () => {
   let current: TestEnvironment | undefined;

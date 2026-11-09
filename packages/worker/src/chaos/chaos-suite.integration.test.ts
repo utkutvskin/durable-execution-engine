@@ -1,8 +1,8 @@
 import { writeFile } from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { renderChaosReport } from "./report.js";
-import { SCENARIOS, runRepetition, type RepetitionResult } from "./scenarios.js";
-import { createChaosWorld, type ChaosWorld } from "./world.js";
+import { renderChaosReport } from "./report.ts";
+import { SCENARIOS, runRepetition, type RepetitionResult } from "./scenarios.ts";
+import { createChaosWorld, type ChaosWorld } from "./world.ts";
 
 const REPETITIONS = Number(process.env["DEE_CHAOS_REPETITIONS"] ?? 10);
 const SCENARIO_TIMEOUT_MS = 900_000;

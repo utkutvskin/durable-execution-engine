@@ -1,7 +1,7 @@
 import type { Pool } from "pg";
-import { systemClock, type ClockSource } from "../workflow/sources.js";
-import { createRecoveryMetrics, type RecoveryMetrics } from "./metrics.js";
-import { rollbackQuietly } from "../db/transaction.js";
+import { systemClock, type ClockSource } from "../workflow/sources.ts";
+import { createRecoveryMetrics, type RecoveryMetrics } from "./metrics.ts";
+import { rollbackQuietly } from "../db/transaction.ts";
 
 /**
  * A task whose lease expired without an ack, nack or heartbeat, and that the

@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { WorkflowCommand } from "../workflow/commands.js";
-import { InvalidTransitionError } from "./errors.js";
+import type { WorkflowCommand } from "../workflow/commands.ts";
+import { InvalidTransitionError } from "./errors.ts";
 import {
   assertRunAcceptsCommand,
   assertTransition,
   isTerminalState,
   RUN_STATES,
   RUN_STATE_TRANSITIONS,
-} from "./state-machine.js";
+} from "./state-machine.ts";
 
 const scheduleStep: WorkflowCommand = {
   type: "schedule_step",

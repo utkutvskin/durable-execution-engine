@@ -11,8 +11,8 @@ import {
 import { createApiKeyStore, createApiServer } from "@dee/api";
 import { createUiHandler } from "@dee/ui";
 import { startEngine, type Engine } from "@dee/worker";
-import type { WorkflowModule } from "./modules.js";
-import { createApiClient, type RunClient } from "./run-client.js";
+import type { WorkflowModule } from "./modules.ts";
+import { createApiClient, type RunClient } from "./run-client.ts";
 
 /**
  * Configuration of `startDevEnvironment`. `port` 0 picks a free port.

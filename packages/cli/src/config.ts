@@ -1,6 +1,6 @@
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { CliError } from "./errors.js";
+import { CliError } from "./errors.ts";
 
 /**
  * Where `wf dev` records how to reach the api it started, relative to the

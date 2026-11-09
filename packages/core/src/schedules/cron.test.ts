@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InvalidScheduleError, cronTimesBetween, nextCronTime, parseCron } from "./cron.js";
+import { InvalidScheduleError, cronTimesBetween, nextCronTime, parseCron } from "./cron.ts";
 
 function iso(date: Date): string {
   return date.toISOString();

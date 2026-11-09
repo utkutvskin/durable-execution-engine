@@ -8,11 +8,11 @@ import {
   loadMigrations,
   defaultMigrationsDir,
 } from "@dee/core";
-import { parsePrometheusText } from "../../core/src/observability/prometheus-text.js";
-import { createIsolatedSchema, type IsolatedSchema } from "../../core/src/db/test-harness.js";
-import type { CliIo } from "./io.js";
-import { main } from "./main.js";
-import { urlForSchema } from "./test-support.js";
+import { parsePrometheusText } from "../../core/src/observability/prometheus-text.ts";
+import { createIsolatedSchema, type IsolatedSchema } from "../../core/src/db/test-harness.ts";
+import type { CliIo } from "./io.ts";
+import { main } from "./main.ts";
+import { urlForSchema } from "./test-support.ts";
 
 const WF = fileURLToPath(new URL("../bin/wf.js", import.meta.url));
 const REPO = fileURLToPath(new URL("../../..", import.meta.url));

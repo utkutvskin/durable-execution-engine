@@ -1,11 +1,11 @@
 import type { Pool, PoolClient } from "pg";
-import { appendEventsOnClient, readCurrentSequenceOnClient } from "../event-store/event-store.js";
-import { jsonCodec, type Codec } from "../event-store/codec.js";
-import { systemClock, type ClockSource } from "../workflow/sources.js";
-import { noopTracing, type Tracing } from "../observability/tracing.js";
-import { createMonotonicClock } from "./monotonic-clock.js";
-import { rollbackQuietly } from "../db/transaction.js";
-import { isTimeoutTimerId, timeOutRunOnClient } from "../timeouts/run-timeouts.js";
+import { appendEventsOnClient, readCurrentSequenceOnClient } from "../event-store/event-store.ts";
+import { jsonCodec, type Codec } from "../event-store/codec.ts";
+import { systemClock, type ClockSource } from "../workflow/sources.ts";
+import { noopTracing, type Tracing } from "../observability/tracing.ts";
+import { createMonotonicClock } from "./monotonic-clock.ts";
+import { rollbackQuietly } from "../db/transaction.ts";
+import { isTimeoutTimerId, timeOutRunOnClient } from "../timeouts/run-timeouts.ts";
 
 /**
  * What `TimerScheduler.schedule` needs: the run and timer id the decision

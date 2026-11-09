@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createWorkflowRegistry } from "./workflow-registry.js";
+import { createWorkflowRegistry } from "./workflow-registry.ts";
 
 describe("createWorkflowRegistry", () => {
   it("returns the registered definition for its workflow type", () => {

@@ -2,8 +2,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { HELP_TEXT } from "../../packages/cli/src/main.js";
-import { workflows } from "../../examples/hello/src/index.js";
+import { HELP_TEXT } from "../../packages/cli/src/main.ts";
+import { workflows } from "../../examples/hello/src/index.ts";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 

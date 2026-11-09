@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import config from "../../vitest.config.js";
+import config from "../../vitest.config.ts";
 
 describe("vitest.config.ts", () => {
   it("sets a test and a hook timeout above the polling helpers", () => {

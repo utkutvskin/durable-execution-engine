@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { ApiError } from "./errors.js";
-import type { CliIo } from "./io.js";
-import { main } from "./main.js";
-import { createApiClient } from "./run-client.js";
+import { ApiError } from "./errors.ts";
+import type { CliIo } from "./io.ts";
+import { main } from "./main.ts";
+import { createApiClient } from "./run-client.ts";
 
 const RUN_ID = "11111111-1111-4111-8111-111111111111";
 

@@ -1,10 +1,10 @@
-import type { DemoContext, DemoReport } from "@dee/cli";
-import { createInMemoryGateway, type InMemoryGateway } from "./gateway.js";
-import { runPaymentDemo } from "./demo.js";
-import { createPaymentSteps } from "./steps.js";
-import { paymentSaga } from "./workflow.js";
+import type { DemoContext, DemoReport } from "@dee/core";
+import { createInMemoryGateway, type InMemoryGateway } from "./gateway.ts";
+import { runPaymentDemo } from "./demo.ts";
+import { createPaymentSteps } from "./steps.ts";
+import { paymentSaga } from "./workflow.ts";
 
-export { CardDeclinedError, createInMemoryGateway } from "./gateway.js";
+export { CardDeclinedError, createInMemoryGateway } from "./gateway.ts";
 export type {
   Capture,
   InMemoryGateway,
@@ -13,16 +13,16 @@ export type {
   Reservation,
   ReservationState,
   ReserveRequest,
-} from "./gateway.js";
-export { STEP_TYPES, createPaymentSteps } from "./steps.js";
+} from "./gateway.ts";
+export { STEP_TYPES, createPaymentSteps } from "./steps.ts";
 export {
   APPROVAL_THRESHOLD_CENTS,
   DEFAULT_APPROVAL_TIMEOUT_MS,
   PAYMENT_SAGA,
   paymentSaga,
-} from "./workflow.js";
-export type { PaymentInput, PaymentResult } from "./workflow.js";
-export { runPaymentDemo } from "./demo.js";
+} from "./workflow.ts";
+export type { PaymentInput, PaymentResult } from "./workflow.ts";
+export { runPaymentDemo } from "./demo.ts";
 
 /**
  * Creates the in-memory gateway the demo scenarios expect: it refuses

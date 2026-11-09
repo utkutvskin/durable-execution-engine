@@ -1,25 +1,25 @@
 import type { Pool } from "pg";
 import { z } from "zod";
-import { noopTracing, type TraceSpan, type Tracing } from "../observability/tracing.js";
-import type { ResultRecorder } from "../idempotency/recorder.js";
-import type { LeasedTask, TaskQueue } from "../queue/task-queue.js";
-import type { StepDefinition } from "../workflow/define-step.js";
-import { serializeError } from "../workflow/error-serialization.js";
+import { noopTracing, type TraceSpan, type Tracing } from "../observability/tracing.ts";
+import type { ResultRecorder } from "../idempotency/recorder.ts";
+import type { LeasedTask, TaskQueue } from "../queue/task-queue.ts";
+import type { StepDefinition } from "../workflow/define-step.ts";
+import { serializeError } from "../workflow/error-serialization.ts";
 import {
   systemClock,
   systemRandomSource,
   type ClockSource,
   type RandomSource,
-} from "../workflow/sources.js";
-import type { AttemptLog } from "./attempt-log.js";
-import type { DeadLetterQueue } from "./dead-letters.js";
+} from "../workflow/sources.ts";
+import type { AttemptLog } from "./attempt-log.ts";
+import type { DeadLetterQueue } from "./dead-letters.ts";
 import {
   DEFAULT_RETRY_POLICY,
   NonRetryableError,
   decideRetry,
   type RetryPolicy,
-} from "./retry-policy.js";
-import { runWithTimeout, type TimeoutTimers } from "./timeout.js";
+} from "./retry-policy.ts";
+import { runWithTimeout, type TimeoutTimers } from "./timeout.ts";
 
 const stepTaskPayloadSchema = z.object({
   stepId: z.string().min(1),

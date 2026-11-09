@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { ApiError } from "./errors.js";
-import type { CliIo } from "./io.js";
-import { HELP_TEXT, main } from "./main.js";
-import type { RunClient, RunSnapshot } from "./run-client.js";
+import { ApiError } from "./errors.ts";
+import type { CliIo } from "./io.ts";
+import { HELP_TEXT, main } from "./main.ts";
+import type { RunClient, RunSnapshot } from "./run-client.ts";
 
 function captureIo(env: Record<string, string | undefined> = {}): {
   readonly io: CliIo;

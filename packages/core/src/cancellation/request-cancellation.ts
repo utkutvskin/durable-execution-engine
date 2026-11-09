@@ -1,10 +1,10 @@
 import type { PoolClient } from "pg";
-import type { Codec } from "../event-store/codec.js";
+import type { Codec } from "../event-store/codec.ts";
 import {
   appendEventsOnClient,
   readCurrentSequenceOnClient,
   readEventsOnClient,
-} from "../event-store/event-store.js";
+} from "../event-store/event-store.ts";
 
 /**
  * Records `cancel_requested` on `runId` and enqueues a workflow task for

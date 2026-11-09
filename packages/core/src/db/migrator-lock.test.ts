@@ -2,15 +2,15 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedSchema, type IsolatedSchema } from "./test-harness.js";
-import { createPool } from "./pool.js";
+import { createIsolatedSchema, type IsolatedSchema } from "./test-harness.ts";
+import { createPool } from "./pool.ts";
 import {
   loadMigrations,
   defaultMigrationsDir,
   migrateDown,
   migrateUp,
   pendingMigrations,
-} from "./migrator.js";
+} from "./migrator.ts";
 
 describe("migration advisory lock", () => {
   let database: IsolatedSchema;

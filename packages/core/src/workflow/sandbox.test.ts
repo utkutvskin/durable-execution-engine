@@ -5,7 +5,7 @@ import {
   runUnguarded,
   waitForMacrotask,
   WorkflowActiveAfterQuiescenceError,
-} from "./sandbox.js";
+} from "./sandbox.ts";
 
 const realSetTimeout = globalThis.setTimeout;
 

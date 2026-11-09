@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createTaskQueue } from "../queue/task-queue.js";
-import { UNLIMITED_QUOTA, createQuotaStore } from "./quota-store.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createTaskQueue } from "../queue/task-queue.ts";
+import { UNLIMITED_QUOTA, createQuotaStore } from "./quota-store.ts";
 
 describe("quota store", () => {
   let database: IsolatedSchema;

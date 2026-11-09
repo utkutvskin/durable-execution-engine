@@ -1,6 +1,6 @@
 import { createPool } from "@dee/core";
-import { createIsolatedDatabase } from "../../../core/src/db/test-harness.js";
-import { explainHotQueries, seedHotTables } from "./hot-queries.js";
+import { createIsolatedDatabase } from "../../../core/src/db/test-harness.ts";
+import { explainHotQueries, seedHotTables } from "./hot-queries.ts";
 
 const runs = Number(process.env["BENCH_EXPLAIN_RUNS"] ?? "100000");
 const database = await createIsolatedDatabase();

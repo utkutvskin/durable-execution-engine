@@ -1,12 +1,12 @@
-import type { WorkflowEvent } from "../event-store/events.js";
-import type { WorkflowHandler } from "../workflow/context.js";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import type { WorkflowHandler } from "../workflow/context.ts";
 import {
   runDecisionLoop,
   type DecisionLoopOptions,
   type DecisionResult,
-} from "../workflow/decision-loop.js";
-import { createLiveSession, type LiveSession } from "../workflow/live-session.js";
-import type { RunCache } from "./run-cache.js";
+} from "../workflow/decision-loop.ts";
+import { createLiveSession, type LiveSession } from "../workflow/live-session.ts";
+import type { RunCache } from "./run-cache.ts";
 
 /**
  * How a `StickyDecider` reached a decision: `cache` advanced a live session

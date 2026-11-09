@@ -1,11 +1,11 @@
 import type { Pool, PoolClient } from "pg";
-import { jsonCodec, type Codec } from "../event-store/codec.js";
-import { lockRunWithParent, type LockedRun } from "../children/run-locks.js";
-import { appendEventsOnClient, readCurrentSequenceOnClient } from "../event-store/event-store.js";
-import { RunNotFoundError } from "../signals/signal-service.js";
-import { closeRunIfTerminal } from "./close-run.js";
-import { requestCancellationOnClient } from "./request-cancellation.js";
-import { rollbackQuietly } from "../db/transaction.js";
+import { jsonCodec, type Codec } from "../event-store/codec.ts";
+import { lockRunWithParent, type LockedRun } from "../children/run-locks.ts";
+import { appendEventsOnClient, readCurrentSequenceOnClient } from "../event-store/event-store.ts";
+import { RunNotFoundError } from "../signals/signal-service.ts";
+import { closeRunIfTerminal } from "./close-run.ts";
+import { requestCancellationOnClient } from "./request-cancellation.ts";
+import { rollbackQuietly } from "../db/transaction.ts";
 
 /**
  * Raised when a run that already reached a terminal state is cancelled or

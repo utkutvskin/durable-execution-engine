@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createWorkerIdentity } from "./identity.js";
-import { createWorker } from "./worker.js";
-import { createMemoryQueue, createVirtualTime, waitFor } from "./test-support.js";
+import { createWorkerIdentity } from "./identity.ts";
+import { createWorker } from "./worker.ts";
+import { createMemoryQueue, createVirtualTime, waitFor } from "./test-support.ts";
 import type { DequeueOptions } from "@dee/core";
 
 describe("worker identity", () => {

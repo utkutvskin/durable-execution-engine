@@ -8,12 +8,12 @@ import {
   type Janitor,
   type EventStore,
 } from "@dee/core";
-import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.js";
-import { createWorkerIdentity } from "../identity.js";
-import { createWorker } from "../worker.js";
-import { waitFor } from "../test-support.js";
-import { CRASH_POINTS, createFlowHandler, type CrashPoint } from "./flow.js";
-import { spawnChaosChild, type ChaosChild } from "./process-harness.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.ts";
+import { createWorkerIdentity } from "../identity.ts";
+import { createWorker } from "../worker.ts";
+import { waitFor } from "../test-support.ts";
+import { CRASH_POINTS, createFlowHandler, type CrashPoint } from "./flow.ts";
+import { spawnChaosChild, type ChaosChild } from "./process-harness.ts";
 
 const QUEUE = "default/steps";
 const AFTER_EXPIRY: ClockSource = { now: () => new Date(Date.now() + 120_000) };

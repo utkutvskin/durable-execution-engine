@@ -1,11 +1,11 @@
-import type { WorkflowEvent } from "../event-store/events.js";
-import type { WorkflowHandler } from "./context.js";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import type { WorkflowHandler } from "./context.ts";
 import {
   replayHistory,
   throwOnVersionMismatch,
   type DecisionLoopOptions,
-} from "./decision-loop.js";
-import { guardAgainstForbiddenApis } from "./sandbox.js";
+} from "./decision-loop.ts";
+import { guardAgainstForbiddenApis } from "./sandbox.ts";
 
 /**
  * Raised when a query names a handler the workflow had not registered with

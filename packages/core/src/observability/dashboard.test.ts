@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { ENGINE_METRIC_NAMES } from "./engine-metrics.js";
+import { ENGINE_METRIC_NAMES } from "./engine-metrics.ts";
 
 interface Dashboard {
   readonly uid: string;

@@ -1,9 +1,9 @@
 import type { PoolClient } from "pg";
-import type { Codec } from "../event-store/codec.js";
-import { appendEventsOnClient, readCurrentSequenceOnClient } from "../event-store/event-store.js";
-import { closeRunIfTerminal } from "../cancellation/close-run.js";
-import { lockRunWithParent } from "../children/run-locks.js";
-import { isTerminalState, type RunState } from "../run/state-machine.js";
+import type { Codec } from "../event-store/codec.ts";
+import { appendEventsOnClient, readCurrentSequenceOnClient } from "../event-store/event-store.ts";
+import { closeRunIfTerminal } from "../cancellation/close-run.ts";
+import { lockRunWithParent } from "../children/run-locks.ts";
+import { isTerminalState, type RunState } from "../run/state-machine.ts";
 
 /**
  * The id of the durable timer that ends a single run when its run timeout

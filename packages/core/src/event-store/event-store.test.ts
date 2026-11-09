@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { jsonCodec } from "./codec.js";
-import { appendEventsOnClient, createPostgresEventStore, type EventStore } from "./event-store.js";
-import { ConcurrencyError } from "./errors.js";
-import type { WorkflowEvent } from "./events.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { jsonCodec } from "./codec.ts";
+import { appendEventsOnClient, createPostgresEventStore, type EventStore } from "./event-store.ts";
+import { ConcurrencyError } from "./errors.ts";
+import type { WorkflowEvent } from "./events.ts";
 
 async function insertRun(database: IsolatedSchema): Promise<string> {
   const namespace = await database.pool.query<{ id: string }>(

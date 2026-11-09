@@ -1,6 +1,6 @@
 import { defineWorkflow } from "@dee/core";
-import type { Capture, Reservation } from "./gateway.js";
-import { STEP_TYPES } from "./steps.js";
+import type { Capture, Reservation } from "./gateway.ts";
+import { STEP_TYPES } from "./steps.ts";
 
 /**
  * Orders at or above this amount wait for a human approval before the card

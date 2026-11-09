@@ -1,9 +1,8 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AnyStepDefinition, AnyWorkflowDefinition } from "@dee/worker";
-import type { ScheduleManager } from "@dee/core";
-import { CliError } from "./errors.js";
-import type { RunClient } from "./run-client.js";
+import type { DemoContext, DemoReport } from "@dee/core";
+import { CliError } from "./errors.ts";
 
 /**
  * The workflows and steps a module contributes to a worker.
@@ -92,25 +91,6 @@ export async function loadExample(name: ExampleName): Promise<WorkflowModule> {
       ? await import("@dee/example-payment-saga")
       : await import("@dee/example-etl-pipeline");
   return toWorkflowModule(loaded, `example ${name}`);
-}
-
-/**
- * What a bundled example's scenarios get to work with.
- */
-export interface DemoContext {
-  readonly client: RunClient;
-  readonly schedules: ScheduleManager;
-  readonly namespaceId: string;
-  readonly log: (line: string) => void;
-}
-
-/**
- * What a scenario run reports: whether every scenario ended as expected and,
- * when not, what went wrong.
- */
-export interface DemoReport {
-  readonly ok: boolean;
-  readonly problem?: string;
 }
 
 /**

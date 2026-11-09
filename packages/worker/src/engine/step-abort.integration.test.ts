@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createTaskQueue, defineStep, type Pool, type TaskQueue } from "@dee/core";
-import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.js";
-import { LeaseLostError } from "../errors.js";
-import { createDeferred, createVirtualTime, waitFor, type VirtualTime } from "../test-support.js";
-import { createWorker } from "../worker.js";
-import { createEngineTaskHandler } from "./task-handler.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.ts";
+import { LeaseLostError } from "../errors.ts";
+import { createDeferred, createVirtualTime, waitFor, type VirtualTime } from "../test-support.ts";
+import { createWorker } from "../worker.ts";
+import { createEngineTaskHandler } from "./task-handler.ts";
 
 describe("a hanging step that loses its lease", () => {
   let database: IsolatedSchema;

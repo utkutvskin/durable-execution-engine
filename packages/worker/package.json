@@ -2,16 +2,44 @@
   "name": "@dee/worker",
   "version": "0.1.1",
   "license": "Apache-2.0",
-  "private": true,
   "type": "module",
   "description": "Worker process: poll loop, lease renewal, crash recovery and sticky execution cache.",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./package.json": "./package.json"
+    }
+  },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -b tsconfig.build.json"
   },
   "dependencies": {
     "@dee/core": "workspace:*"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/utkutvskin/durable-execution-engine.git",
+    "directory": "packages/worker"
   }
 }

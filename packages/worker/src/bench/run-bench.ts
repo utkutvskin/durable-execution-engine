@@ -1,5 +1,5 @@
-import { DEFAULT_BENCHMARK_CONFIG, runBenchmark, type BenchmarkConfig } from "./harness.js";
-import { formatBenchmarkMarkdown } from "./format.js";
+import { DEFAULT_BENCHMARK_CONFIG, runBenchmark, type BenchmarkConfig } from "./harness.ts";
+import { formatBenchmarkMarkdown } from "./format.ts";
 
 const NUMERIC_KEYS = [
   "runs",

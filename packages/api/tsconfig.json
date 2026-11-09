@@ -3,11 +3,8 @@
   "compilerOptions": {
     "composite": false,
     "incremental": false,
-    "outDir": "dist",
-    "baseUrl": ".",
-    "paths": {
-      "@dee/core": ["../core/src/index.ts"]
-    }
+    "declarationMap": false,
+    "noEmit": true
   },
   "include": ["src"]
 }

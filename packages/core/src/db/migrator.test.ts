@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedSchema, type IsolatedSchema } from "./test-harness.js";
-import { defaultMigrationsDir, loadMigrations, migrateDown, migrateUp } from "./migrator.js";
+import { createIsolatedSchema, type IsolatedSchema } from "./test-harness.ts";
+import { defaultMigrationsDir, loadMigrations, migrateDown, migrateUp } from "./migrator.ts";
 
 describe("loadMigrations", () => {
   it("pairs up.sql/down.sql files by id and orders them ascending", async () => {

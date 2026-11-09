@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createWarehouse, partitionId } from "./warehouse.js";
+import { createWarehouse, partitionId } from "./warehouse.ts";
 
 describe("in memory warehouse", () => {
   it("lists a stable set of partitions per day", () => {

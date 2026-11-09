@@ -1,4 +1,4 @@
-import { systemClock, type ClockSource } from "../workflow/sources.js";
+import { systemClock, type ClockSource } from "../workflow/sources.ts";
 
 /**
  * Limits of a `RunCache`. `maxRuns` bounds how many runs stay cached; the

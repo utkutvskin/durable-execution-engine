@@ -1,8 +1,8 @@
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.js";
-import { validateOpenApiDocument } from "./openapi-validator.js";
-import { createApiServer } from "./server.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.ts";
+import { validateOpenApiDocument } from "./openapi-validator.ts";
+import { createApiServer } from "./server.ts";
 
 interface Reply {
   readonly status: number;

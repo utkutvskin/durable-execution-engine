@@ -1,4 +1,4 @@
-import type { ClockSource } from "../workflow/sources.js";
+import type { ClockSource } from "../workflow/sources.ts";
 
 /**
  * A `ClockSource` that never goes backwards. `regressions` counts the

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createPool } from "./pool.js";
+import { createPool } from "./pool.ts";
 import type { Pool } from "pg";
 
 const env = { DATABASE_URL: "postgres://dee:dee@localhost:5432/dee" };

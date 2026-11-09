@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { percentile, perSecond, summarizeLatencies } from "./stats.js";
+import { percentile, perSecond, summarizeLatencies } from "./stats.ts";
 
 describe("percentile", () => {
   const sample = Array.from({ length: 100 }, (_, index) => index + 1);

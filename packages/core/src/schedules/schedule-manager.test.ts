@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { InvalidScheduleError } from "./cron.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { InvalidScheduleError } from "./cron.ts";
 import {
   ScheduleAlreadyExistsError,
   ScheduleNotFoundError,
   createScheduleManager,
   type CreateScheduleInput,
-} from "./schedule-manager.js";
+} from "./schedule-manager.ts";
 
 const QUEUE = "default/workflows";
 const START = new Date("2026-03-01T10:00:00.000Z");

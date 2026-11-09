@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "./test-harness.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "./test-harness.ts";
 
 describe("initial schema", () => {
   let database: IsolatedSchema;

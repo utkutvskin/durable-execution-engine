@@ -1,5 +1,5 @@
 import type { CompactionReport, HistoryCompactor } from "@dee/core";
-import { systemTimers, type Timers } from "./timers.js";
+import { systemTimers, type Timers } from "./timers.ts";
 
 /**
  * Configuration for `startCompactorLoop`. `batchSize` bounds the runs one

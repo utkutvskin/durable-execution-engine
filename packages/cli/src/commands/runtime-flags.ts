@@ -7,9 +7,9 @@ import {
   type RetentionPolicy,
   type TracingProvider,
 } from "@dee/core";
-import { CliError } from "../errors.js";
-import type { CliIo } from "../io.js";
-import { stringFlag, type OptionSpec, type ParsedCommand } from "./shared.js";
+import { CliError } from "../errors.ts";
+import type { CliIo } from "../io.ts";
+import { stringFlag, type OptionSpec, type ParsedCommand } from "./shared.ts";
 
 type Env = Readonly<Record<string, string | undefined>>;
 

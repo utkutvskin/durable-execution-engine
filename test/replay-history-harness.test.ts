@@ -2,13 +2,13 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import type { WorkflowEvent } from "../packages/core/src/event-store/events.js";
-import type { WorkflowCommand } from "../packages/core/src/workflow/commands.js";
-import { runDecisionLoop } from "../packages/core/src/workflow/decision-loop.js";
-import type { WorkflowHandler } from "../packages/core/src/workflow/context.js";
-import type { ClockSource, RandomSource } from "../packages/core/src/workflow/sources.js";
-import { shipOrderWorkflow } from "./fixtures/workflows/ship-order.js";
-import { shipOrderV2Workflow } from "./fixtures/workflows/ship-order-v2.js";
+import type { WorkflowEvent } from "../packages/core/src/event-store/events.ts";
+import type { WorkflowCommand } from "../packages/core/src/workflow/commands.ts";
+import { runDecisionLoop } from "../packages/core/src/workflow/decision-loop.ts";
+import type { WorkflowHandler } from "../packages/core/src/workflow/context.ts";
+import type { ClockSource, RandomSource } from "../packages/core/src/workflow/sources.ts";
+import { shipOrderWorkflow } from "./fixtures/workflows/ship-order.ts";
+import { shipOrderV2Workflow } from "./fixtures/workflows/ship-order-v2.ts";
 
 interface RecordedHistoryFixture {
   readonly workflowType: string;

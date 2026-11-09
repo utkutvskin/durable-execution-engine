@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createPool, defineStep, defineWorkflow, type Pool } from "@dee/core";
-import { createRunService } from "../../../api/src/index.js";
-import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.js";
-import { startEngine } from "./runtime.js";
+import { createRunService } from "../../../api/src/index.ts";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.ts";
+import { startEngine } from "./runtime.ts";
 
 describe("engine on a small connection pool", () => {
   let database: IsolatedSchema;

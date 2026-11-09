@@ -1,19 +1,19 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createPostgresEventStore, type EventStore } from "../event-store/event-store.js";
-import type { WorkflowEvent } from "../event-store/events.js";
-import { createResultRecorder, type ResultRecorder } from "../idempotency/recorder.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createPostgresEventStore, type EventStore } from "../event-store/event-store.ts";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import { createResultRecorder, type ResultRecorder } from "../idempotency/recorder.ts";
 import {
   createRunInteractions,
   RunNotFoundError,
   RunNotOpenError,
-} from "../signals/signal-service.js";
-import { commandToEvent } from "../workflow/command-events.js";
-import { runDecisionLoop } from "../workflow/decision-loop.js";
-import { defineWorkflow } from "../workflow/define-workflow.js";
-import type { ClockSource, RandomSource } from "../workflow/sources.js";
-import { createWorkflowRegistry } from "../workflow/workflow-registry.js";
-import { createRunControl, RunAlreadyClosedError, type RunControl } from "./run-control.js";
+} from "../signals/signal-service.ts";
+import { commandToEvent } from "../workflow/command-events.ts";
+import { runDecisionLoop } from "../workflow/decision-loop.ts";
+import { defineWorkflow } from "../workflow/define-workflow.ts";
+import type { ClockSource, RandomSource } from "../workflow/sources.ts";
+import { createWorkflowRegistry } from "../workflow/workflow-registry.ts";
+import { createRunControl, RunAlreadyClosedError, type RunControl } from "./run-control.ts";
 
 const sources: { clock: ClockSource; random: RandomSource } = {
   clock: { now: () => new Date("2026-01-01T00:00:00.000Z") },

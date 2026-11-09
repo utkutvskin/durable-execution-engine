@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CardDeclinedError, createInMemoryGateway } from "./gateway.js";
+import { CardDeclinedError, createInMemoryGateway } from "./gateway.ts";
 
 describe("in memory payment gateway", () => {
   const request = { orderId: "o", customerId: "c", amountCents: 100 };

@@ -3,10 +3,10 @@ import {
   createIsolatedDatabase,
   createIsolatedSchema,
   type IsolatedSchema,
-} from "../db/test-harness.js";
-import { createTaskQueue } from "../queue/task-queue.js";
-import { createJanitor } from "./janitor.js";
-import { createRecoveryMetrics } from "./metrics.js";
+} from "../db/test-harness.ts";
+import { createTaskQueue } from "../queue/task-queue.ts";
+import { createJanitor } from "./janitor.ts";
+import { createRecoveryMetrics } from "./metrics.ts";
 
 const START = new Date("2026-03-01T12:00:00.000Z");
 

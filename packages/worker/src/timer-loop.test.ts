@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CatchUpReport, TimerScheduler } from "@dee/core";
-import { startTimerLoop } from "./timer-loop.js";
-import { createVirtualTime, waitFor } from "./test-support.js";
+import { startTimerLoop } from "./timer-loop.ts";
+import { createVirtualTime, waitFor } from "./test-support.ts";
 
 const emptyReport: CatchUpReport = { fired: [], cancelled: 0, ticks: 1 };
 

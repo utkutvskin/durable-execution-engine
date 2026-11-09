@@ -1,5 +1,5 @@
 import { defineStep, type StepDefinition } from "@dee/core";
-import type { PaymentGateway, Reservation, ReserveRequest } from "./gateway.js";
+import type { PaymentGateway, Reservation, ReserveRequest } from "./gateway.ts";
 
 /**
  * The step types of the saga, as `ctx.step()` names them.

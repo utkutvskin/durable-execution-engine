@@ -11,9 +11,9 @@ import {
   type Tracing,
   type TraceSpan,
 } from "@dee/core";
-import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.js";
-import { createApiKeyStore, type ApiKeyStore } from "./api-keys.js";
-import { createApiServer, type ApiOptions } from "./server.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.ts";
+import { createApiKeyStore, type ApiKeyStore } from "./api-keys.ts";
+import { createApiServer, type ApiOptions } from "./server.ts";
 
 interface Harness {
   readonly baseUrl: string;

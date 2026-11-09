@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { WorkflowEvent } from "../event-store/events.js";
-import type { WorkflowCommand } from "./commands.js";
-import { runDecisionLoop } from "./decision-loop.js";
-import { defineWorkflow } from "./define-workflow.js";
-import { NonDeterminismError } from "./errors.js";
-import { ForbiddenApiError } from "./sandbox.js";
-import type { ClockSource, RandomSource } from "./sources.js";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import type { WorkflowCommand } from "./commands.ts";
+import { runDecisionLoop } from "./decision-loop.ts";
+import { defineWorkflow } from "./define-workflow.ts";
+import { NonDeterminismError } from "./errors.ts";
+import { ForbiddenApiError } from "./sandbox.ts";
+import type { ClockSource, RandomSource } from "./sources.ts";
 
 interface ShipOrderInput {
   readonly orderId: string;

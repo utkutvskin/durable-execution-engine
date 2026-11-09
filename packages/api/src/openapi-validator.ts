@@ -1,4 +1,4 @@
-import type { JsonObject } from "./openapi.js";
+import type { JsonObject } from "./openapi.ts";
 
 const HTTP_METHODS = new Set(["get", "put", "post", "delete", "options", "head", "patch", "trace"]);
 const SCHEMA_TYPES = new Set(["string", "number", "integer", "boolean", "array", "object", "null"]);

@@ -1,15 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.js";
-import { createPostgresEventStore, type EventStore } from "../event-store/event-store.js";
-import { createResultRecorder, type ResultRecorder } from "../idempotency/recorder.js";
-import { createTaskQueue, type TaskQueue } from "../queue/task-queue.js";
-import { commandToEvent } from "../workflow/command-events.js";
-import type { WorkflowHandler } from "../workflow/context.js";
-import type { ClockSource } from "../workflow/sources.js";
-import { createRunCache } from "./run-cache.js";
-import { createStickyDecider, type StickyDecider } from "./sticky-decider.js";
-import { createStickyRouter, type StickyRouter } from "./sticky-router.js";
-import type { LiveSession } from "../workflow/live-session.js";
+import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
+import { createPostgresEventStore, type EventStore } from "../event-store/event-store.ts";
+import { createResultRecorder, type ResultRecorder } from "../idempotency/recorder.ts";
+import { createTaskQueue, type TaskQueue } from "../queue/task-queue.ts";
+import { commandToEvent } from "../workflow/command-events.ts";
+import type { WorkflowHandler } from "../workflow/context.ts";
+import type { ClockSource } from "../workflow/sources.ts";
+import { createRunCache } from "./run-cache.ts";
+import { createStickyDecider, type StickyDecider } from "./sticky-decider.ts";
+import { createStickyRouter, type StickyRouter } from "./sticky-router.ts";
+import type { LiveSession } from "../workflow/live-session.ts";
 
 interface FakeClock extends ClockSource {
   advance(ms: number): void;

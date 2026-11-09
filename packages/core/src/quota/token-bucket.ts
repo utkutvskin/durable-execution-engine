@@ -1,4 +1,4 @@
-import { systemClock, type ClockSource } from "../workflow/sources.js";
+import { systemClock, type ClockSource } from "../workflow/sources.ts";
 
 /**
  * The refill rate and capacity of one bucket. A bucket starts full, so a

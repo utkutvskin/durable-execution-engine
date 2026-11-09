@@ -1,6 +1,6 @@
 import pg from "pg";
 import type { Pool } from "pg";
-import { resolveDatabaseUrl, type DatabaseUrlEnv } from "./env.js";
+import { resolveDatabaseUrl, type DatabaseUrlEnv } from "./env.ts";
 
 const { Pool: PoolConstructor } = pg;
 

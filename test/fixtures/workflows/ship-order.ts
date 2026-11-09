@@ -1,5 +1,5 @@
-import { defineWorkflow } from "../../../packages/core/src/workflow/define-workflow.js";
-import type { WorkflowDefinition } from "../../../packages/core/src/workflow/workflow-registry.js";
+import { defineWorkflow } from "../../../packages/core/src/workflow/define-workflow.ts";
+import type { WorkflowDefinition } from "../../../packages/core/src/workflow/workflow-registry.ts";
 
 export interface ShipOrderInput {
   readonly orderId: string;

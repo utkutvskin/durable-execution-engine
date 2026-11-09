@@ -1,10 +1,10 @@
-import { CliError } from "./errors.js";
-import { processIo, type CliIo } from "./io.js";
-import { exampleCommand } from "./commands/example.js";
-import { migrateCommand, type DatabaseHooks } from "./commands/migrate.js";
-import { devCommand, workerCommand, type ProcessHooks } from "./commands/process.js";
-import { serveCommand } from "./commands/serve.js";
-import { runCommand, type RunHooks } from "./commands/run.js";
+import { CliError } from "./errors.ts";
+import { processIo, type CliIo } from "./io.ts";
+import { exampleCommand } from "./commands/example.ts";
+import { migrateCommand, type DatabaseHooks } from "./commands/migrate.ts";
+import { devCommand, workerCommand, type ProcessHooks } from "./commands/process.ts";
+import { serveCommand } from "./commands/serve.ts";
+import { runCommand, type RunHooks } from "./commands/run.ts";
 
 /**
  * Replacements for the effects commands reach for, used by tests.

@@ -1,6 +1,6 @@
-import type { WorkflowEvent } from "../event-store/events.js";
-import { sameEncoding } from "./canonical.js";
-import { NonDeterminismError } from "./errors.js";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import { sameEncoding } from "./canonical.ts";
+import { NonDeterminismError } from "./errors.ts";
 
 /**
  * A command as the replaying code issues it, or as the history recorded it:

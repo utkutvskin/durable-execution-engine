@@ -1,11 +1,11 @@
 import { createPool } from "@dee/core";
-import { databaseUrl, ensureDatabase, findComposeDirectory } from "../database.js";
-import { startDevEnvironment } from "../dev-environment.js";
-import { CliError } from "../errors.js";
-import type { CliIo } from "../io.js";
-import { EXAMPLE_NAMES, loadExampleDemo, type ExampleName } from "../modules.js";
-import type { DatabaseHooks } from "./migrate.js";
-import { parseCommand, requirePositional, stringFlag } from "./shared.js";
+import { databaseUrl, ensureDatabase, findComposeDirectory } from "../database.ts";
+import { startDevEnvironment } from "../dev-environment.ts";
+import { CliError } from "../errors.ts";
+import type { CliIo } from "../io.ts";
+import { EXAMPLE_NAMES, loadExampleDemo, type ExampleName } from "../modules.ts";
+import type { DatabaseHooks } from "./migrate.ts";
+import { parseCommand, requirePositional, stringFlag } from "./shared.ts";
 
 /**
  * `wf example <payment-saga|etl-pipeline|all>`: runs a bundled example end to

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { WorkflowEvent } from "../event-store/events.js";
-import type { StoredEvent } from "../event-store/event-store.js";
-import { InvalidTransitionError } from "./errors.js";
-import { createInitialProjection, foldRunEvents } from "./projection.js";
+import type { WorkflowEvent } from "../event-store/events.ts";
+import type { StoredEvent } from "../event-store/event-store.ts";
+import { InvalidTransitionError } from "./errors.ts";
+import { createInitialProjection, foldRunEvents } from "./projection.ts";
 
 function stored(events: readonly WorkflowEvent[]): StoredEvent[] {
   return events.map((event, index) => ({
