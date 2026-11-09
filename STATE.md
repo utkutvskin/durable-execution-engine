@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 41: a built distribution
+
+- **Status:** DONE
+- **Completed day:** 41
+- **Files added or changed:** every `package.json` of `packages/*`, `apps/ui` and `examples/*` (`exports` with a `development` condition, `publishConfig.exports`, `files`, no `private`), new `tsconfig.build.json` per package and at the root, `tsconfig.base.json` (`customConditions`, `rewriteRelativeImportExtensions`), the `paths` removed from every tsconfig, `vitest.config.ts` (conditions instead of aliases), relative imports written as `.ts` in 239 files, `packages/cli/bin/wf.js` and new `src/run.ts`, `packages/core/src/demo/demo-types.ts` (the demo types moved out of the cli), `apps/ui/src/server.ts` (client directory), `LICENSE` and `NOTICE` copies in each package, deleted `packages/cli/src/runtime/resolve-hooks.ts`, `packages/worker/src/chaos/register.ts` and `resolve-hooks.ts`, new `scripts/pack-packages.mjs`, `check-packages.mjs`, `smoke-install.sh`, `.github/workflows/ci.yml` (job `packages`), new `test/release/distribution.test.ts`, `docs/DEFERRED.md`, `CLI.md`, `README.md`, `DECISIONS.md` (ADR-0051)
+- **Technical decisions:** ADR-0051 in `docs/DECISIONS.md`. Two new dev dependencies, both required by the backlog: `publint` (lints the packed manifest and files) and `@arethetypeswrong/cli` (checks the type resolution of the packed exports). No migration.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm install && pnpm run verify` is green. **Done:** `pnpm run build` (`tsc -b tsconfig.build.json`) compiles the eight packages (core, worker, api, ui, the three examples, cli) to `dist` with declarations, ESM only; the `@dee/*` mapping now lives only in the `exports` maps (a `development` condition points at `src`, `types` and `default` at `dist`) and the vitest aliases, the tsconfig `paths` and both resolve hooks are gone. **Proof run locally:** `scripts/pack-packages.mjs` packs all eight, `scripts/check-packages.mjs` reports no error from `publint --strict` and `attw --profile esm-only` and checks `LICENSE` and `NOTICE` in every tarball, and `scripts/smoke-install.sh` installs the tarballs into an empty temp directory with `npm install`, starts `npx wf dev --module node_modules/@dee/example-hello/dist/index.js` against the local Postgres and completes the hello run (`COMPLETED`, `hello, ada`). **Not proven yet:** the `packages` CI job runs the same smoke script inside a clean `node:22` container (`docker run --network host`); no Docker daemon was available in this session, so that container run happens for the first time on the pushed commit, read its result first in the next session. **Things to know:** the tarballs only install together because the smoke script overrides the `@dee/*` dependencies to the tarballs; a registry install needs day 42's publish. `publishConfig.exports` removes the `development` condition from the packed manifest (pnpm applies it at pack time). `bin/wf.js` runs `dist` when it exists, otherwise it starts itself again with `--conditions=development` on the sources, so a stale local `dist` is used by the cli tests that spawn it; run `pnpm run build` again or delete `dist` if in doubt. The ui browser modules keep their `.js` import specifiers (the browser asks for them by that name) and are shipped as sources. The image still runs the sources. `@dee/example-hello` is now a package of its own so the clean install has a workflow to run. Day 42 (release pipeline) is next.
+
+---
+
 ## Day 40: chaos on the engine runtime and v0.1.1
 
 - **Status:** DONE
