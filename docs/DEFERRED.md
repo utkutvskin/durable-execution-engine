@@ -120,3 +120,7 @@ The engine scenarios inject faults through checkpoints of the step handler, move
 ## The publishing steps of the release pipeline have not run for real (day 42)
 
 The workflow `release.yml` rehearses everything except `npm publish` and the GHCR push in a dry run. The two publishing steps need the owner's npm scope, the trusted publishers and the GHCR visibility (`docs/RELEASING.md`); until then they are unproven, as are the exact options of `npm publish --provenance` under trusted publishing and the arm64 build under QEMU. To close this: do the one-time steps and push a pre-release tag, then a release tag.
+
+## Catching up a long-paused schedule walks every missed minute (day 42)
+
+A schedule with `* * * * *` whose `next_fire_at` lies months in the past is caught up by stepping through the cron times one by one, so the first tick after a long pause costs time proportional to the pause (about 22 seconds for 270 days on a laptop). It surfaced as a test that pinned its start date and slowly crossed the 30 second test timeout; the test now starts one hour ago. To close this: jump straight to the last due time for the `latest_only` policy instead of iterating.

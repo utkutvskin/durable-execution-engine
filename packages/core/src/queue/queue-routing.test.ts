@@ -8,7 +8,7 @@ import { createRunInteractions } from "../signals/signal-service.ts";
 import { createTimerScheduler } from "../timers/timer-scheduler.ts";
 import { createWorkflowRegistry } from "../workflow/workflow-registry.ts";
 
-const START = new Date("2026-05-01T00:00:00.000Z");
+const START = new Date(Math.floor((Date.now() - 3_600_000) / 60_000) * 60_000);
 const LATER = new Date(Date.now() + 3_600_000);
 const clock = { now: () => LATER };
 const sources = { clock, random: { random: () => 0.5, uuid: () => "fixed-uuid" } };
