@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
+  "changelog": false,
+  "commit": false,
+  "fixed": [
+    [
+      "@dee/core",
+      "@dee/worker",
+      "@dee/api",
+      "@dee/ui",
+      "@dee/example-hello",
+      "@dee/example-payment-saga",
+      "@dee/example-etl-pipeline",
+      "@dee/cli"
+    ]
+  ],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": []
+}

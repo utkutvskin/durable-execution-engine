@@ -1,17 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
-
-export const PACKAGE_DIRECTORIES = [
-  "packages/core",
-  "packages/worker",
-  "packages/api",
-  "apps/ui",
-  "examples/hello",
-  "examples/payment-saga",
-  "examples/etl-pipeline",
-  "packages/cli",
-];
+import { PACKAGE_DIRECTORIES } from "./package-directories.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const destination = path.resolve(process.argv[2] ?? path.join(root, ".packed"));

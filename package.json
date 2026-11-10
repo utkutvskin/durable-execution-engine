@@ -26,10 +26,14 @@
     "example:payment": "node packages/cli/bin/wf.js example payment-saga",
     "example:etl": "node packages/cli/bin/wf.js example etl-pipeline",
     "test:examples": "vitest run examples packages/cli",
-    "build": "tsc -b tsconfig.build.json"
+    "build": "tsc -b tsconfig.build.json",
+    "changeset": "changeset",
+    "release:version": "changeset version",
+    "release:notes": "node scripts/release-notes.mjs"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
+    "@changesets/cli": "^3.0.3",
     "@dee/cli": "workspace:*",
     "@dee/core": "workspace:*",
     "@eslint/js": "^10.0.1",
