@@ -6,7 +6,9 @@ WORKDIR /app
 
 FROM base AS build
 COPY . .
-RUN pnpm install --frozen-lockfile --prod \
+RUN pnpm install --frozen-lockfile \
+  && pnpm run build \
+  && CI=true pnpm install --frozen-lockfile --prod \
   && find . -path '*/node_modules' -prune -o -name '*.test.ts' -type f -exec rm -f {} + \
   && rm -rf test docs .github
 
