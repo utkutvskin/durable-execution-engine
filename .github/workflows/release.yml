@@ -1,0 +1,200 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "pre-release tag to dry run, for example v0.1.1-rc.1"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.plan.outputs.tag }}
+      version: ${{ steps.plan.outputs.version }}
+      npm_tag: ${{ steps.plan.outputs.npm_tag }}
+      dry_run: ${{ steps.plan.outputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - id: plan
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: node scripts/release-plan.mjs | tee -a "$GITHUB_OUTPUT"
+
+  verify:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dee
+          POSTGRES_PASSWORD: dee
+          POSTGRES_DB: dee
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dee -d dee"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgres://dee:dee@localhost:5432/dee
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: install a browser for the explorer e2e test
+        run: |
+          npx playwright-core install --with-deps chromium
+          echo "PLAYWRIGHT_CHROMIUM_PATH=$(node -e "console.log(require('playwright-core').chromium.executablePath())")" >> "$GITHUB_ENV"
+
+      - run: pnpm run verify
+
+  npm:
+    needs: [plan, verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: use an npm that supports trusted publishing
+        run: npm install -g npm@11
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run build
+
+      - run: node scripts/pack-packages.mjs .packed
+
+      - name: check the packed packages with publint and attw
+        run: node scripts/check-packages.mjs .packed
+
+      - name: publish the packages to npm with provenance
+        env:
+          TAG: ${{ needs.plan.outputs.tag }}
+          DRY_RUN: ${{ needs.plan.outputs.dry_run }}
+        run: |
+          if [ "$DRY_RUN" = true ]; then
+            node scripts/publish-packages.mjs .packed "$TAG" --dry-run
+          else
+            node scripts/publish-packages.mjs .packed "$TAG"
+          fi
+
+  image:
+    needs: [plan, verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: build the image once for the runner and check that it runs from dist
+        run: |
+          docker build -t dee:release-check .
+          docker run --rm --entrypoint sh dee:release-check -c 'test -f packages/cli/dist/main.js'
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: log in to ghcr
+        if: needs.plan.outputs.dry_run != 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.plan.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.plan.outputs.tag }}
+            type=semver,pattern={{major}},value=${{ needs.plan.outputs.tag }}
+          flavor: |
+            latest=${{ needs.plan.outputs.dry_run != 'true' }}
+
+      - name: build the image for amd64 and arm64 and push it unless this is a dry run
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ needs.plan.outputs.dry_run != 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          sbom: true
+          provenance: mode=max
+
+  github-release:
+    needs: [plan, npm, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: cut the release notes out of the changelog
+        env:
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: node scripts/release-notes.mjs "$TAG" > release-notes.md
+
+      - name: create the github release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          DRY_RUN: ${{ needs.plan.outputs.dry_run }}
+        run: |
+          if [ "$DRY_RUN" = true ]; then
+            gh release create "$TAG" --draft --prerelease --target "$GITHUB_SHA" \
+              --title "$TAG" --notes-file release-notes.md
+          else
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file release-notes.md
+          fi

@@ -110,6 +110,7 @@ Start here:
 - `docs/CONCEPTS.md` — determinism, replay, idempotency, retries, timers, signals, versioning.
 - `docs/ARCHITECTURE.md` — the packages, the data model, the life of a run, with diagrams.
 - `docs/DEPLOYMENT.md` — running it in production: the image, the database, scaling, upgrades, backups.
+- `docs/RELEASING.md` — how a tag becomes a release, and the one-time steps for npm and GHCR.
 - `docs/API.md` — the HTTP API reference, authentication, idempotent start, quotas and the OpenAPI document (`/openapi.json`).
 - `docs/CLI.md` — the `wf` command line.
 - `docs/EXAMPLES.md` — the payment saga and the etl pipeline.

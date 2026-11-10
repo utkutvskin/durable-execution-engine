@@ -148,6 +148,9 @@ jobs:
 
       - run: docker build -t dee:ci .
 
+      - name: check that the image runs the built output
+        run: docker run --rm --entrypoint sh dee:ci -c 'test -f packages/cli/dist/main.js'
+
       - name: apply the migrations with two processes started together
         run: |
           docker run --rm --network host -e DATABASE_URL=postgres://dee:dee@localhost:5432/dee dee:ci migrate up > migrate-1.log 2>&1 &

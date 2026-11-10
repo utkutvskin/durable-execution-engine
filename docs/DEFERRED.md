@@ -20,7 +20,7 @@ Code that takes a client with `pool.connect()` releases it with `client.release(
 
 ## The packages are not on npm yet (day 41)
 
-Every package builds to `dist` and the packed tarballs install into an empty directory and run `npx wf dev` (the `packages` job of `ci.yml`), so the old limit of running only from a checkout is gone. They are not published to a registry: the release pipeline, npm trusted publishing and the image push are day 42. To close this: publish a tag and install from the registry instead of from tarballs.
+Every package builds to `dist` and the packed tarballs install into an empty directory and run `npx wf dev` (the `packages` job of `ci.yml`), so the old limit of running only from a checkout is gone. They are not published to a registry yet. The release pipeline exists since day 42 (`docs/RELEASING.md`) but needs the owner's one-time npm and GHCR steps. To close this: do those steps, push a release tag and install from the registry instead of from tarballs.
 
 ## Examples against a real provider and warehouse (day 29)
 
@@ -28,7 +28,7 @@ The payment gateway and the warehouse of the examples are in memory, so the demo
 
 ## The image was not built and is not published (day 30)
 
-The Dockerfile and the compose `engine` profile were written in a session without a Docker daemon. The build steps were reproduced outside Docker (see ADR-0040), but `docker build` has not run, and the image is not pushed anywhere. The `docker` job in CI builds it and, since day 39, runs the split services (two migrations together, an `api` container, two `worker` containers, the payment saga, a metrics check and the compose services); the day 39 session had a `docker compose config` check but no daemon either, so the first CI result of that job is the first time those steps run. To close this: read the first CI result of that job, then add a tag triggered workflow that pushes the image to a registry.
+The Dockerfile and the compose `engine` profile were written in a session without a Docker daemon. The build steps were reproduced outside Docker (see ADR-0040), but `docker build` has not run, and the image is not pushed anywhere. The `docker` job in CI builds it and, since day 39, runs the split services (two migrations together, an `api` container, two `worker` containers, the payment saga, a metrics check and the compose services); the day 39 session had a `docker compose config` check but no daemon either, so the first CI result of that job is the first time those steps run. The tag triggered workflow that pushes the image exists since day 42 (`docs/RELEASING.md`); its push step has not run. To close this: do the GHCR steps in that file and push a release tag.
 
 ## The release object (day 30)
 
@@ -116,3 +116,7 @@ The commit hash is also written in `STATE.md`, day 40.
 ## Chaos limits (day 40)
 
 The engine scenarios inject faults through checkpoints of the step handler, moved clocks, proxies and a frozen process; they do not kill a process at an arbitrary instruction. The workloads use one step, one sleep or one signal wait, so child workflows, continue-as-new and compaction are not under chaos. A run that carries the waiting marker is never reported as stalled, so the checker cannot tell a signal that never arrives from one that is late. The nightly workflow is in `.github/workflows/chaos-nightly.yml`; its first scheduled run happens on `main` after the push, and a manual run can be started with `workflow_dispatch`.
+
+## The publishing steps of the release pipeline have not run for real (day 42)
+
+The workflow `release.yml` rehearses everything except `npm publish` and the GHCR push in a dry run. The two publishing steps need the owner's npm scope, the trusted publishers and the GHCR visibility (`docs/RELEASING.md`); until then they are unproven, as are the exact options of `npm publish --provenance` under trusted publishing and the arm64 build under QEMU. To close this: do the one-time steps and push a pre-release tag, then a release tag.
