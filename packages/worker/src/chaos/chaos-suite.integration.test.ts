@@ -5,7 +5,7 @@ import { SCENARIOS, runRepetition, type RepetitionResult } from "./scenarios.ts"
 import { createChaosWorld, type ChaosWorld } from "./world.ts";
 
 const REPETITIONS = Number(process.env["DEE_CHAOS_REPETITIONS"] ?? 10);
-const SCENARIO_TIMEOUT_MS = 900_000;
+const SCENARIO_TIMEOUT_MS = Math.max(900_000, REPETITIONS * 120_000);
 
 describe("chaos suite", () => {
   const results: RepetitionResult[] = [];

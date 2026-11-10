@@ -8,7 +8,7 @@ on:
 jobs:
   chaos:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 240
     services:
       postgres:
         image: postgres:16

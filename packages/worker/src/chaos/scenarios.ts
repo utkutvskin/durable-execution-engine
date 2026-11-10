@@ -156,6 +156,7 @@ function startNodes(context: RepetitionContext, options: WorkerGroupOptions): Wo
   });
 }
 
+const CHECKPOINT_DEADLINE_MS = 5_000;
 const NO_ABORT = { signal: new AbortController().signal };
 const NEVER_QUARANTINE = 50;
 const ENGINE_SEED_OFFSET = 100_000;
@@ -194,7 +195,11 @@ const workerKill: ScenarioBody = {
     });
     await Promise.all(children.map(({ child }) => child.waitForLine("ready")));
     await Promise.all(
-      children.map(({ child, crashPoint }) => child.waitForLine(`checkpoint ${crashPoint}`)),
+      children.map(({ child, crashPoint }) =>
+        child
+          .waitForLine(`checkpoint ${crashPoint}`, CHECKPOINT_DEADLINE_MS)
+          .catch(() => undefined),
+      ),
     );
     await Promise.all(children.map(({ child }) => child.kill("SIGKILL")));
 

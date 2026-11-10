@@ -20,8 +20,11 @@ export interface ChaosChildOptions {
  */
 export interface ChaosChild {
   readonly pid: number;
-  /** Resolves with the first output line that starts with `prefix`. */
-  waitForLine(prefix: string): Promise<string>;
+  /**
+   * Resolves with the first output line that starts with `prefix`. With `timeoutMs` it rejects when no such line
+   * appeared in time, which is how a caller tells a child that never got work from one that is slow.
+   */
+  waitForLine(prefix: string, timeoutMs?: number): Promise<string>;
   /** Sends `signal` and resolves with the exit code and signal once the process is gone. */
   kill(signal: NodeJS.Signals): Promise<{ code: number | null; signal: NodeJS.Signals | null }>;
 }
@@ -76,17 +79,26 @@ export function spawnChaosChild(options: ChaosChildOptions): ChaosChild {
 
   return {
     pid: child.pid ?? -1,
-    waitForLine(prefix: string): Promise<string> {
+    waitForLine(prefix: string, timeoutMs?: number): Promise<string> {
       return new Promise<string>((resolve, reject) => {
+        const timer =
+          timeoutMs === undefined
+            ? undefined
+            : setTimeout(() => {
+                listeners.delete(check);
+                reject(new Error(`child did not print "${prefix}" within ${String(timeoutMs)} ms`));
+              }, timeoutMs);
         const check = (): void => {
           const found = lines.find((line) => line.startsWith(prefix));
           if (found !== undefined) {
             listeners.delete(check);
+            clearTimeout(timer);
             resolve(found);
             return;
           }
           if (child.exitCode !== null || child.signalCode !== null) {
             listeners.delete(check);
+            clearTimeout(timer);
             reject(new Error(`child exited before printing "${prefix}": ${stderr}`));
           }
         };
