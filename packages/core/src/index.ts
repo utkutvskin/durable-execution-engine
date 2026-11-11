@@ -335,6 +335,22 @@ export {
   migrateUp,
   pendingMigrations,
 } from "./db/migrator.ts";
-export type { Migration } from "./db/migrator.ts";
+export type { MigrateOptions, Migration } from "./db/migrator.ts";
+export {
+  DEFAULT_EMBEDDED_NAMESPACE,
+  DEFAULT_EMBEDDED_QUEUE,
+  IdempotencyKeyConflictError,
+  NoOpenTransactionError,
+  cancelWorkflow,
+  signalWorkflow,
+  startWorkflow,
+} from "./embedded/transactional.ts";
+export type {
+  CancelWorkflowInput,
+  EmbeddedOptions,
+  SignalWorkflowInput,
+  StartWorkflowInput,
+  StartWorkflowResult,
+} from "./embedded/transactional.ts";
 
 export type { DemoContext, DemoReport, DemoRunClient, DemoRunSnapshot } from "./demo/demo-types.ts";

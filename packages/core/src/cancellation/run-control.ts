@@ -72,27 +72,52 @@ export interface RunControlOptions {
 }
 
 /**
+ * Requests graceful cancellation of `runId` inside the caller's open
+ * transaction on `client`: takes the run row lock (its parent's first),
+ * records `cancel_requested` and enqueues a workflow task, unless a request
+ * is already pending. Rejects with `RunNotFoundError` or
+ * `RunAlreadyClosedError`.
+ */
+export async function cancelRunOnClient(
+  client: PoolClient,
+  codec: Codec,
+  runId: string,
+  reason?: string,
+): Promise<CancelReceipt> {
+  const row = await lockOpenRun(client, runId);
+  return requestCancellationOnClient(
+    client,
+    codec,
+    { runId, namespaceId: row.namespaceId, queueName: row.queueName },
+    reason,
+  );
+}
+
+async function lockOpenRun(client: PoolClient, runId: string): Promise<LockedRun> {
+  const row = await lockRunWithParent(client, runId);
+  if (row === undefined) {
+    throw new RunNotFoundError(runId);
+  }
+  if (row.status !== "RUNNING") {
+    throw new RunAlreadyClosedError(runId, row.status);
+  }
+  return row;
+}
+
+/**
  * Creates `RunControl` over `pool`.
  */
 export function createRunControl(pool: Pool, options: RunControlOptions = {}): RunControl {
   const codec = options.codec ?? jsonCodec;
 
   async function inTransaction<TResult>(
-    runId: string,
-    body: (row: LockedRun, client: PoolClient) => Promise<TResult>,
+    body: (client: PoolClient) => Promise<TResult>,
   ): Promise<TResult> {
     const client = await pool.connect();
     let broken = false;
     try {
       await client.query("begin");
-      const row = await lockRunWithParent(client, runId);
-      if (row === undefined) {
-        throw new RunNotFoundError(runId);
-      }
-      if (row.status !== "RUNNING") {
-        throw new RunAlreadyClosedError(runId, row.status);
-      }
-      const outcome = await body(row, client);
+      const outcome = await body(client);
       await client.query("commit");
       return outcome;
     } catch (error) {
@@ -105,18 +130,12 @@ export function createRunControl(pool: Pool, options: RunControlOptions = {}): R
 
   return {
     cancelRun(runId: string, reason?: string): Promise<CancelReceipt> {
-      return inTransaction(runId, async (row, client) => {
-        return requestCancellationOnClient(
-          client,
-          codec,
-          { runId, namespaceId: row.namespaceId, queueName: row.queueName },
-          reason,
-        );
-      });
+      return inTransaction((client) => cancelRunOnClient(client, codec, runId, reason));
     },
 
     terminateRun(runId: string, reason?: string): Promise<TerminateReceipt> {
-      return inTransaction(runId, async (_row, client) => {
+      return inTransaction(async (client) => {
+        await lockOpenRun(client, runId);
         const currentSeq = await readCurrentSequenceOnClient(client, runId);
         const [stored] = await appendEventsOnClient(client, codec, runId, currentSeq, [
           reason === undefined ? { type: "run_terminated" } : { type: "run_terminated", reason },

@@ -1,4 +1,4 @@
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { jsonCodec, type Codec } from "../event-store/codec.ts";
 import {
   appendEventsOnClient,
@@ -103,6 +103,41 @@ interface RunRow {
 }
 
 /**
+ * Records a `signal_received` event on `runId` and enqueues a workflow task
+ * for it inside the caller's open transaction on `client`, taking the run
+ * row lock. Rejects with `RunNotFoundError` or `RunNotOpenError`.
+ */
+export async function signalRunOnClient(
+  client: PoolClient,
+  codec: Codec,
+  runId: string,
+  signalName: string,
+  payload: unknown = null,
+): Promise<SignalReceipt> {
+  const run = await client.query<RunRow>(
+    "select namespace_id, workflow_type, status, queue_name from workflow_runs where id = $1 for update",
+    [runId],
+  );
+  const row = run.rows[0];
+  if (row === undefined) {
+    throw new RunNotFoundError(runId);
+  }
+  if (row.status !== "RUNNING") {
+    throw new RunNotOpenError(runId, row.status);
+  }
+  const currentSeq = await readCurrentSequenceOnClient(client, runId);
+  const [stored] = await appendEventsOnClient(client, codec, runId, currentSeq, [
+    { type: "signal_received", signalName, payload },
+  ]);
+  await client.query(
+    `insert into tasks (namespace_id, run_id, queue_name, task_type, payload)
+     values ($1, $2, $3, 'WORKFLOW_TASK', $4::jsonb)`,
+    [row.namespace_id, runId, row.queue_name, JSON.stringify({ reason: "signal", signalName })],
+  );
+  return { sequenceNumber: stored?.sequenceNumber ?? currentSeq + 1 };
+}
+
+/**
  * Creates `RunInteractions` over `pool`.
  */
 export function createRunInteractions(
@@ -122,33 +157,9 @@ export function createRunInteractions(
       let broken = false;
       try {
         await client.query("begin");
-        const run = await client.query<RunRow>(
-          "select namespace_id, workflow_type, status, queue_name from workflow_runs where id = $1 for update",
-          [runId],
-        );
-        const row = run.rows[0];
-        if (row === undefined) {
-          throw new RunNotFoundError(runId);
-        }
-        if (row.status !== "RUNNING") {
-          throw new RunNotOpenError(runId, row.status);
-        }
-        const currentSeq = await readCurrentSequenceOnClient(client, runId);
-        const [stored] = await appendEventsOnClient(client, codec, runId, currentSeq, [
-          { type: "signal_received", signalName, payload },
-        ]);
-        await client.query(
-          `insert into tasks (namespace_id, run_id, queue_name, task_type, payload)
-           values ($1, $2, $3, 'WORKFLOW_TASK', $4::jsonb)`,
-          [
-            row.namespace_id,
-            runId,
-            row.queue_name,
-            JSON.stringify({ reason: "signal", signalName }),
-          ],
-        );
+        const receipt = await signalRunOnClient(client, codec, runId, signalName, payload);
         await client.query("commit");
-        return { sequenceNumber: stored?.sequenceNumber ?? currentSeq + 1 };
+        return receipt;
       } catch (error) {
         broken = !(await rollbackQuietly(client));
         throw error;

@@ -51,6 +51,64 @@ export async function loadMigrations(migrationsDir: string): Promise<Migration[]
 
 const MIGRATION_LOCK_KEY = "dee:migrations";
 
+/**
+ * Options of `migrateUp`, `migrateDown` and `pendingMigrations`. `schema`
+ * names the Postgres schema the engine tables live in, for example `dee`
+ * next to an application's own tables in `public`. `migrateUp` creates it
+ * when it does not exist. The connection's `search_path` is put back
+ * afterwards, so a pool shared with the application is left as it was.
+ */
+export interface MigrateOptions {
+  readonly schema?: string | undefined;
+}
+
+const MIGRATION_SCHEMA_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,62}$/;
+
+function quoteMigrationSchema(schema: string): string {
+  if (!MIGRATION_SCHEMA_PATTERN.test(schema)) {
+    throw new RangeError(
+      `schema must be a plain identifier of letters, digits and underscores, got "${schema}"`,
+    );
+  }
+  return `"${schema}"`;
+}
+
+async function withMigrationClient<T>(
+  pool: Pool,
+  options: MigrateOptions & { readonly create: boolean },
+  work: (client: PoolClient, markBroken: () => void) => Promise<T>,
+): Promise<T> {
+  const quoted = options.schema === undefined ? undefined : quoteMigrationSchema(options.schema);
+  const client = await pool.connect();
+  const state = { broken: false };
+  let previous: string | undefined;
+  try {
+    if (quoted !== undefined) {
+      if (options.create) {
+        await client.query(`create schema if not exists ${quoted}`);
+      }
+      const current = await client.query<{ search_path: string }>(
+        "select current_setting('search_path') as search_path",
+      );
+      previous = current.rows[0]?.search_path ?? "";
+      await client.query("select set_config('search_path', $1, false)", [quoted]);
+    }
+    return await work(client, () => {
+      state.broken = true;
+    });
+  } finally {
+    if (previous !== undefined && !state.broken) {
+      state.broken = await client
+        .query("select set_config('search_path', $1, false)", [previous])
+        .then(
+          () => false,
+          () => true,
+        );
+    }
+    client.release(state.broken);
+  }
+}
+
 async function acquireMigrationLock(client: PoolClient): Promise<void> {
   await client.query("select pg_advisory_lock(hashtext($1))", [MIGRATION_LOCK_KEY]);
 }
@@ -85,45 +143,46 @@ async function getAppliedIds(client: PoolClient): Promise<string[]> {
  * `schema_migrations`, in order, each inside its own transaction, while
  * holding a Postgres advisory lock so concurrent callers (several processes
  * starting together) run one after the other and the later ones find nothing
- * left to apply. Returns the ids applied. Calling this again with nothing pending is a no-op that
- * returns an empty array.
+ * left to apply. Returns the ids applied. Calling this again with nothing
+ * pending is a no-op that returns an empty array. With `options.schema` the
+ * tables are created in that schema, which is created first if needed.
  */
 export async function migrateUp(
   pool: Pool,
   migrationsDir: string = defaultMigrationsDir,
+  options: MigrateOptions = {},
 ): Promise<string[]> {
   const migrations = await loadMigrations(migrationsDir);
-  const client = await pool.connect();
-  let broken = false;
-  const applied: string[] = [];
-  let locked = false;
-  try {
+  return withMigrationClient(pool, { ...options, create: true }, async (client, markBroken) => {
+    const applied: string[] = [];
     await acquireMigrationLock(client);
-    locked = true;
-    await ensureMigrationsTable(client);
-    const alreadyApplied = new Set(await getAppliedIds(client));
-    for (const migration of migrations) {
-      if (alreadyApplied.has(migration.id)) {
-        continue;
+    try {
+      await ensureMigrationsTable(client);
+      const alreadyApplied = new Set(await getAppliedIds(client));
+      for (const migration of migrations) {
+        if (alreadyApplied.has(migration.id)) {
+          continue;
+        }
+        await client.query("begin");
+        try {
+          await client.query(migration.up);
+          await client.query("insert into schema_migrations (id) values ($1)", [migration.id]);
+          await client.query("commit");
+        } catch (error) {
+          if (!(await rollbackQuietly(client))) {
+            markBroken();
+          }
+          throw error;
+        }
+        applied.push(migration.id);
       }
-      await client.query("begin");
-      try {
-        await client.query(migration.up);
-        await client.query("insert into schema_migrations (id) values ($1)", [migration.id]);
-        await client.query("commit");
-      } catch (error) {
-        broken = !(await rollbackQuietly(client));
-        throw error;
+    } finally {
+      if (!(await releaseMigrationLock(client))) {
+        markBroken();
       }
-      applied.push(migration.id);
     }
-  } finally {
-    if (locked && !(await releaseMigrationLock(client))) {
-      broken = true;
-    }
-    client.release(broken);
-  }
-  return applied;
+    return applied;
+  });
 }
 
 /**
@@ -137,44 +196,44 @@ export async function migrateDown(
   pool: Pool,
   migrationsDir: string = defaultMigrationsDir,
   steps = 1,
+  options: MigrateOptions = {},
 ): Promise<string[]> {
   const migrations = await loadMigrations(migrationsDir);
   const byId = new Map(migrations.map((migration) => [migration.id, migration]));
-  const client = await pool.connect();
-  let broken = false;
-  const reverted: string[] = [];
-  let locked = false;
-  try {
+  return withMigrationClient(pool, { ...options, create: false }, async (client, markBroken) => {
+    const reverted: string[] = [];
     await acquireMigrationLock(client);
-    locked = true;
-    await ensureMigrationsTable(client);
-    const appliedIds = await getAppliedIds(client);
-    const toRevert = appliedIds.slice(-steps).reverse();
-    for (const id of toRevert) {
-      const migration = byId.get(id);
-      if (!migration) {
-        throw new Error(
-          `cannot revert migration "${id}": its file is missing from ${migrationsDir}`,
-        );
+    try {
+      await ensureMigrationsTable(client);
+      const appliedIds = await getAppliedIds(client);
+      const toRevert = appliedIds.slice(-steps).reverse();
+      for (const id of toRevert) {
+        const migration = byId.get(id);
+        if (!migration) {
+          throw new Error(
+            `cannot revert migration "${id}": its file is missing from ${migrationsDir}`,
+          );
+        }
+        await client.query("begin");
+        try {
+          await client.query(migration.down);
+          await client.query("delete from schema_migrations where id = $1", [id]);
+          await client.query("commit");
+        } catch (error) {
+          if (!(await rollbackQuietly(client))) {
+            markBroken();
+          }
+          throw error;
+        }
+        reverted.push(id);
       }
-      await client.query("begin");
-      try {
-        await client.query(migration.down);
-        await client.query("delete from schema_migrations where id = $1", [id]);
-        await client.query("commit");
-      } catch (error) {
-        broken = !(await rollbackQuietly(client));
-        throw error;
+    } finally {
+      if (!(await releaseMigrationLock(client))) {
+        markBroken();
       }
-      reverted.push(id);
     }
-  } finally {
-    if (locked && !(await releaseMigrationLock(client))) {
-      broken = true;
-    }
-    client.release(broken);
-  }
-  return reverted;
+    return reverted;
+  });
 }
 
 /**
@@ -185,15 +244,20 @@ export async function migrateDown(
 export async function pendingMigrations(
   pool: Pool,
   migrationsDir: string = defaultMigrationsDir,
+  options: MigrateOptions = {},
 ): Promise<string[]> {
   const migrations = await loadMigrations(migrationsDir);
-  const exists = await pool.query<{ present: string | null }>(
-    "select to_regclass('schema_migrations') as present",
-  );
-  if (exists.rows[0]?.present === null || exists.rows[0] === undefined) {
-    return migrations.map((migration) => migration.id);
-  }
-  const applied = await pool.query<{ id: string }>("select id from schema_migrations");
-  const done = new Set(applied.rows.map((row) => row.id));
-  return migrations.filter((migration) => !done.has(migration.id)).map((migration) => migration.id);
+  return withMigrationClient(pool, { ...options, create: false }, async (client) => {
+    const exists = await client.query<{ present: string | null }>(
+      "select to_regclass('schema_migrations') as present",
+    );
+    if (exists.rows[0]?.present === null || exists.rows[0] === undefined) {
+      return migrations.map((migration) => migration.id);
+    }
+    const applied = await client.query<{ id: string }>("select id from schema_migrations");
+    const done = new Set(applied.rows.map((row) => row.id));
+    return migrations
+      .filter((migration) => !done.has(migration.id))
+      .map((migration) => migration.id);
+  });
 }
