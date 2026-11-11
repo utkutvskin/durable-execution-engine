@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 43: embedded mode and transactional enqueue
+
+- **Status:** DONE
+- **Completed day:** 43
+- **Files added or changed:** new `packages/core/src/embedded/transactional.ts` (+ `transactional.test.ts`, new `start-workflow-function.test.ts`), `signals/signal-service.ts` (`signalRunOnClient`), `cancellation/run-control.ts` (`cancelRunOnClient`), `db/migrator.ts` (`MigrateOptions.schema` on `migrateUp`, `migrateDown`, `pendingMigrations`), new `db/migrator-schema.test.ts`, `db/migrator.test.ts` (lists migration 0021), `index.ts` (new exports, `PoolClient` type), new `packages/core/migrations/0021_start_workflow_function.{up,down}.sql`, new `examples/outbox/` (private workspace package with `outbox.integration.test.ts`), `pnpm-lock.yaml`, new `docs/EMBEDDING.md`, `docs/EXAMPLES.md`, `examples/README.md`, `README.md`, `docs/DECISIONS.md` (ADR-0053), `docs/DEFERRED.md`
+- **Technical decisions:** ADR-0053 in `docs/DECISIONS.md`. No new dependency. One migration, `0021_start_workflow_function`.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm run verify` is green locally (149 test files, 1212 tests, 26 more than the green baseline of 1186). **Done, each with a test:** `startWorkflow`, `signalWorkflow` and `cancelWorkflow` take a `PoolClient` with an open transaction and write inside a savepoint; a rolled-back transaction leaves no run, event, task, timer or namespace (`transactional.test.ts`, and in the example an order whose last line breaks a check constraint leaves no order and no engine row); a committed one completes on `startEngine` (`examples/outbox/src/outbox.integration.test.ts`); a client outside a transaction gets `NoOpenTransactionError`; a rejected call (idempotency conflict, unknown or closed run) leaves the caller's transaction usable; the caller's `search_path` is the same afterwards. The SQL function `start_workflow(workflow_type, input, idempotency_key, namespace, queue_name)` is created with `set search_path from current`; called from a trigger in another schema it starts a run that completes (example test), rolls back with its transaction and honours idempotency keys. `migrateUp(pool, dir, { schema })` creates the schema, migrates into it and leaves the pool's `search_path` alone. **Non-default schema:** the integration suite already runs every file in its own `test_<uuid>` schema; `migrator-schema.test.ts` asserts it, and the outbox example runs the engine in a `<schema>_dee` schema beside an application schema. **Things to know:** the outbox package is `private` and outside the Changesets group and `PACKAGE_DIRECTORIES`, so it is not packed or published. No CLI `--schema` flag yet (a `search_path` option in `DATABASE_URL` works); the SQL function sets no timeouts and writes plain JSON; a non-`pg` connection needs an adapter. All three are in `docs/DEFERRED.md`. I wrote the code before its tests, so none of the new tests was seen red first. Day 44 (stability policy and replay testing tools) is next.
+
+---
+
 ## Day 42: release pipeline
 
 - **Status:** DONE
