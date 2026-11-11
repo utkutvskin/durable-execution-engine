@@ -37,3 +37,7 @@ Because the load is an upsert, a retried step or a repeated day leaves the desti
 ## Writing your own
 
 Copy the shape of an example: pure workflow functions that only use `ctx`, steps that wrap side effects behind an interface and are safe to run twice, and an `index.ts` that exports `workflows` and `steps`. Run it with `npx wf dev --module path/to/index.ts`.
+
+## Outbox (`examples/outbox`)
+
+The workflow `outbox.fulfil-order` takes `{ orderId }`, reserves stock and sends a confirmation, each as a step. What the example shows is how it starts: `placeOrder` inserts the order, starts the run with `startWorkflow` and inserts the order lines in one transaction, so an order that fails half way leaves no run behind, and `installOrderTrigger` starts the same workflow from a trigger through the SQL function `start_workflow`. The engine tables live in a schema of their own next to the application's tables. It has no `demo`: it is a library pattern, not a story to play, and its test (`pnpm exec vitest run examples/outbox`) is the proof. `docs/EMBEDDING.md` explains the mechanism.

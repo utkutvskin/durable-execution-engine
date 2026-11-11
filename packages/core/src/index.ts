@@ -129,7 +129,7 @@ export { createRecoveryMetrics } from "./recovery/metrics.ts";
 export type { RecoveryMetrics, RecoveryMetricsSnapshot } from "./recovery/metrics.ts";
 export { resolveDatabaseUrl } from "./db/env.ts";
 export type { DatabaseUrlEnv } from "./db/env.ts";
-export type { Pool } from "pg";
+export type { Pool, PoolClient } from "pg";
 export {
   DEFAULT_RETRY_POLICY,
   NonRetryableError,
