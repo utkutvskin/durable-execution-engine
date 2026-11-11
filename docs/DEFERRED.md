@@ -124,3 +124,7 @@ The workflow `release.yml` rehearses everything except `npm publish` and the GHC
 ## Catching up a long-paused schedule walks every missed minute (day 42)
 
 A schedule with `* * * * *` whose `next_fire_at` lies months in the past is caught up by stepping through the cron times one by one, so the first tick after a long pause costs time proportional to the pause (about 22 seconds for 270 days on a laptop). It surfaced as a test that pinned its start date and slowly crossed the 30 second test timeout; the test now starts one hour ago. To close this: jump straight to the last due time for the `latest_only` policy instead of iterating.
+
+## Embedded mode leaves a few surfaces out (day 43)
+
+`startWorkflow`, `signalWorkflow` and `cancelWorkflow` take a `pg` `PoolClient`; a `pg.Client` or a connection of another driver (Drizzle, Knex, Prisma) needs a small adapter that is not written. The CLI has no `--schema` flag or `WF_SCHEMA` variable: `wf worker`, `wf serve` and `wf migrate` follow the `search_path` of `DATABASE_URL`. The SQL function `start_workflow` cannot set run or execution timeouts and always writes plain JSON, so it cannot be used with a compressing codec. There is no SQL counterpart for signal and cancel. To close this: an adapter type over `query`, a `--schema` flag on the three commands, and timeout parameters on the function.

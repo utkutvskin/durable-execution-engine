@@ -86,6 +86,10 @@ That runs a one-shot `migrate`, the API (`wf serve`) and a worker as separate se
 
 A module exports `workflows` and `steps`. Copy `examples/hello/src/index.ts`, change it and start it with `npx wf dev --module path/to/your-module.ts`. Workflow code must be deterministic; `docs/CONCEPTS.md` explains what that allows and what it forbids.
 
+### Inside your application's transaction
+
+`startWorkflow(client, ...)`, `signalWorkflow(client, ...)` and `cancelWorkflow(client, ...)` from `@dee/core` write on a transaction you already have open, so a run starts exactly when your own rows commit. A SQL function, `start_workflow(...)`, does the same from a trigger or from code that is not Node. `docs/EMBEDDING.md` explains both and `examples/outbox/` shows an order insert and its workflow start in one transaction.
+
 ## Database
 
 Schema changes live as SQL migration pairs under `packages/core/migrations`,
@@ -113,7 +117,8 @@ Start here:
 - `docs/RELEASING.md` — how a tag becomes a release, and the one-time steps for npm and GHCR.
 - `docs/API.md` — the HTTP API reference, authentication, idempotent start, quotas and the OpenAPI document (`/openapi.json`).
 - `docs/CLI.md` — the `wf` command line.
-- `docs/EXAMPLES.md` — the payment saga and the etl pipeline.
+- `docs/EXAMPLES.md` — the payment saga, the etl pipeline and the outbox.
+- `docs/EMBEDDING.md` — starting, signalling and cancelling a workflow in your own transaction, the `start_workflow` SQL function and the engine schema.
 - `CHANGELOG.md` and `docs/ROADMAP.md` — what v0.1.0 contains and what comes next.
 
 Reference and background:
