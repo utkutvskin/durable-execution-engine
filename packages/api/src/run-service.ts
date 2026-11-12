@@ -205,11 +205,13 @@ export const DEFAULT_PAGE_LIMIT = 500;
 export const MAX_PAGE_LIMIT = 1000;
 
 /**
- * One event of a run's history.
+ * One event of a run's history. `version` is the event format version it
+ * was written with.
  */
 export interface HistoryEntry {
   readonly sequenceNumber: number;
   readonly createdAt: string;
+  readonly version: number;
   readonly event: WorkflowEvent;
 }
 
@@ -614,6 +616,7 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
         events: shown.map((stored) => ({
           sequenceNumber: stored.sequenceNumber,
           createdAt: stored.createdAt.toISOString(),
+          version: stored.version,
           event: stored.event,
         })),
         ...(events.length > limit && last !== undefined
@@ -629,6 +632,7 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
         events: events.map((stored) => ({
           sequenceNumber: stored.sequenceNumber,
           createdAt: stored.createdAt.toISOString(),
+          version: stored.version,
           event: stored.event,
         })),
         status: run.status,

@@ -9,6 +9,7 @@ function stored(events: readonly WorkflowEvent[]): StoredEvent[] {
     sequenceNumber: index + 1,
     event,
     createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)),
+    version: 1,
   }));
 }
 

@@ -98,6 +98,7 @@ function createFakeStore(events: readonly WorkflowEvent[], startedAt: Date) {
     sequenceNumber: index + 1,
     event,
     createdAt: new Date(startedAt.getTime() + index),
+    version: 1,
   }));
   const appended: WorkflowEvent[] = [];
   const store: EventStore = {

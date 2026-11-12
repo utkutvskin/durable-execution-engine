@@ -290,7 +290,7 @@ describe("http api", () => {
       });
       const history = await call(keyA, "GET", `/v1/runs/${runId}/history`);
       expect(history.body["events"]).toMatchObject([
-        { sequenceNumber: 1, event: { type: "run_started", workflowType: "ship" } },
+        { sequenceNumber: 1, version: 1, event: { type: "run_started", workflowType: "ship" } },
       ]);
       const task = await database.pool.query<{ task_type: string; payload: unknown }>(
         "select task_type, payload from tasks where run_id = $1",

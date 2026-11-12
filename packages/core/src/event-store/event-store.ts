@@ -2,17 +2,36 @@ import type { Pool, PoolClient } from "pg";
 import { jsonCodec, type Codec } from "./codec.ts";
 import { ConcurrencyError } from "./errors.ts";
 import { workflowEventSchema, type WorkflowEvent } from "./events.ts";
+import { CURRENT_EVENT_VERSION, readVersionedEvent } from "./event-version.ts";
 import { rollbackQuietly } from "../db/transaction.ts";
 
 /**
  * A single event as stored in and returned from the event log: the
  * validated event it carries, the sequence number `EventStore.append`
- * assigned it, and when it was written.
+ * assigned it, when it was written and the event format `version` it was
+ * written with (`CURRENT_EVENT_VERSION` for every event this build appends).
  */
 export interface StoredEvent {
   readonly sequenceNumber: number;
   readonly event: WorkflowEvent;
   readonly createdAt: Date;
+  readonly version: number;
+}
+
+interface StoredEventRow {
+  readonly sequence_number: string;
+  readonly payload: string;
+  readonly created_at: Date;
+  readonly event_version: number;
+}
+
+function toStoredEvent(codec: Codec, row: StoredEventRow): StoredEvent {
+  return {
+    sequenceNumber: Number(row.sequence_number),
+    event: readVersionedEvent(codec.decode(row.payload), row.event_version),
+    createdAt: row.created_at,
+    version: row.event_version,
+  };
 }
 
 /**
@@ -89,8 +108,8 @@ export async function appendEventsOnClient(
     return [];
   }
   const result = await client.query<{ sequence_number: string; created_at: Date }>(
-    `insert into run_events (run_id, sequence_number, event_type, payload)
-     select $1, batch.sequence_number, batch.event_type, batch.payload::jsonb
+    `insert into run_events (run_id, sequence_number, event_type, payload, event_version)
+     select $1, batch.sequence_number, batch.event_type, batch.payload::jsonb, $5
      from unnest($2::bigint[], $3::text[], $4::text[])
        as batch (sequence_number, event_type, payload)
      returning sequence_number, created_at`,
@@ -99,6 +118,7 @@ export async function appendEventsOnClient(
       events.map((_, offset) => expectedSeq + offset + 1),
       events.map((event) => event.type),
       events.map((event) => codec.encode(event)),
+      CURRENT_EVENT_VERSION,
     ],
   );
   const createdAtBySequence = new Map(
@@ -110,7 +130,7 @@ export async function appendEventsOnClient(
     if (createdAt === undefined) {
       throw new Error(`append to run "${runId}" did not return created_at`);
     }
-    return { sequenceNumber, event, createdAt };
+    return { sequenceNumber, event, createdAt, version: CURRENT_EVENT_VERSION };
   });
 }
 
@@ -135,22 +155,14 @@ export async function readEventsOnClient(
   runId: string,
   fromSeq = 0,
 ): Promise<StoredEvent[]> {
-  const result = await client.query<{
-    sequence_number: string;
-    payload: string;
-    created_at: Date;
-  }>(
-    `select sequence_number, payload::text as payload, created_at
+  const result = await client.query<StoredEventRow>(
+    `select sequence_number, payload::text as payload, created_at, event_version
      from run_events
      where run_id = $1 and sequence_number > $2
      order by sequence_number asc`,
     [runId, fromSeq],
   );
-  return result.rows.map((row) => ({
-    sequenceNumber: Number(row.sequence_number),
-    event: workflowEventSchema.parse(codec.decode(row.payload)),
-    createdAt: row.created_at,
-  }));
+  return result.rows.map((row) => toStoredEvent(codec, row));
 }
 
 /**
@@ -201,23 +213,15 @@ export function createPostgresEventStore(pool: Pool, codec: Codec = jsonCodec): 
     },
 
     async read(runId: string, fromSeq = 0, limit?: number): Promise<StoredEvent[]> {
-      const result = await pool.query<{
-        sequence_number: string;
-        payload: string;
-        created_at: Date;
-      }>(
-        `select sequence_number, payload::text as payload, created_at
+      const result = await pool.query<StoredEventRow>(
+        `select sequence_number, payload::text as payload, created_at, event_version
          from run_events
          where run_id = $1 and sequence_number > $2
          order by sequence_number asc
          limit $3`,
         [runId, fromSeq, limit ?? null],
       );
-      return result.rows.map((row) => ({
-        sequenceNumber: Number(row.sequence_number),
-        event: workflowEventSchema.parse(codec.decode(row.payload)),
-        createdAt: row.created_at,
-      }));
+      return result.rows.map((row) => toStoredEvent(codec, row));
     },
   };
 }

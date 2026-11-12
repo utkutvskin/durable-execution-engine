@@ -133,6 +133,7 @@ const historyResponseSchema = z
       z.object({
         sequenceNumber: z.number().int(),
         createdAt: z.iso.datetime(),
+        version: z.number().int().min(1),
         event: z.looseObject({ type: z.string() }),
       }),
     ),

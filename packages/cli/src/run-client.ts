@@ -33,11 +33,13 @@ export interface ListFilter {
 }
 
 /**
- * One event of a run's history.
+ * One event of a run's history. `version` is the event format version it
+ * was written with; an api older than day 44 does not send it.
  */
 export interface HistoryItem {
   readonly sequenceNumber: number;
   readonly createdAt: string;
+  readonly version?: number;
   readonly event: { readonly type: string } & Readonly<Record<string, unknown>>;
 }
 

@@ -16,6 +16,14 @@ export { appendEventsOnClient, createPostgresEventStore } from "./event-store/ev
 export type { EventStore, StoredEvent } from "./event-store/event-store.ts";
 export { ConcurrencyError, PayloadTooLargeError } from "./event-store/errors.ts";
 export {
+  CURRENT_EVENT_VERSION,
+  currentEventReader,
+  KNOWN_EVENT_TYPES,
+  readVersionedEvent,
+  UnsupportedEventError,
+} from "./event-store/event-version.ts";
+export type { EventReader } from "./event-store/event-version.ts";
+export {
   runCompletedEventSchema,
   runCancelledEventSchema,
   runFailedEventSchema,
