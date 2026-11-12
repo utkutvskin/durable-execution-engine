@@ -183,6 +183,36 @@ describe("engine runtime against postgres", () => {
     expect(letters.rows).toHaveLength(1);
   });
 
+  it("moves the run on as soon as a step used all its attempts, without waiting for stalled run recovery", async () => {
+    const broken = defineStep<unknown, string>("broken-now", {
+      retry: { initialIntervalMs: 1, maxIntervalMs: 1, jitter: 0, maxAttempts: 2 },
+      handler: () => {
+        throw new Error("always");
+      },
+    });
+    const flow = defineWorkflow("broken-now-flow", async (ctx) => {
+      try {
+        return await ctx.step<string>("broken-now", {});
+      } catch (error) {
+        return `caught ${(error as Error).name}`;
+      }
+    });
+    boot([flow], [broken]);
+    const runId = await start("broken-now-flow");
+
+    const final = await settled(runId);
+
+    expect(final).toMatchObject({ status: "COMPLETED", result: "caught StepFailedError" });
+    expect(await eventTypes(runId)).toEqual([
+      "run_started",
+      "step_scheduled",
+      "step_attempt_failed",
+      "step_attempt_failed",
+      "step_failed",
+      "run_completed",
+    ]);
+  });
+
   it("lets a workflow catch a step that used all its attempts and run its compensation", async () => {
     const reserve = defineStep<unknown, string>("reserve", { handler: () => "held" });
     const charge = defineStep<unknown, string>("charge", {

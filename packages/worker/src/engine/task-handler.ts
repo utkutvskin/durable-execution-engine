@@ -128,7 +128,8 @@ function openStepIds(events: readonly WorkflowEvent[]): WorkflowEvent[] {
  * `step_scheduled` event; the check on a suspended decision heals only step
  * tasks lost by other means, such as a task row removed by an operator. A
  * `STEP_TASK` runs the step with its retry policy and timeout, records the
- * result and enqueues a `WORKFLOW_TASK` so the run moves on. Tasks of closed
+ * result (a step that used all its attempts records `step_failed`) and
+ * enqueues a `WORKFLOW_TASK` so the run moves on. Tasks of closed
  * runs are acknowledged without effect, and redelivered tasks change
  * nothing. A workflow task that decided from a history another writer has
  * since extended records nothing and reports `superseded`: whoever wrote the
@@ -330,6 +331,7 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
     if (
       outcome.status === "completed" ||
       outcome.status === "failed" ||
+      outcome.status === "dead_lettered" ||
       outcome.status === "already_recorded"
     ) {
       await options.queue.enqueue({
