@@ -135,7 +135,7 @@ export function createCommandMatcher(): CommandMatcher {
       if (!sameCommand(expected, shape)) {
         const recordedSide = describe(expected);
         const issuedSide = describe(shape);
-        throw new NonDeterminismError(shape.id, recordedSide, issuedSide);
+        throw new NonDeterminismError(shape.id, recordedSide, issuedSide, undefined, expected.id);
       }
       return true;
     },
@@ -148,6 +148,7 @@ export function createCommandMatcher(): CommandMatcher {
           { stepType: "nothing", input: undefined },
           `non-deterministic replay: history recorded ${missing.kind} "${missing.id}" ` +
             `at position ${String(issued + 1)}, but the workflow code did not issue it`,
+          missing.id,
         );
       }
     },

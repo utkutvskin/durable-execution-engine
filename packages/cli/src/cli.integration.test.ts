@@ -131,6 +131,26 @@ describe("wf against a real database", () => {
       await main(["run", "list", "--type", "payment-saga"], listed.io);
       expect(listed.out[0]).toContain("COMPLETED");
 
+      const runId = (JSON.parse(client.out[0] ?? "{}") as { runId: string }).runId;
+      const exported = captureIo(directory);
+      expect(await main(["history", "export", runId, "--out", "saga.json"], exported.io)).toBe(0);
+      const same = captureIo(directory);
+      expect(await main(["replay", "--example", "payment-saga", "saga.json"], same.io)).toBe(0);
+      expect(same.out).toEqual([
+        expect.stringMatching(
+          new RegExp(`^ok    run ${runId} \\(saga\\.json\\): \\d+ events replayed$`),
+        ),
+        "1 passed, 0 failed",
+      ]);
+      const changed = captureIo(directory);
+      const changedModule = path.join(import.meta.dirname, "fixtures", "payment-saga-changed.ts");
+      expect(await main(["replay", "--module", changedModule, "saga.json"], changed.io)).toBe(1);
+      expect(changed.err[0]).toMatch(
+        new RegExp(
+          `^FAIL  run ${runId} \\(saga\\.json\\): non determinism at event 2 \\(step_scheduled\\): `,
+        ),
+      );
+
       stop();
       expect(await running).toBe(0);
       expect(dev.out.at(-1)).toBe("stopping");

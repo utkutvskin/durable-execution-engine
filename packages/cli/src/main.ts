@@ -4,12 +4,14 @@ import { exampleCommand } from "./commands/example.ts";
 import { migrateCommand, type DatabaseHooks } from "./commands/migrate.ts";
 import { devCommand, workerCommand, type ProcessHooks } from "./commands/process.ts";
 import { serveCommand } from "./commands/serve.ts";
-import { runCommand, type RunHooks } from "./commands/run.ts";
+import { runCommand } from "./commands/run.ts";
+import { historyCommand, type HistoryHooks } from "./commands/history.ts";
+import { replayCommand } from "./commands/replay.ts";
 
 /**
  * Replacements for the effects commands reach for, used by tests.
  */
-export interface CliHooks extends ProcessHooks, RunHooks, DatabaseHooks {}
+export interface CliHooks extends ProcessHooks, HistoryHooks, DatabaseHooks {}
 
 /**
  * The text `wf help` prints.
@@ -26,6 +28,8 @@ commands:
   run cancel <id>         request cancellation (--reason text)
   run describe <id>       show a run (--history for its events)
   run list                list runs (--status s, --type t, --limit n)
+  history export <id>     print the run's whole history as a history export (--out file)
+  replay <file...>        replay history exports against --module code, exit 1 on non-determinism
   example <name|all>      run a bundled example end to end (payment-saga, etl-pipeline)
   help                    show this text
 
@@ -89,6 +93,10 @@ export async function main(
         return await migrateCommand(rest, io, hooks);
       case "run":
         return await runCommand(rest, io, hooks);
+      case "history":
+        return await historyCommand(rest, io, hooks);
+      case "replay":
+        return await replayCommand(rest, io);
       case "example":
         return await exampleCommand(rest, io, hooks);
       default:

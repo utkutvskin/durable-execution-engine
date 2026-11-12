@@ -16,12 +16,6 @@ import {
   type ParsedCommand,
 } from "./shared.ts";
 
-const CLIENT_OPTIONS = {
-  "api-url": { type: "string" },
-  "api-key": { type: "string" },
-  json: { type: "boolean" },
-} as const;
-
 /**
  * Hooks of `wf run`: tests hand in a client instead of a real api.
  */
@@ -29,7 +23,25 @@ export interface RunHooks {
   readonly client?: RunClient;
 }
 
-async function clientFor(parsed: ParsedCommand, io: CliIo, hooks: RunHooks): Promise<RunClient> {
+/**
+ * The options that choose the api a client command talks to.
+ */
+export const CLIENT_OPTIONS = {
+  "api-url": { type: "string" },
+  "api-key": { type: "string" },
+  json: { type: "boolean" },
+} as const;
+
+/**
+ * The `RunClient` of a command: the hook's client in tests, otherwise one
+ * for the api named by `--api-url` and `--api-key`, the environment or the
+ * state `wf dev` left in the current directory.
+ */
+export async function clientFor(
+  parsed: ParsedCommand,
+  io: CliIo,
+  hooks: RunHooks,
+): Promise<RunClient> {
   if (hooks.client !== undefined) {
     return hooks.client;
   }

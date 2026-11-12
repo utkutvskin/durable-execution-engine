@@ -24,6 +24,29 @@ export {
 } from "./event-store/event-version.ts";
 export type { EventReader } from "./event-store/event-version.ts";
 export {
+  createHistoryExport,
+  HISTORY_EXPORT_FORMAT,
+  HISTORY_EXPORT_FORMAT_VERSION,
+  InvalidHistoryExportError,
+  parseHistoryExport,
+} from "./replay/history-export.ts";
+export type {
+  ExportedEvent,
+  HistoryExport,
+  HistoryExportInputEvent,
+  ParsedHistory,
+} from "./replay/history-export.ts";
+export { formatReplayResult, replayHistories } from "./replay/replay-histories.ts";
+export type {
+  HistoryReplayResult,
+  HistoryToReplay,
+  ReplayableWorkflow,
+  ReplayHistoriesOptions,
+  ReplayProblem,
+  ReplayProblemKind,
+  ReplayReport,
+} from "./replay/replay-histories.ts";
+export {
   runCompletedEventSchema,
   runCancelledEventSchema,
   runFailedEventSchema,

@@ -19,9 +19,25 @@ npx wf help
 | `wf run cancel <runId>`                        | Requests a graceful cancellation: `--reason <text>`                         |
 | `wf run describe <runId>`                      | Shows a run: `--history` adds its events, `--json` prints json              |
 | `wf run list`                                  | Lists runs: `--status`, `--type`, `--limit`, `--cursor`                     |
+| `wf history export <runId>`                    | Prints the run's whole history as a history export: `--out <file>`          |
+| `wf replay --module <path> <file...>`          | Replays history exports against your code, exits 1 on non-determinism       |
 | `wf example <payment-saga\|etl-pipeline\|all>` | Runs a bundled example end to end (see `docs/EXAMPLES.md`)                  |
 
 `--limit` must be a whole number from 1 to 200 (usage error otherwise). `--wait` polls the run and, when the API answers 429, sleeps for the `Retry-After` it gave (never past the wait timeout) instead of failing. Run ids are percent encoded in URLs, `wf run describe --history` reads every history page, and an API answer that is not JSON (a proxy's error page) is reported as one line with its status and a short preview, with no stack trace.
+
+## History export and replay
+
+`wf history export <runId>` reads every page of the run's history through the API and prints one JSON document (`format: "dee.history"`, `formatVersion`, `runId`, `workflowType`, `exportedAt`, and `events`, each with its `sequenceNumber`, `createdAt`, event format `version` and the `event`). `--out <file>` writes it to a file instead. A run whose history was compacted has lost its oldest events and is refused.
+
+`wf replay --module <path> <file...>` (or `--example <name>`) replays each exported history against the workflows of the module, without a database and without running any step. Every command the history recorded must be issued again in the same order with the same type and input, and a history that closed its run must close it the same way. A history that is still open may end with new commands. One line is printed per file:
+
+```
+ok    run 0f6a... (orders/run-1.json): 12 events replayed
+FAIL  run 9b2c... (orders/run-2.json): non determinism at event 6 (step_scheduled): non-deterministic replay at "step-2": ...
+1 passed, 1 failed
+```
+
+The exit code is 0 when every file replays and 1 when one does not. `--json` prints the whole report, `--build-id <id>` names the replaying build in a version mismatch. The same check is available in tests as `replayHistories(workflows, histories)` from `@dee/core`; see `docs/STABILITY.md` for how to keep a set of exported histories as a gate in CI.
 
 Exit codes: 0 on success, 1 when a command failed (or `--wait` ended in a state other than `COMPLETED`), 2 for a usage error such as an unknown flag.
 
