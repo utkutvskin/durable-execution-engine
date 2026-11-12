@@ -128,3 +128,15 @@ A schedule with `* * * * *` whose `next_fire_at` lies months in the past is caug
 ## Embedded mode leaves a few surfaces out (day 43)
 
 `startWorkflow`, `signalWorkflow` and `cancelWorkflow` take a `pg` `PoolClient`; a `pg.Client` or a connection of another driver (Drizzle, Knex, Prisma) needs a small adapter that is not written. The CLI has no `--schema` flag or `WF_SCHEMA` variable: `wf worker`, `wf serve` and `wf migrate` follow the `search_path` of `DATABASE_URL`. The SQL function `start_workflow` cannot set run or execution timeouts and always writes plain JSON, so it cannot be used with a compressing codec. There is no SQL counterpart for signal and cancel. To close this: an adapter type over `query`, a `--schema` flag on the three commands, and timeout parameters on the function.
+
+## Types the entry points use but do not export (day 44)
+
+The API reports in `api-reports/` carry `ae-forgotten-export` warnings: public signatures of `@dee/core` refer to `RunTimeoutLimits`, `TaskLease`, `StepTaskContext`, `stepTaskPayloadSchema` and five command types, and `@dee/cli`'s `CliHooks` to `ProcessHooks`, `HistoryHooks` and `DatabaseHooks`, none of which are exported. A user can use the values but cannot name their types. To close this: export them (or narrow the signatures), run `pnpm run api:update` and commit the reports.
+
+## OpenAPI responses are not compared with a committed document (day 44)
+
+`docs/STABILITY.md` promises the `/v1` request and response shapes. The OpenAPI document is generated from the route schemas and checked to be valid, but nothing compares it with a committed copy, so a changed response field passes CI. To close this: commit the generated `/openapi.json` next to the API reports and fail CI when it changes without an update, the way `pnpm run api:check` does for exports.
+
+## A history export reads every page through the API (day 44)
+
+`wf history export` uses the API, so it needs a running `wf serve` and a key, and a compacted run cannot be exported at all. To close this: add a `--database-url` mode that reads `run_events` directly, and decide whether an export of a compacted run should carry its snapshot.

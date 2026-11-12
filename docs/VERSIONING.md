@@ -65,3 +65,4 @@ This is what protects a rolling deployment: while the old and the new build are 
 - The frontier test counts scheduled steps, timers and children. A change that is visible only through signal consumption or `ctx.now()` cannot be told apart from the old behavior by the gate.
 - A run decided with a patch is replayed from the top on every task: a live session in the sticky cache does not resume workflows that call `patched` or `deprecatePatch` (see ADR-0031).
 - Old histories are tested with recorded fixtures: add the history of a half finished run under `test/fixtures/histories/` before changing a workflow, and keep it until its patch is removed.
+- For your own workflows, export the histories of real runs with `wf history export` and check a change with `wf replay` or `replayHistories` before deploying it (see `docs/STABILITY.md`).

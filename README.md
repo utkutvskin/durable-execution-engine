@@ -117,6 +117,7 @@ Start here:
 - `docs/RELEASING.md` — how a tag becomes a release, and the one-time steps for npm and GHCR.
 - `docs/API.md` — the HTTP API reference, authentication, idempotent start, quotas and the OpenAPI document (`/openapi.json`).
 - `docs/CLI.md` — the `wf` command line.
+- `docs/STABILITY.md` — what the project promises not to break, the event format version, deprecation, and how to replay exported histories against new workflow code.
 - `docs/EXAMPLES.md` — the payment saga, the etl pipeline and the outbox.
 - `docs/EMBEDDING.md` — starting, signalling and cancelling a workflow in your own transaction, the `start_workflow` SQL function and the engine schema.
 - `CHANGELOG.md` and `docs/ROADMAP.md` — what v0.1.0 contains and what comes next.
