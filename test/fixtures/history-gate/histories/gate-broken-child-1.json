@@ -1,0 +1,56 @@
+{
+  "format": "dee.history",
+  "formatVersion": 1,
+  "runId": "666e179a-f21a-4e5e-a15d-df797c7248cd",
+  "workflowType": "gate-broken-child",
+  "exportedAt": "2026-11-12T09:28:52.893Z",
+  "events": [
+    {
+      "sequenceNumber": 1,
+      "createdAt": "2026-11-12T09:28:52.390Z",
+      "version": 1,
+      "event": {
+        "type": "run_started",
+        "workflowType": "gate-broken-child",
+        "input": {
+          "orderId": "order-2"
+        }
+      }
+    },
+    {
+      "sequenceNumber": 2,
+      "createdAt": "2026-11-12T09:28:52.437Z",
+      "version": 1,
+      "event": {
+        "type": "step_scheduled",
+        "stepId": "step-1",
+        "stepType": "gate.label",
+        "input": {
+          "orderId": "order-2"
+        }
+      }
+    },
+    {
+      "sequenceNumber": 3,
+      "createdAt": "2026-11-12T09:28:52.472Z",
+      "version": 1,
+      "event": {
+        "type": "step_completed",
+        "stepId": "step-1",
+        "result": "label-order-2"
+      }
+    },
+    {
+      "sequenceNumber": 4,
+      "createdAt": "2026-11-12T09:28:52.488Z",
+      "version": 1,
+      "event": {
+        "type": "run_failed",
+        "error": {
+          "name": "Error",
+          "message": "child of order-2 gave up"
+        }
+      }
+    }
+  ]
+}

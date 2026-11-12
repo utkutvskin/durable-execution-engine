@@ -1,0 +1,161 @@
+{
+  "format": "dee.history",
+  "formatVersion": 1,
+  "runId": "21a310ba-9ad7-4f6e-a84b-fdbf918f05c7",
+  "workflowType": "gate-order",
+  "exportedAt": "2026-11-12T09:28:52.883Z",
+  "events": [
+    {
+      "sequenceNumber": 1,
+      "createdAt": "2026-11-12T09:28:52.340Z",
+      "version": 1,
+      "event": {
+        "type": "run_started",
+        "workflowType": "gate-order",
+        "input": {
+          "orderId": "order-1"
+        }
+      }
+    },
+    {
+      "sequenceNumber": 2,
+      "createdAt": "2026-11-12T09:28:52.361Z",
+      "version": 1,
+      "event": {
+        "type": "step_scheduled",
+        "stepId": "step-1",
+        "stepType": "gate.charge",
+        "input": {
+          "orderId": "order-1"
+        }
+      }
+    },
+    {
+      "sequenceNumber": 3,
+      "createdAt": "2026-11-12T09:28:52.387Z",
+      "version": 1,
+      "event": {
+        "type": "step_completed",
+        "stepId": "step-1",
+        "result": {
+          "charged": true
+        }
+      }
+    },
+    {
+      "sequenceNumber": 4,
+      "createdAt": "2026-11-12T09:28:52.448Z",
+      "version": 1,
+      "event": {
+        "type": "timer_started",
+        "timerId": "timer-1",
+        "fireAt": "2026-11-12T09:28:52.462Z",
+        "durationMs": 20
+      }
+    },
+    {
+      "sequenceNumber": 5,
+      "createdAt": "2026-11-12T09:28:52.471Z",
+      "version": 1,
+      "event": {
+        "type": "timer_fired",
+        "timerId": "timer-1"
+      }
+    },
+    {
+      "sequenceNumber": 6,
+      "createdAt": "2026-11-12T09:28:52.491Z",
+      "version": 1,
+      "event": {
+        "type": "time_recorded",
+        "time": "2026-11-12T09:28:52.471Z"
+      }
+    },
+    {
+      "sequenceNumber": 7,
+      "createdAt": "2026-11-12T09:28:52.491Z",
+      "version": 1,
+      "event": {
+        "type": "patch_recorded",
+        "patchId": "gate-express"
+      }
+    },
+    {
+      "sequenceNumber": 8,
+      "createdAt": "2026-11-12T09:28:52.514Z",
+      "version": 1,
+      "event": {
+        "type": "signal_received",
+        "signalName": "approve",
+        "payload": {
+          "by": "ada"
+        }
+      }
+    },
+    {
+      "sequenceNumber": 9,
+      "createdAt": "2026-11-12T09:28:52.538Z",
+      "version": 1,
+      "event": {
+        "type": "child_started",
+        "childId": "child-1",
+        "workflowType": "gate-label",
+        "input": {
+          "orderId": "order-1"
+        },
+        "parentClosePolicy": "cancel"
+      }
+    },
+    {
+      "sequenceNumber": 10,
+      "createdAt": "2026-11-12T09:28:52.591Z",
+      "version": 1,
+      "event": {
+        "type": "child_completed",
+        "childId": "child-1",
+        "result": "label-order-1"
+      }
+    },
+    {
+      "sequenceNumber": 11,
+      "createdAt": "2026-11-12T09:28:52.623Z",
+      "version": 1,
+      "event": {
+        "type": "step_scheduled",
+        "stepId": "step-2",
+        "stepType": "gate.ship",
+        "input": {
+          "express": true,
+          "orderId": "order-1"
+        }
+      }
+    },
+    {
+      "sequenceNumber": 12,
+      "createdAt": "2026-11-12T09:28:52.638Z",
+      "version": 1,
+      "event": {
+        "type": "step_completed",
+        "stepId": "step-2",
+        "result": "shipped"
+      }
+    },
+    {
+      "sequenceNumber": 13,
+      "createdAt": "2026-11-12T09:28:52.653Z",
+      "version": 1,
+      "event": {
+        "type": "run_completed",
+        "result": {
+          "label": "label-order-1",
+          "charge": {
+            "charged": true
+          },
+          "shipped": "shipped",
+          "checkedAt": "2026-11-12T09:28:52.471Z",
+          "approvedBy": "ada"
+        }
+      }
+    }
+  ]
+}

@@ -26,7 +26,10 @@
     "example:payment": "node packages/cli/bin/wf.js example payment-saga",
     "example:etl": "node packages/cli/bin/wf.js example etl-pipeline",
     "test:examples": "vitest run examples packages/cli",
+    "history-gate:record": "node --conditions=development test/fixtures/history-gate/record.ts && prettier --write test/fixtures/history-gate/histories",
     "build": "tsc -b tsconfig.build.json",
+    "api:check": "pnpm run build && node scripts/api-report.mjs",
+    "api:update": "pnpm run build && node scripts/api-report.mjs --update",
     "changeset": "changeset",
     "release:version": "changeset version",
     "release:notes": "node scripts/release-notes.mjs"
@@ -37,6 +40,7 @@
     "@dee/cli": "workspace:*",
     "@dee/core": "workspace:*",
     "@eslint/js": "^10.0.1",
+    "@microsoft/api-extractor": "^7.60.1",
     "@types/node": "^22.20.4",
     "@vitest/coverage-v8": "^5.0.1",
     "eslint": "^10.11.0",

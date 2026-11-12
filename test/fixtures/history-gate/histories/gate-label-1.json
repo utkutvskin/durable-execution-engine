@@ -1,0 +1,53 @@
+{
+  "format": "dee.history",
+  "formatVersion": 1,
+  "runId": "a285b0e5-959b-4a2c-8328-50f89b80e2af",
+  "workflowType": "gate-label",
+  "exportedAt": "2026-11-12T09:28:52.901Z",
+  "events": [
+    {
+      "sequenceNumber": 1,
+      "createdAt": "2026-11-12T09:28:52.538Z",
+      "version": 1,
+      "event": {
+        "type": "run_started",
+        "workflowType": "gate-label",
+        "input": {
+          "orderId": "order-1"
+        }
+      }
+    },
+    {
+      "sequenceNumber": 2,
+      "createdAt": "2026-11-12T09:28:52.560Z",
+      "version": 1,
+      "event": {
+        "type": "step_scheduled",
+        "stepId": "step-1",
+        "stepType": "gate.label",
+        "input": {
+          "orderId": "order-1"
+        }
+      }
+    },
+    {
+      "sequenceNumber": 3,
+      "createdAt": "2026-11-12T09:28:52.579Z",
+      "version": 1,
+      "event": {
+        "type": "step_completed",
+        "stepId": "step-1",
+        "result": "label-order-1"
+      }
+    },
+    {
+      "sequenceNumber": 4,
+      "createdAt": "2026-11-12T09:28:52.591Z",
+      "version": 1,
+      "event": {
+        "type": "run_completed",
+        "result": "label-order-1"
+      }
+    }
+  ]
+}

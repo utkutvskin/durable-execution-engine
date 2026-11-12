@@ -115,6 +115,9 @@ jobs:
 
       - run: pnpm run build
 
+      - name: check the public API against the committed reports
+        run: node scripts/api-report.mjs
+
       - run: node scripts/pack-packages.mjs .packed
 
       - name: check the packed packages with publint and attw

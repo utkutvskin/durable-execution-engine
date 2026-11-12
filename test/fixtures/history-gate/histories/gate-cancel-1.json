@@ -1,0 +1,75 @@
+{
+  "format": "dee.history",
+  "formatVersion": 1,
+  "runId": "ada26cdd-e6e9-42a1-91ac-58834d28ade0",
+  "workflowType": "gate-cancel",
+  "exportedAt": "2026-11-12T09:28:52.890Z",
+  "events": [
+    {
+      "sequenceNumber": 1,
+      "createdAt": "2026-11-12T09:28:52.370Z",
+      "version": 1,
+      "event": {
+        "type": "run_started",
+        "workflowType": "gate-cancel",
+        "input": {
+          "orderId": "order-3"
+        }
+      }
+    },
+    {
+      "sequenceNumber": 2,
+      "createdAt": "2026-11-12T09:28:52.731Z",
+      "version": 1,
+      "event": {
+        "type": "cancel_requested",
+        "reason": "customer changed their mind"
+      }
+    },
+    {
+      "sequenceNumber": 3,
+      "createdAt": "2026-11-12T09:28:52.813Z",
+      "version": 1,
+      "event": {
+        "type": "compensation_failed",
+        "index": 1,
+        "error": {
+          "name": "Error",
+          "message": "release failed"
+        }
+      }
+    },
+    {
+      "sequenceNumber": 4,
+      "createdAt": "2026-11-12T09:28:52.813Z",
+      "version": 1,
+      "event": {
+        "type": "step_scheduled",
+        "stepId": "step-1",
+        "stepType": "gate.refund",
+        "input": {
+          "orderId": "order-3"
+        }
+      }
+    },
+    {
+      "sequenceNumber": 5,
+      "createdAt": "2026-11-12T09:28:52.831Z",
+      "version": 1,
+      "event": {
+        "type": "step_completed",
+        "stepId": "step-1",
+        "result": "refunded"
+      }
+    },
+    {
+      "sequenceNumber": 6,
+      "createdAt": "2026-11-12T09:28:52.844Z",
+      "version": 1,
+      "event": {
+        "type": "run_cancelled",
+        "reason": "customer changed their mind"
+      }
+    }
+  ]
+}

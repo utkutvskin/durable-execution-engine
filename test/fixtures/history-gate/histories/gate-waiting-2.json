@@ -1,0 +1,28 @@
+{
+  "format": "dee.history",
+  "formatVersion": 1,
+  "runId": "d9618765-e0b7-4c10-a8d6-fb6abaa168e4",
+  "workflowType": "gate-waiting",
+  "exportedAt": "2026-11-12T09:28:52.897Z",
+  "events": [
+    {
+      "sequenceNumber": 1,
+      "createdAt": "2026-11-12T09:28:52.412Z",
+      "version": 1,
+      "event": {
+        "type": "run_started",
+        "workflowType": "gate-waiting",
+        "input": {}
+      }
+    },
+    {
+      "sequenceNumber": 2,
+      "createdAt": "2026-11-12T09:28:52.738Z",
+      "version": 1,
+      "event": {
+        "type": "run_terminated",
+        "reason": "operator stopped it"
+      }
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "format": "dee.history",
+  "formatVersion": 1,
+  "runId": "b5f1875a-d690-44dd-8c71-e96dbe6c9b2b",
+  "workflowType": "gate-loop",
+  "exportedAt": "2026-11-12T09:28:52.891Z",
+  "events": [
+    {
+      "sequenceNumber": 1,
+      "createdAt": "2026-11-12T09:28:52.376Z",
+      "version": 1,
+      "event": {
+        "type": "run_started",
+        "workflowType": "gate-loop",
+        "input": {
+          "round": 0
+        }
+      }
+    },
+    {
+      "sequenceNumber": 2,
+      "createdAt": "2026-11-12T09:28:52.407Z",
+      "version": 1,
+      "event": {
+        "type": "step_scheduled",
+        "stepId": "step-1",
+        "stepType": "gate.count",
+        "input": {
+          "round": 0
+        }
+      }
+    },
+    {
+      "sequenceNumber": 3,
+      "createdAt": "2026-11-12T09:28:52.461Z",
+      "version": 1,
+      "event": {
+        "type": "step_completed",
+        "stepId": "step-1",
+        "result": 0
+      }
+    },
+    {
+      "sequenceNumber": 4,
+      "createdAt": "2026-11-12T09:28:52.478Z",
+      "version": 1,
+      "event": {
+        "type": "run_continued_as_new",
+        "input": {
+          "round": 1
+        }
+      }
+    }
+  ]
+}
