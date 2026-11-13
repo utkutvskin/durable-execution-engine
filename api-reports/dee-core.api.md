@@ -13,6 +13,9 @@ import { Tracer } from '@opentelemetry/api';
 import { z } from 'zod';
 
 // @public
+export function acceptUpdateOnClient(client: PoolClient, codec: Codec, options: UpdateAcceptOptions, runId: string, updateName: string, argument: unknown, updateId?: string): Promise<UpdateReceipt>;
+
+// @public
 export interface AddDeadLetterInput {
     // (undocumented)
     readonly attempts: number;
@@ -56,6 +59,12 @@ export interface AttemptLog {
     nextAttempt(runId: string, stepId: string): Promise<number>;
     recordFailure(input: RecordAttemptFailureInput): Promise<boolean>;
 }
+
+// @public
+export function awaitUpdateOutcome(pool: Pool, codec: Codec, runId: string, receipt: {
+    readonly updateId: string;
+    readonly sequenceNumber: number;
+}, waitMs: number, wait?: UpdateWaitOptions): Promise<UpdateOutcome>;
 
 // @public
 export class CancelledError extends Error {
@@ -213,6 +222,18 @@ export interface CompleteRunCommand {
     readonly result: unknown;
     // (undocumented)
     readonly type: "complete_run";
+}
+
+// @public
+export interface CompleteUpdateCommand {
+    // (undocumented)
+    readonly error?: RecordedError;
+    // (undocumented)
+    readonly result: unknown;
+    // (undocumented)
+    readonly type: "complete_update";
+    // (undocumented)
+    readonly updateId: string;
 }
 
 // @public
@@ -563,6 +584,9 @@ export const DEFAULT_POISON_THRESHOLD = 3;
 export const DEFAULT_RETRY_POLICY: RetryPolicy;
 
 // @public
+export const DEFAULT_UPDATE_WAIT_MS = 10000;
+
+// @public
 export const defaultMigrationsDir: string;
 
 // @public
@@ -581,6 +605,9 @@ export interface DefineStepOptions<TInput, TResult> {
     // (undocumented)
     readonly timeoutMs?: number;
 }
+
+// @public
+export function defineUpdate<TArgument = unknown, TResult = unknown>(updateName: string, spec: UpdateSpec<TArgument, TResult>): UpdateDefinition<TArgument, TResult>;
 
 // @public
 export function defineWorkflow<TInput = unknown, TResult = unknown>(workflowType: string, handler: WorkflowHandler<TInput, TResult>): WorkflowDefinition<TInput, TResult>;
@@ -1153,6 +1180,9 @@ export function maskSensitiveFields(value: unknown, sensitiveFields: readonly st
 export const MAX_RECOVERY_BACKOFF_MS = 3600000;
 
 // @public
+export const MAX_UPDATE_WAIT_MS = 60000;
+
+// @public
 export interface MetricDefinition {
     // (undocumented)
     readonly help: string;
@@ -1589,6 +1619,8 @@ export interface ReplayOutcome<TResult> {
     readonly unconsultedPatches: readonly string[];
     // (undocumented)
     readonly unissuedCommand: Error | undefined;
+    // (undocumented)
+    readonly updateHandlers: ReadonlyMap<string, UpdateDefinition>;
 }
 
 // @public
@@ -1787,6 +1819,7 @@ export class RunHistoryCompactedError extends Error {
 export interface RunInteractions {
     queryRun(runId: string, queryName: string, argument?: unknown): Promise<unknown>;
     signalRun(runId: string, signalName: string, payload?: unknown): Promise<SignalReceipt>;
+    updateRun(runId: string, updateName: string, argument?: unknown, options?: UpdateCallOptions): Promise<UpdateOutcome>;
 }
 
 // @public
@@ -1797,6 +1830,8 @@ export interface RunInteractionsOptions {
     readonly codec?: Codec;
     // (undocumented)
     readonly random: RandomSource;
+    // (undocumented)
+    readonly updateWait?: UpdateWaitOptions;
     // (undocumented)
     readonly workflows: WorkflowRegistry;
 }
@@ -2573,6 +2608,13 @@ export class UnknownQueryError extends Error {
 }
 
 // @public
+export class UnknownUpdateError extends Error {
+    constructor(updateName: string);
+    // (undocumented)
+    readonly updateName: string;
+}
+
+// @public
 export const UNLIMITED_QUOTA: NamespaceQuota;
 
 // @public
@@ -2582,6 +2624,109 @@ export class UnsupportedEventError extends Error {
     readonly eventType: string | undefined;
     // (undocumented)
     readonly version: number;
+}
+
+// @public
+export const updateAcceptedEventSchema: z.ZodObject<{
+    type: z.ZodLiteral<"update_accepted">;
+    updateId: z.ZodString;
+    updateName: z.ZodString;
+    argument: z.ZodUnknown;
+}, z.core.$strip>;
+
+// @public
+export interface UpdateAcceptOptions {
+    // (undocumented)
+    readonly clock: ClockSource;
+    // (undocumented)
+    readonly workflows: WorkflowRegistry;
+}
+
+// @public
+export interface UpdateCallOptions {
+    // (undocumented)
+    readonly updateId?: string;
+    // (undocumented)
+    readonly waitMs?: number;
+}
+
+// @public
+export const updateCompletedEventSchema: z.ZodObject<{
+    type: z.ZodLiteral<"update_completed">;
+    updateId: z.ZodString;
+    result: z.ZodUnknown;
+    error: z.ZodOptional<z.ZodType<RecordedError, unknown, z.core.$ZodTypeInternals<RecordedError, unknown>>>;
+}, z.core.$strip>;
+
+// @public
+export interface UpdateDefinition<TArgument = unknown, TResult = unknown> {
+    // (undocumented)
+    readonly handler: UpdateHandler<TArgument, TResult>;
+    // (undocumented)
+    readonly updateName: string;
+    // (undocumented)
+    readonly validate?: UpdateValidator<TArgument>;
+}
+
+// @public
+export type UpdateHandler<TArgument, TResult> = (argument: TArgument) => TResult | Promise<TResult>;
+
+// @public
+export type UpdateOutcome = {
+    readonly status: "completed";
+    readonly updateId: string;
+    readonly sequenceNumber: number;
+    readonly result: unknown;
+} | {
+    readonly status: "failed";
+    readonly updateId: string;
+    readonly sequenceNumber: number;
+    readonly error: RecordedError;
+} | {
+    readonly status: "accepted";
+    readonly updateId: string;
+    readonly sequenceNumber: number;
+};
+
+// @public
+export interface UpdateReceipt {
+    // (undocumented)
+    readonly duplicate: boolean;
+    // (undocumented)
+    readonly sequenceNumber: number;
+    // (undocumented)
+    readonly updateId: string;
+}
+
+// @public
+export class UpdateRejectedError extends Error {
+    constructor(updateName: string, cause: unknown);
+    // (undocumented)
+    readonly updateName: string;
+}
+
+// @public
+export interface UpdateSpec<TArgument, TResult> {
+    // (undocumented)
+    readonly handler: UpdateHandler<TArgument, TResult>;
+    // (undocumented)
+    readonly validate?: UpdateValidator<TArgument>;
+}
+
+// @public
+export type UpdateValidator<TArgument> = (argument: TArgument) => void;
+
+// @public
+export function updateWaitMs(requested: number | undefined): number;
+
+// @public
+export interface UpdateWaitOptions {
+    // (undocumented)
+    readonly nowMs?: () => number;
+    // (undocumented)
+    readonly pollMs?: number;
+    // (undocumented)
+    readonly sleep?: (ms: number) => Promise<void>;
 }
 
 // @public
@@ -2617,7 +2762,7 @@ export function withTransaction<T>(pool: Pool, work: (client: PoolClient) => Pro
 // Warning: (ae-forgotten-export) The symbol "ContinueAsNewCommand" needs to be exported by the entry point index.d.ts
 //
 // @public
-export type WorkflowCommand = ScheduleStepCommand | StartTimerCommand | StartChildCommand | RecordPatchCommand | RecordTimeCommand | RecordCompensationFailureCommand | CompleteRunCommand | FailRunCommand | CancelRunCommand | ContinueAsNewCommand;
+export type WorkflowCommand = ScheduleStepCommand | StartTimerCommand | StartChildCommand | RecordPatchCommand | RecordTimeCommand | RecordCompensationFailureCommand | CompleteUpdateCommand | CompleteRunCommand | FailRunCommand | CancelRunCommand | ContinueAsNewCommand;
 
 // @public
 export interface WorkflowContext {
@@ -2634,6 +2779,7 @@ export interface WorkflowContext {
     random(): number;
     select<TBranches extends readonly Promise<unknown>[]>(branches: TBranches): Promise<SelectResult<Awaited<TBranches[number]>>>;
     setQueryHandler(queryName: string, handler: QueryHandler): void;
+    setUpdateHandler<TArgument, TResult>(definition: UpdateDefinition<TArgument, TResult>): void;
     // (undocumented)
     sleep(durationMs: number): Promise<void>;
     startChild<TResult = unknown>(workflowType: string, input: unknown, options?: ChildOptions): ChildHandle<TResult>;
@@ -2750,10 +2896,27 @@ export const workflowEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"compensation_failed">;
     index: z.ZodNumber;
     error: z.ZodType<RecordedError, unknown, z.core.$ZodTypeInternals<RecordedError, unknown>>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"update_accepted">;
+    updateId: z.ZodString;
+    updateName: z.ZodString;
+    argument: z.ZodUnknown;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"update_completed">;
+    updateId: z.ZodString;
+    result: z.ZodUnknown;
+    error: z.ZodOptional<z.ZodType<RecordedError, unknown, z.core.$ZodTypeInternals<RecordedError, unknown>>>;
 }, z.core.$strip>], "type">;
 
 // @public
 export type WorkflowHandler<TInput = unknown, TResult = unknown> = (ctx: WorkflowContext, input: TInput) => Promise<TResult>;
+
+// @public
+export class WorkflowNotLoadedError extends Error {
+    constructor(workflowType: string);
+    // (undocumented)
+    readonly workflowType: string;
+}
 
 // @public
 export interface WorkflowRegistry {
@@ -3175,15 +3338,27 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/schedules/schedule-manager.d.ts:88:5 - (ae-undocumented) Missing documentation for "codec".
 // dist/schedules/schedule-manager.d.ts:89:5 - (ae-undocumented) Missing documentation for "batchSize".
 // dist/schedules/schedule-manager.d.ts:90:5 - (ae-undocumented) Missing documentation for "tracing".
-// dist/signals/signal-service.d.ts:10:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/signals/signal-service.d.ts:17:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/signals/signal-service.d.ts:25:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/signals/signal-service.d.ts:26:5 - (ae-undocumented) Missing documentation for "status".
-// dist/signals/signal-service.d.ts:34:5 - (ae-undocumented) Missing documentation for "sequenceNumber".
-// dist/signals/signal-service.d.ts:60:5 - (ae-undocumented) Missing documentation for "workflows".
-// dist/signals/signal-service.d.ts:61:5 - (ae-undocumented) Missing documentation for "clock".
-// dist/signals/signal-service.d.ts:62:5 - (ae-undocumented) Missing documentation for "random".
-// dist/signals/signal-service.d.ts:63:5 - (ae-undocumented) Missing documentation for "codec".
+// dist/signals/signal-service.d.ts:11:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/signals/signal-service.d.ts:18:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/signals/signal-service.d.ts:26:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/signals/signal-service.d.ts:27:5 - (ae-undocumented) Missing documentation for "status".
+// dist/signals/signal-service.d.ts:35:5 - (ae-undocumented) Missing documentation for "sequenceNumber".
+// dist/signals/signal-service.d.ts:70:5 - (ae-undocumented) Missing documentation for "workflows".
+// dist/signals/signal-service.d.ts:71:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/signals/signal-service.d.ts:72:5 - (ae-undocumented) Missing documentation for "random".
+// dist/signals/signal-service.d.ts:73:5 - (ae-undocumented) Missing documentation for "codec".
+// dist/signals/signal-service.d.ts:74:5 - (ae-undocumented) Missing documentation for "updateWait".
+// dist/signals/update-service.d.ts:12:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/signals/update-service.d.ts:31:5 - (ae-undocumented) Missing documentation for "updateId".
+// dist/signals/update-service.d.ts:32:5 - (ae-undocumented) Missing documentation for "waitMs".
+// dist/signals/update-service.d.ts:59:5 - (ae-undocumented) Missing documentation for "updateId".
+// dist/signals/update-service.d.ts:60:5 - (ae-undocumented) Missing documentation for "sequenceNumber".
+// dist/signals/update-service.d.ts:61:5 - (ae-undocumented) Missing documentation for "duplicate".
+// dist/signals/update-service.d.ts:68:5 - (ae-undocumented) Missing documentation for "workflows".
+// dist/signals/update-service.d.ts:69:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/signals/update-service.d.ts:76:5 - (ae-undocumented) Missing documentation for "pollMs".
+// dist/signals/update-service.d.ts:77:5 - (ae-undocumented) Missing documentation for "nowMs".
+// dist/signals/update-service.d.ts:78:5 - (ae-undocumented) Missing documentation for "sleep".
 // dist/sticky/run-cache.d.ts:8:5 - (ae-undocumented) Missing documentation for "maxRuns".
 // dist/sticky/run-cache.d.ts:9:5 - (ae-undocumented) Missing documentation for "stickyTimeoutMs".
 // dist/sticky/run-cache.d.ts:10:5 - (ae-undocumented) Missing documentation for "clock".
@@ -3252,36 +3427,41 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/workflow/commands.d.ts:29:5 - (ae-undocumented) Missing documentation for "parentClosePolicy".
 // dist/workflow/commands.d.ts:30:5 - (ae-undocumented) Missing documentation for "runTimeoutMs".
 // dist/workflow/commands.d.ts:31:5 - (ae-undocumented) Missing documentation for "executionTimeoutMs".
-// dist/workflow/commands.d.ts:63:5 - (ae-undocumented) Missing documentation for "type".
-// dist/workflow/commands.d.ts:64:5 - (ae-undocumented) Missing documentation for "result".
-// dist/workflow/commands.d.ts:70:5 - (ae-undocumented) Missing documentation for "type".
-// dist/workflow/commands.d.ts:71:5 - (ae-undocumented) Missing documentation for "error".
-// dist/workflow/context.d.ts:7:5 - (ae-undocumented) Missing documentation for "index".
-// dist/workflow/context.d.ts:8:5 - (ae-undocumented) Missing documentation for "value".
-// dist/workflow/context.d.ts:27:5 - (ae-undocumented) Missing documentation for "parentClosePolicy".
-// dist/workflow/context.d.ts:28:5 - (ae-undocumented) Missing documentation for "runTimeoutMs".
-// dist/workflow/context.d.ts:29:5 - (ae-undocumented) Missing documentation for "executionTimeoutMs".
-// dist/workflow/context.d.ts:36:5 - (ae-undocumented) Missing documentation for "childId".
-// dist/workflow/context.d.ts:37:5 - (ae-undocumented) Missing documentation for "result".
-// dist/workflow/context.d.ts:44:5 - (ae-undocumented) Missing documentation for "concurrency".
-// dist/workflow/context.d.ts:59:5 - (ae-undocumented) Missing documentation for "step".
-// dist/workflow/context.d.ts:60:5 - (ae-undocumented) Missing documentation for "sleep".
-// dist/workflow/context.d.ts:135:5 - (ae-undocumented) Missing documentation for "now".
-// dist/workflow/context.d.ts:136:5 - (ae-undocumented) Missing documentation for "random".
-// dist/workflow/context.d.ts:137:5 - (ae-undocumented) Missing documentation for "uuid".
-// dist/workflow/decision-loop.d.ts:13:5 - (ae-undocumented) Missing documentation for "clock".
-// dist/workflow/decision-loop.d.ts:28:5 - (ae-undocumented) Missing documentation for "maxChildren".
-// dist/workflow/decision-loop.d.ts:29:5 - (ae-undocumented) Missing documentation for "historyWarningThreshold".
-// dist/workflow/decision-loop.d.ts:30:5 - (ae-undocumented) Missing documentation for "buildId".
-// dist/workflow/decision-loop.d.ts:38:5 - (ae-undocumented) Missing documentation for "eventCount".
-// dist/workflow/decision-loop.d.ts:39:5 - (ae-undocumented) Missing documentation for "threshold".
-// dist/workflow/decision-loop.d.ts:111:5 - (ae-undocumented) Missing documentation for "settled".
-// dist/workflow/decision-loop.d.ts:118:5 - (ae-undocumented) Missing documentation for "commands".
-// dist/workflow/decision-loop.d.ts:119:5 - (ae-undocumented) Missing documentation for "queryHandlers".
-// dist/workflow/decision-loop.d.ts:120:5 - (ae-undocumented) Missing documentation for "continuation".
-// dist/workflow/decision-loop.d.ts:123:5 - (ae-undocumented) Missing documentation for "unconsultedPatches".
-// dist/workflow/decision-loop.d.ts:124:5 - (ae-undocumented) Missing documentation for "unissuedCommand".
-// dist/workflow/decision-loop.d.ts:125:5 - (ae-undocumented) Missing documentation for "cancellation".
+// dist/workflow/commands.d.ts:64:5 - (ae-undocumented) Missing documentation for "type".
+// dist/workflow/commands.d.ts:65:5 - (ae-undocumented) Missing documentation for "updateId".
+// dist/workflow/commands.d.ts:66:5 - (ae-undocumented) Missing documentation for "result".
+// dist/workflow/commands.d.ts:67:5 - (ae-undocumented) Missing documentation for "error".
+// dist/workflow/commands.d.ts:73:5 - (ae-undocumented) Missing documentation for "type".
+// dist/workflow/commands.d.ts:74:5 - (ae-undocumented) Missing documentation for "result".
+// dist/workflow/commands.d.ts:80:5 - (ae-undocumented) Missing documentation for "type".
+// dist/workflow/commands.d.ts:81:5 - (ae-undocumented) Missing documentation for "error".
+// dist/workflow/context.d.ts:8:5 - (ae-undocumented) Missing documentation for "index".
+// dist/workflow/context.d.ts:9:5 - (ae-undocumented) Missing documentation for "value".
+// dist/workflow/context.d.ts:28:5 - (ae-undocumented) Missing documentation for "parentClosePolicy".
+// dist/workflow/context.d.ts:29:5 - (ae-undocumented) Missing documentation for "runTimeoutMs".
+// dist/workflow/context.d.ts:30:5 - (ae-undocumented) Missing documentation for "executionTimeoutMs".
+// dist/workflow/context.d.ts:37:5 - (ae-undocumented) Missing documentation for "childId".
+// dist/workflow/context.d.ts:38:5 - (ae-undocumented) Missing documentation for "result".
+// dist/workflow/context.d.ts:45:5 - (ae-undocumented) Missing documentation for "concurrency".
+// dist/workflow/context.d.ts:60:5 - (ae-undocumented) Missing documentation for "step".
+// dist/workflow/context.d.ts:61:5 - (ae-undocumented) Missing documentation for "sleep".
+// dist/workflow/context.d.ts:144:5 - (ae-undocumented) Missing documentation for "now".
+// dist/workflow/context.d.ts:145:5 - (ae-undocumented) Missing documentation for "random".
+// dist/workflow/context.d.ts:146:5 - (ae-undocumented) Missing documentation for "uuid".
+// dist/workflow/decision-loop.d.ts:14:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/workflow/decision-loop.d.ts:29:5 - (ae-undocumented) Missing documentation for "maxChildren".
+// dist/workflow/decision-loop.d.ts:30:5 - (ae-undocumented) Missing documentation for "historyWarningThreshold".
+// dist/workflow/decision-loop.d.ts:31:5 - (ae-undocumented) Missing documentation for "buildId".
+// dist/workflow/decision-loop.d.ts:39:5 - (ae-undocumented) Missing documentation for "eventCount".
+// dist/workflow/decision-loop.d.ts:40:5 - (ae-undocumented) Missing documentation for "threshold".
+// dist/workflow/decision-loop.d.ts:120:5 - (ae-undocumented) Missing documentation for "settled".
+// dist/workflow/decision-loop.d.ts:127:5 - (ae-undocumented) Missing documentation for "commands".
+// dist/workflow/decision-loop.d.ts:128:5 - (ae-undocumented) Missing documentation for "queryHandlers".
+// dist/workflow/decision-loop.d.ts:129:5 - (ae-undocumented) Missing documentation for "updateHandlers".
+// dist/workflow/decision-loop.d.ts:130:5 - (ae-undocumented) Missing documentation for "continuation".
+// dist/workflow/decision-loop.d.ts:133:5 - (ae-undocumented) Missing documentation for "unconsultedPatches".
+// dist/workflow/decision-loop.d.ts:134:5 - (ae-undocumented) Missing documentation for "unissuedCommand".
+// dist/workflow/decision-loop.d.ts:135:5 - (ae-undocumented) Missing documentation for "cancellation".
 // dist/workflow/define-step.d.ts:12:5 - (ae-undocumented) Missing documentation for "stepType".
 // dist/workflow/define-step.d.ts:13:5 - (ae-undocumented) Missing documentation for "handler".
 // dist/workflow/define-step.d.ts:14:5 - (ae-undocumented) Missing documentation for "timeoutMs".
@@ -3291,6 +3471,13 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/workflow/define-step.d.ts:24:5 - (ae-undocumented) Missing documentation for "output".
 // dist/workflow/define-step.d.ts:25:5 - (ae-undocumented) Missing documentation for "timeoutMs".
 // dist/workflow/define-step.d.ts:26:5 - (ae-undocumented) Missing documentation for "retry".
+// dist/workflow/define-update.d.ts:19:5 - (ae-undocumented) Missing documentation for "updateName".
+// dist/workflow/define-update.d.ts:20:5 - (ae-undocumented) Missing documentation for "validate".
+// dist/workflow/define-update.d.ts:21:5 - (ae-undocumented) Missing documentation for "handler".
+// dist/workflow/define-update.d.ts:28:5 - (ae-undocumented) Missing documentation for "validate".
+// dist/workflow/define-update.d.ts:29:5 - (ae-undocumented) Missing documentation for "handler".
+// dist/workflow/define-update.d.ts:36:5 - (ae-undocumented) Missing documentation for "updateName".
+// dist/workflow/define-update.d.ts:44:5 - (ae-undocumented) Missing documentation for "updateName".
 // dist/workflow/error-serialization.d.ts:11:5 - (ae-undocumented) Missing documentation for "name".
 // dist/workflow/error-serialization.d.ts:12:5 - (ae-undocumented) Missing documentation for "message".
 // dist/workflow/error-serialization.d.ts:13:5 - (ae-undocumented) Missing documentation for "stack".

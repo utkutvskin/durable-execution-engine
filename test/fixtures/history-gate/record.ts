@@ -4,6 +4,12 @@ import { createRunService } from "../../../packages/api/src/index.ts";
 import { createIsolatedDatabase } from "../../../packages/core/src/db/test-harness.ts";
 import { createPostgresEventStore } from "../../../packages/core/src/event-store/event-store.ts";
 import { createHistoryExport } from "../../../packages/core/src/replay/history-export.ts";
+import { createRunInteractions } from "../../../packages/core/src/signals/signal-service.ts";
+import { systemClock, systemRandomSource } from "../../../packages/core/src/workflow/sources.ts";
+import {
+  createWorkflowRegistry,
+  type WorkflowDefinition,
+} from "../../../packages/core/src/workflow/workflow-registry.ts";
 import { startEngine } from "../../../packages/worker/src/engine/runtime.ts";
 import { steps, workflows } from "./workflows.ts";
 
@@ -30,6 +36,15 @@ async function main(): Promise<void> {
   );
   const namespaceId = namespace.rows[0]?.id ?? "";
   const service = createRunService(pool, { queueName: "default" });
+  const registry = createWorkflowRegistry();
+  for (const workflow of workflows as readonly WorkflowDefinition<never>[]) {
+    registry.register(workflow);
+  }
+  const interactions = createRunInteractions(pool, {
+    workflows: registry,
+    clock: systemClock,
+    random: systemRandomSource,
+  });
   const engine = startEngine({
     pool,
     workflows,
@@ -77,6 +92,7 @@ async function main(): Promise<void> {
     await start("gate-loop", { round: 0 });
     await start("gate-waiting", {}, 300);
     const terminated = await start("gate-waiting", {});
+    const updated = await start("gate-update", {});
 
     await waitFor(order, "time_recorded");
     await service.signalRun(namespaceId, order, "approve", { by: "ada" });
@@ -84,6 +100,9 @@ async function main(): Promise<void> {
     await pause(200);
     await service.cancelRun(namespaceId, cancel, "customer changed their mind");
     await service.terminateRun(namespaceId, terminated, "operator stopped it");
+    await interactions.updateRun(updated, "gate.note", "first", { waitMs: 10_000 });
+    await interactions.updateRun(updated, "gate.refuse", null, { waitMs: 10_000 });
+    await service.signalRun(namespaceId, updated, "close", null);
 
     for (let attempt = 0; attempt < 1000; attempt += 1) {
       const open = await pool.query(

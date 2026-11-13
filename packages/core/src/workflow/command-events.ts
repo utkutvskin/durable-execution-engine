@@ -41,6 +41,15 @@ export function commandToEvent(command: WorkflowCommand): WorkflowEvent {
       return { type: "time_recorded", time: command.time };
     case "record_compensation_failure":
       return { type: "compensation_failed", index: command.index, error: command.error };
+    case "complete_update":
+      return command.error === undefined
+        ? { type: "update_completed", updateId: command.updateId, result: command.result }
+        : {
+            type: "update_completed",
+            updateId: command.updateId,
+            result: null,
+            error: command.error,
+          };
     case "complete_run":
       return { type: "run_completed", result: command.result };
     case "fail_run":

@@ -1,0 +1,84 @@
+{
+  "format": "dee.history",
+  "formatVersion": 1,
+  "runId": "4c647293-48cc-4c24-be57-2c2ee2bf34b4",
+  "workflowType": "gate-update",
+  "exportedAt": "2026-11-13T09:19:58.444Z",
+  "events": [
+    {
+      "sequenceNumber": 1,
+      "createdAt": "2026-11-13T09:19:57.963Z",
+      "version": 1,
+      "event": {
+        "type": "run_started",
+        "workflowType": "gate-update",
+        "input": {}
+      }
+    },
+    {
+      "sequenceNumber": 2,
+      "createdAt": "2026-11-13T09:19:58.271Z",
+      "version": 1,
+      "event": {
+        "type": "update_accepted",
+        "updateId": "d4589224-4df1-4935-8dbb-5123a37bd914",
+        "updateName": "gate.note",
+        "argument": "first"
+      }
+    },
+    {
+      "sequenceNumber": 3,
+      "createdAt": "2026-11-13T09:19:58.282Z",
+      "version": 1,
+      "event": {
+        "type": "update_completed",
+        "updateId": "d4589224-4df1-4935-8dbb-5123a37bd914",
+        "result": 1
+      }
+    },
+    {
+      "sequenceNumber": 4,
+      "createdAt": "2026-11-13T09:19:58.327Z",
+      "version": 1,
+      "event": {
+        "type": "update_accepted",
+        "updateId": "43502150-d4a8-4303-9859-7c4bc38eb340",
+        "updateName": "gate.refuse",
+        "argument": null
+      }
+    },
+    {
+      "sequenceNumber": 5,
+      "createdAt": "2026-11-13T09:19:58.372Z",
+      "version": 1,
+      "event": {
+        "type": "update_completed",
+        "updateId": "43502150-d4a8-4303-9859-7c4bc38eb340",
+        "result": null,
+        "error": {
+          "name": "Error",
+          "message": "refused by the workflow"
+        }
+      }
+    },
+    {
+      "sequenceNumber": 6,
+      "createdAt": "2026-11-13T09:19:58.388Z",
+      "version": 1,
+      "event": {
+        "type": "signal_received",
+        "signalName": "close",
+        "payload": null
+      }
+    },
+    {
+      "sequenceNumber": 7,
+      "createdAt": "2026-11-13T09:19:58.410Z",
+      "version": 1,
+      "event": {
+        "type": "run_completed",
+        "result": ["first"]
+      }
+    }
+  ]
+}

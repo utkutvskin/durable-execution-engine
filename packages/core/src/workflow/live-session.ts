@@ -20,7 +20,7 @@ import { guardAgainstForbiddenApis, runUnguarded } from "./sandbox.ts";
  * What `LiveSession.advance` reports. `decided` carries the decision for the
  * history seen so far. `unsupported` means the workflow used a feature a live
  * session does not resume (children, parallel helpers, `select`, compensation
- * handlers or `continueAsNew`), or the history holds an event of such a
+ * handlers, update handlers or `continueAsNew`), or the history holds an event of such a
  * feature; the caller must decide with a full replay instead. `diverged`
  * means the history handed in is not a continuation of what the session has
  * seen, or the session already finished; the caller must drop the session
@@ -255,6 +255,9 @@ export function createLiveSession<TInput, TResult>(
     },
     setQueryHandler(queryName: string, queryHandler: QueryHandler): void {
       queryHandlers.set(queryName, queryHandler);
+    },
+    setUpdateHandler: () => {
+      flags.unsupported = true;
     },
     patched: () => {
       flags.unsupported = true;

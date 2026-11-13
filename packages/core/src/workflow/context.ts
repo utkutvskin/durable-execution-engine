@@ -1,4 +1,5 @@
 import type { ParentClosePolicy } from "../event-store/events.ts";
+import type { UpdateDefinition } from "./define-update.ts";
 
 /**
  * What `ctx.select()` resolves with: the position in the branch list of the
@@ -87,6 +88,14 @@ export interface WorkflowContext {
    * registration of a name wins. A handler must only read workflow state.
    */
   setQueryHandler(queryName: string, handler: QueryHandler): void;
+  /**
+   * Registers the update `definition` (see `defineUpdate`). An update sent
+   * to the run is validated against the state at the run's current point
+   * and, once accepted, its handler runs at the position in the history it
+   * was accepted at, so every replay applies the updates in the same order
+   * and to the same state. The latest registration of a name wins.
+   */
+  setUpdateHandler<TArgument, TResult>(definition: UpdateDefinition<TArgument, TResult>): void;
   /**
    * Registers a compensation for work done so far. When the run is
    * cancelled, the compensations run one at a time in reverse registration

@@ -1,5 +1,6 @@
 import type { RecordedError, WorkflowEvent } from "../event-store/events.ts";
 import { deserializeError, toRecordedError } from "./error-serialization.ts";
+import { UnknownUpdateError, type UpdateDefinition } from "./define-update.ts";
 import type { WorkflowCommand } from "./commands.ts";
 import type {
   ChildHandle,
@@ -155,11 +156,21 @@ function neverSettles<TValue>(): Promise<TValue> {
   return new Promise<TValue>(() => undefined);
 }
 
+/**
+ * The handlers a workflow registered by the point its replay stopped,
+ * keyed by name.
+ */
+export interface RegisteredHandlers {
+  readonly queries: Map<string, QueryHandler>;
+  readonly updates: Map<string, UpdateDefinition>;
+}
+
 function createReplayContext(
   history: readonly WorkflowEvent[],
   options: DecisionLoopOptions,
   newCommands: WorkflowCommand[],
-  queryHandlers: Map<string, QueryHandler>,
+  handlers: RegisteredHandlers,
+  integrity: { error?: Error },
   compensations: CompensationHandler[],
   inFlightSteps: Set<string>,
   continuation: { requested?: { readonly input: unknown } },
@@ -198,6 +209,48 @@ function createReplayContext(
     () => options.triggeredAt,
     (command) => newCommands.push(command),
   );
+  const completedUpdates = new Set(
+    history.flatMap((event) => (event.type === "update_completed" ? [event.updateId] : [])),
+  );
+
+  function applyUpdate(event: Extract<WorkflowEvent, { type: "update_accepted" }>): void {
+    const definition = handlers.updates.get(event.updateName);
+    const outcome = new Promise<unknown>((resolve) => {
+      if (definition === undefined) {
+        throw new UnknownUpdateError(event.updateName);
+      }
+      resolve(definition.handler(event.argument));
+    });
+    outcome.then(
+      (result: unknown) => {
+        if (!completedUpdates.has(event.updateId)) {
+          newCommands.push({ type: "complete_update", updateId: event.updateId, result });
+        }
+      },
+      (reason: unknown) => {
+        if (isIntegrityError(reason)) {
+          integrity.error ??= reason;
+        } else if (!completedUpdates.has(event.updateId)) {
+          newCommands.push({
+            type: "complete_update",
+            updateId: event.updateId,
+            result: null,
+            error: toRecordedError(reason),
+          });
+        }
+      },
+    );
+  }
+
+  for (const [historyIndex, event] of history.entries()) {
+    if (event.type === "update_accepted") {
+      deliveries.set(historyIndex, [
+        () => {
+          applyUpdate(event);
+        },
+      ]);
+    }
+  }
 
   function decidePatch(patchId: string): boolean {
     consultedPatches.add(patchId);
@@ -509,7 +562,10 @@ function createReplayContext(
         );
       },
       setQueryHandler(queryName: string, handler: QueryHandler): void {
-        queryHandlers.set(queryName, handler);
+        handlers.queries.set(queryName, handler);
+      },
+      setUpdateHandler<TArgument, TResult>(definition: UpdateDefinition<TArgument, TResult>): void {
+        handlers.updates.set(definition.updateName, definition as UpdateDefinition);
       },
       onCancel(handler: CompensationHandler): void {
         compensations.push(handler);
@@ -546,7 +602,7 @@ function createReplayContext(
 /**
  * The state a replay stopped in: how the handler settled (`undefined` when
  * it is still waiting), the commands it newly discovered, and the query
- * handlers it had registered by then.
+ * and update handlers it had registered by then.
  */
 export interface ReplayOutcome<TResult> {
   readonly settled:
@@ -555,6 +611,7 @@ export interface ReplayOutcome<TResult> {
     | undefined;
   readonly commands: WorkflowCommand[];
   readonly queryHandlers: ReadonlyMap<string, QueryHandler>;
+  readonly updateHandlers: ReadonlyMap<string, UpdateDefinition>;
   readonly continuation: { readonly input: unknown } | undefined;
   readonly unconsultedPatches: readonly string[];
   readonly unissuedCommand: Error | undefined;
@@ -575,7 +632,8 @@ export async function replayHistory<TInput, TResult>(
   options: DecisionLoopOptions,
 ): Promise<ReplayOutcome<TResult>> {
   const commands: WorkflowCommand[] = [];
-  const queryHandlers = new Map<string, QueryHandler>();
+  const handlers: RegisteredHandlers = { queries: new Map(), updates: new Map() };
+  const integrity: { error?: Error } = {};
   const compensations: CompensationHandler[] = [];
   const inFlightSteps = new Set<string>();
   const continuation: { requested?: { readonly input: unknown } } = {};
@@ -585,7 +643,8 @@ export async function replayHistory<TInput, TResult>(
       history,
       options,
       commands,
-      queryHandlers,
+      handlers,
+      integrity,
       compensations,
       inFlightSteps,
       continuation,
@@ -650,6 +709,10 @@ export async function replayHistory<TInput, TResult>(
     }
   });
 
+  if (integrity.error !== undefined) {
+    settled = { outcome: "failed", error: integrity.error };
+  }
+
   let unissuedCommand: Error | undefined;
   try {
     assertAllCommandsIssued();
@@ -670,7 +733,8 @@ export async function replayHistory<TInput, TResult>(
     return {
       settled,
       commands,
-      queryHandlers,
+      queryHandlers: handlers.queries,
+      updateHandlers: handlers.updates,
       continuation: continuation.requested,
       unconsultedPatches,
       unissuedCommand,
@@ -680,7 +744,8 @@ export async function replayHistory<TInput, TResult>(
   return {
     settled,
     commands,
-    queryHandlers,
+    queryHandlers: handlers.queries,
+    updateHandlers: handlers.updates,
     continuation: continuation.requested,
     unconsultedPatches,
     unissuedCommand,

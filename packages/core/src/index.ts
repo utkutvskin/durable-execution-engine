@@ -58,11 +58,14 @@ export {
   stepScheduledEventSchema,
   timerFiredEventSchema,
   timerStartedEventSchema,
+  updateAcceptedEventSchema,
+  updateCompletedEventSchema,
   workflowEventSchema,
 } from "./event-store/events.ts";
 export type { WorkflowEvent } from "./event-store/events.ts";
 
 export type {
+  CompleteUpdateCommand,
   CompleteRunCommand,
   FailRunCommand,
   ScheduleStepCommand,
@@ -229,6 +232,28 @@ export type {
   TriggerOutcome,
 } from "./schedules/schedule-manager.ts";
 export { UnknownQueryError, runQuery } from "./workflow/query.ts";
+export { UnknownUpdateError, UpdateRejectedError, defineUpdate } from "./workflow/define-update.ts";
+export type {
+  UpdateDefinition,
+  UpdateHandler,
+  UpdateSpec,
+  UpdateValidator,
+} from "./workflow/define-update.ts";
+export {
+  DEFAULT_UPDATE_WAIT_MS,
+  MAX_UPDATE_WAIT_MS,
+  WorkflowNotLoadedError,
+  acceptUpdateOnClient,
+  awaitUpdateOutcome,
+  updateWaitMs,
+} from "./signals/update-service.ts";
+export type {
+  UpdateAcceptOptions,
+  UpdateCallOptions,
+  UpdateOutcome,
+  UpdateReceipt,
+  UpdateWaitOptions,
+} from "./signals/update-service.ts";
 export { replayHistory } from "./workflow/decision-loop.ts";
 export type { ReplayOutcome } from "./workflow/decision-loop.ts";
 export type { CompensationHandler, QueryHandler, SelectResult } from "./workflow/context.ts";

@@ -188,6 +188,9 @@ function createInMemoryContext(
     setQueryHandler(): void {
       return undefined;
     },
+    setUpdateHandler(): void {
+      return undefined;
+    },
     onCancel(): void {
       return undefined;
     },

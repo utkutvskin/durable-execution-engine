@@ -64,6 +64,17 @@ export interface RecordCompensationFailureCommand {
 }
 
 /**
+ * The handler of the accepted update `updateId` finished, with `result` or
+ * with `error` when it threw.
+ */
+export interface CompleteUpdateCommand {
+  readonly type: "complete_update";
+  readonly updateId: string;
+  readonly result: unknown;
+  readonly error?: RecordedError;
+}
+
+/**
  * The run finished successfully with the given result.
  */
 export interface CompleteRunCommand {
@@ -100,7 +111,7 @@ export interface ContinueAsNewCommand {
 /**
  * Every command kind a workflow decision can produce, discriminated on
  * `type`. A decision produces zero or more `ScheduleStepCommand`,
- * `StartTimerCommand`, `StartChildCommand`, `RecordPatchCommand` and `RecordTimeCommand` entries, followed by at most one of
+ * `StartTimerCommand`, `StartChildCommand`, `RecordPatchCommand`, `RecordTimeCommand` and `CompleteUpdateCommand` entries, followed by at most one of
  * `CompleteRunCommand`, `FailRunCommand`, `CancelRunCommand` or
  * `ContinueAsNewCommand`.
  */
@@ -111,6 +122,7 @@ export type WorkflowCommand =
   | RecordPatchCommand
   | RecordTimeCommand
   | RecordCompensationFailureCommand
+  | CompleteUpdateCommand
   | CompleteRunCommand
   | FailRunCommand
   | CancelRunCommand

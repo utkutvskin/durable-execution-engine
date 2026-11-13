@@ -1,4 +1,5 @@
 import { defineStep } from "../../../packages/core/src/workflow/define-step.ts";
+import { defineUpdate } from "../../../packages/core/src/workflow/define-update.ts";
 import { defineWorkflow } from "../../../packages/core/src/workflow/define-workflow.ts";
 
 /**
@@ -51,6 +52,31 @@ export const workflows = [
     return done;
   }),
   defineWorkflow("gate-waiting", async (ctx) => ctx.waitForSignal("never")),
+  defineWorkflow("gate-update", async (ctx) => {
+    const notes: string[] = [];
+    ctx.setUpdateHandler(
+      defineUpdate<string, number>("gate.note", {
+        validate: (note) => {
+          if (note.length === 0) {
+            throw new Error("a note cannot be empty");
+          }
+        },
+        handler: (note) => {
+          notes.push(note);
+          return notes.length;
+        },
+      }),
+    );
+    ctx.setUpdateHandler(
+      defineUpdate("gate.refuse", {
+        handler: () => {
+          throw new Error("refused by the workflow");
+        },
+      }),
+    );
+    await ctx.waitForSignal("close");
+    return notes;
+  }),
 ];
 
 /**

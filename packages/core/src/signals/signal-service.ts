@@ -9,6 +9,15 @@ import type { ClockSource, RandomSource } from "../workflow/sources.ts";
 import { runQuery } from "../workflow/query.ts";
 import type { WorkflowRegistry } from "../workflow/workflow-registry.ts";
 import { rollbackQuietly } from "../db/transaction.ts";
+import {
+  acceptUpdateOnClient,
+  awaitUpdateOutcome,
+  updateWaitMs,
+  WorkflowNotLoadedError,
+  type UpdateCallOptions,
+  type UpdateOutcome,
+  type UpdateWaitOptions,
+} from "./update-service.ts";
 
 /**
  * Raised when a query names a run whose history was compacted, so the
@@ -64,7 +73,7 @@ export interface SignalReceipt {
 }
 
 /**
- * Sends signals to and reads queries from runs.
+ * Sends signals and updates to runs and reads queries from them.
  */
 export interface RunInteractions {
   /**
@@ -81,6 +90,21 @@ export interface RunInteractions {
    * row is written. Rejects with `RunNotFoundError` or `UnknownQueryError`.
    */
   queryRun(runId: string, queryName: string, argument?: unknown): Promise<unknown>;
+
+  /**
+   * Validates the update `updateName` against the run's current state,
+   * records `update_accepted` and enqueues a workflow task in one
+   * transaction, then waits up to `options.waitMs` for the handler's
+   * outcome. A rejected update writes nothing. Rejects with
+   * `RunNotFoundError`, `RunNotOpenError`, `RunHistoryCompactedError`,
+   * `WorkflowNotLoadedError`, `UnknownUpdateError` or `UpdateRejectedError`.
+   */
+  updateRun(
+    runId: string,
+    updateName: string,
+    argument?: unknown,
+    options?: UpdateCallOptions,
+  ): Promise<UpdateOutcome>;
 }
 
 /**
@@ -93,6 +117,7 @@ export interface RunInteractionsOptions {
   readonly clock: ClockSource;
   readonly random: RandomSource;
   readonly codec?: Codec;
+  readonly updateWait?: UpdateWaitOptions;
 }
 
 interface RunRow {
@@ -179,7 +204,7 @@ export function createRunInteractions(
       }
       const definition = options.workflows.get(started.workflowType);
       if (definition === undefined) {
-        throw new Error(`no workflow registered for type "${started.workflowType}"`);
+        throw new WorkflowNotLoadedError(started.workflowType);
       }
       return runQuery(
         definition.handler,
@@ -188,6 +213,43 @@ export function createRunInteractions(
         { clock: options.clock, random: options.random },
         queryName,
         argument,
+      );
+    },
+
+    async updateRun(
+      runId: string,
+      updateName: string,
+      argument: unknown = null,
+      callOptions: UpdateCallOptions = {},
+    ): Promise<UpdateOutcome> {
+      const client = await pool.connect();
+      let broken = false;
+      let receipt;
+      try {
+        await client.query("begin");
+        receipt = await acceptUpdateOnClient(
+          client,
+          codec,
+          { workflows: options.workflows, clock: options.clock },
+          runId,
+          updateName,
+          argument,
+          ...(callOptions.updateId === undefined ? [] : [callOptions.updateId]),
+        );
+        await client.query("commit");
+      } catch (error) {
+        broken = !(await rollbackQuietly(client));
+        throw error;
+      } finally {
+        client.release(broken);
+      }
+      return awaitUpdateOutcome(
+        pool,
+        codec,
+        runId,
+        receipt,
+        updateWaitMs(callOptions.waitMs),
+        options.updateWait,
       );
     },
   };

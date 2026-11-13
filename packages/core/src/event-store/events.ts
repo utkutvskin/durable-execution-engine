@@ -249,6 +249,30 @@ export const timeRecordedEventSchema = z.object({
 });
 
 /**
+ * An update named `updateName` passed its validator and was accepted into
+ * the run with `argument`. Replay hands it to the update handler at exactly
+ * this position in the history. `updateId` names it to the caller waiting
+ * for its result.
+ */
+export const updateAcceptedEventSchema = z.object({
+  type: z.literal("update_accepted"),
+  updateId: z.string().min(1),
+  updateName: z.string().min(1),
+  argument: z.unknown(),
+});
+
+/**
+ * The handler of the accepted update `updateId` finished: with `result`, or
+ * with `error` when it threw.
+ */
+export const updateCompletedEventSchema = z.object({
+  type: z.literal("update_completed"),
+  updateId: z.string().min(1),
+  result: z.unknown(),
+  error: recordedErrorSchema.optional(),
+});
+
+/**
  * Every event kind that can be appended to a run's event log, discriminated
  * on `type`. This is the closed set `EventStore.append` validates against:
  * a payload that does not match one of these shapes is rejected before it
@@ -276,6 +300,8 @@ export const workflowEventSchema = z.discriminatedUnion("type", [
   patchRecordedEventSchema,
   timeRecordedEventSchema,
   compensationFailedEventSchema,
+  updateAcceptedEventSchema,
+  updateCompletedEventSchema,
 ]);
 
 /**
