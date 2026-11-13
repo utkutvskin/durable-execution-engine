@@ -46,6 +46,8 @@ function historyClient(history: readonly HistoryItem[]): RunClient {
   return {
     start: unused,
     signal: unused,
+    update: unused,
+    query: unused,
     cancel: unused,
     describe: unused,
     listRuns: unused,

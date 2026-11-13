@@ -48,6 +48,25 @@ function fakeClient(calls: string[]): RunClient {
       calls.push(`cancel ${runId} ${String(reason)}`);
       return Promise.resolve();
     },
+    update: (runId, name, argument, options) => {
+      calls.push(`update ${runId} ${name} ${JSON.stringify(argument)} ${JSON.stringify(options)}`);
+      return Promise.resolve(
+        name === "refuse"
+          ? {
+              status: "failed",
+              updateId: "u-1",
+              sequenceNumber: 3,
+              error: { name: "Error", message: "no" },
+            }
+          : name === "slow"
+            ? { status: "accepted", updateId: "u-2", sequenceNumber: 3 }
+            : { status: "completed", updateId: "u-3", sequenceNumber: 3, result: { total: 2 } },
+      );
+    },
+    query: (runId, name, argument) => {
+      calls.push(`query ${runId} ${name} ${JSON.stringify(argument)}`);
+      return Promise.resolve(["apple"]);
+    },
     describe: () => Promise.resolve(snapshot),
     history: () =>
       Promise.resolve([
@@ -124,6 +143,76 @@ describe("wf command line", () => {
       `signal ${snapshot.runId} approval {"approved":true}`,
       `cancel ${snapshot.runId} changed mind`,
     ]);
+  });
+
+  it("sends an update and prints its result, exiting 1 when it failed or did not finish", async () => {
+    const calls: string[] = [];
+    const hooks = { client: fakeClient(calls) };
+    const completed = captureIo();
+    expect(
+      await main(
+        [
+          "run",
+          "update",
+          snapshot.runId,
+          "add",
+          "--argument",
+          '"apple"',
+          "--update-id",
+          "add-1",
+          "--wait-ms",
+          "500",
+        ],
+        completed.io,
+        hooks,
+      ),
+    ).toBe(0);
+    expect(completed.out).toEqual(['{"total":2}']);
+
+    const failed = captureIo();
+    expect(await main(["run", "update", snapshot.runId, "refuse"], failed.io, hooks)).toBe(1);
+    expect(failed.err).toEqual(["update u-1 failed: Error: no"]);
+
+    const pending = captureIo();
+    expect(await main(["run", "update", snapshot.runId, "slow", "--json"], pending.io, hooks)).toBe(
+      1,
+    );
+    expect(JSON.parse(pending.out[0] ?? "")).toEqual({
+      status: "accepted",
+      updateId: "u-2",
+      sequenceNumber: 3,
+    });
+    expect(calls).toEqual([
+      `update ${snapshot.runId} add "apple" {"updateId":"add-1","waitMs":500}`,
+      `update ${snapshot.runId} refuse undefined {}`,
+      `update ${snapshot.runId} slow undefined {}`,
+    ]);
+  });
+
+  it("refuses a malformed update wait and a malformed query argument with exit code 2", async () => {
+    const hooks = { client: fakeClient([]) };
+    const wait = captureIo();
+    expect(
+      await main(["run", "update", snapshot.runId, "add", "--wait-ms", "soon"], wait.io, hooks),
+    ).toBe(2);
+    expect(wait.err.join("\n")).toContain("--wait-ms must be a whole number");
+    const query = captureIo();
+    expect(
+      await main(["run", "query", snapshot.runId, "items", "--argument", "{"], query.io, hooks),
+    ).toBe(2);
+    expect(query.err.join("\n")).toContain("--argument is not valid json");
+  });
+
+  it("answers a query and prints the result as json", async () => {
+    const calls: string[] = [];
+    const { io, out } = captureIo();
+    expect(
+      await main(["run", "query", snapshot.runId, "items", "--argument", "3"], io, {
+        client: fakeClient(calls),
+      }),
+    ).toBe(0);
+    expect(out).toEqual(['["apple"]']);
+    expect(calls).toEqual([`query ${snapshot.runId} items 3`]);
   });
 
   it("describes a run with its history and lists runs with a paging hint", async () => {

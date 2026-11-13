@@ -53,6 +53,27 @@ export interface WaitOptions {
 }
 
 /**
+ * Options of `RunClient.update`: `updateId` makes a retry safe, `waitMs`
+ * bounds how long the api waits for the handler.
+ */
+export interface UpdateCallOptions {
+  readonly updateId?: string;
+  readonly waitMs?: number;
+}
+
+/**
+ * What the api reports for an update: `completed` with its result, `failed`
+ * with what the handler threw, or `accepted` when the wait ended first.
+ */
+export interface UpdateAnswer {
+  readonly status: "completed" | "failed" | "accepted";
+  readonly updateId: string;
+  readonly sequenceNumber: number;
+  readonly result?: unknown;
+  readonly error?: { readonly name: string; readonly message: string };
+}
+
+/**
  * The largest page `RunClient.listRuns` can ask the api for.
  */
 export const MAX_LIST_LIMIT = 200;
@@ -65,6 +86,15 @@ export interface RunClient {
   /** Starts a run and resolves with its id. A repeated `idempotencyKey` returns the first run. */
   start(workflowType: string, input?: unknown, idempotencyKey?: string): Promise<string>;
   signal(runId: string, name: string, payload?: unknown): Promise<void>;
+  /** Sends the update `name` and resolves with the api's answer. */
+  update(
+    runId: string,
+    name: string,
+    argument?: unknown,
+    options?: UpdateCallOptions,
+  ): Promise<UpdateAnswer>;
+  /** Answers the query `name` from the run's current state. */
+  query(runId: string, name: string, argument?: unknown): Promise<unknown>;
   cancel(runId: string, reason?: string): Promise<void>;
   describe(runId: string): Promise<RunSnapshot>;
   history(runId: string): Promise<readonly HistoryItem[]>;
@@ -191,6 +221,26 @@ export function createApiClient(options: ApiClientOptions): RunClient {
         name,
         ...(payload === undefined ? {} : { payload }),
       });
+    },
+    async update(runId, name, argument, updateOptions = {}) {
+      return (await call(
+        "POST",
+        `/v1/runs/${encodeURIComponent(runId)}/updates/${encodeURIComponent(name)}`,
+        {
+          ...(argument === undefined ? {} : { argument }),
+          ...(updateOptions.updateId === undefined ? {} : { updateId: updateOptions.updateId }),
+          ...(updateOptions.waitMs === undefined ? {} : { waitMs: updateOptions.waitMs }),
+        },
+      )) as UpdateAnswer;
+    },
+    async query(runId, name, argument) {
+      const search =
+        argument === undefined ? "" : `?argument=${encodeURIComponent(JSON.stringify(argument))}`;
+      const answer = (await call(
+        "GET",
+        `/v1/runs/${encodeURIComponent(runId)}/queries/${encodeURIComponent(name)}${search}`,
+      )) as { result: unknown };
+      return answer.result;
     },
     async cancel(runId, reason) {
       await call(

@@ -192,7 +192,7 @@ export type ExampleName = (typeof EXAMPLE_NAMES)[number];
 export function findComposeDirectory(start: string): string | undefined;
 
 // @public
-export const HELP_TEXT = "usage: wf <command> [options]\n\ncommands:\n  dev                     start postgres, api, web ui and a worker in one process\n  serve                   run the api and the web ui without a worker (production)\n  worker                  run workflows and steps from modules against the database\n  migrate [up|down]       apply pending migrations or revert the last ones (down asks first, --yes skips)\n  run start <type>        start a run (--input json, --idempotency-key k, --wait)\n  run signal <id> <name>  send a signal (--payload json)\n  run cancel <id>         request cancellation (--reason text)\n  run describe <id>       show a run (--history for its events)\n  run list                list runs (--status s, --type t, --limit n)\n  history export <id>     print the run's whole history as a history export (--out file)\n  replay <file...>        replay history exports against --module code, exit 1 on non-determinism\n  example <name|all>      run a bundled example end to end (payment-saga, etl-pipeline)\n  help                    show this text\n\nserve and worker options (each also reads WF_<NAME>, for example WF_POOL_SIZE):\n  --pool-size n           database connections (default: the pg default of 10)\n  --log-level l           debug, info, warn or error (default: info)\n  --log-format f          json or text (default: json)\n  --otlp-endpoint url     export traces to this OTLP HTTP endpoint\n  --sampling-ratio r      share of new traces recorded, 0 to 1 (default: 1)\n  --migrate               apply pending migrations first (default: refuse when behind)\nserve only:\n  --port n --host h       listen address (default: 8080 on 0.0.0.0)\n  --namespace name        namespace of the api key (default: default); WF_API_KEY sets the key\n  --max-concurrent-runs n --max-pending-tasks n --rate-per-second n --burst n\n                          limits of the namespace\n  --max-queue-depth n     answer 503 to writes while the queue holds this many tasks\n  --metrics-token t       require this bearer token on /metrics\n  --metrics-cache-ms n    serve one rendered scrape for this long\nworker only:\n  --queue name --concurrency n\n  --health-port n         serve /health, /ready and /metrics on this port\n  --health-host h         address for the health port (default: 0.0.0.0)\n  --compact-interval s    compact closed runs every s seconds\n  --compact-retention s   age of a closed run before compaction (default: 604800)\n  --compact-tail-events n events kept per compacted run (default: 20)\n\ncommon options:\n  --database-url url      postgres connection string (default: DATABASE_URL)\n  --api-url url           api address for run commands (default: WF_API_URL or .wf/dev.json)\n  --api-key key           api key for run commands (default: WF_API_KEY or .wf/dev.json)\n  --module file           workflow module exporting workflows and steps (repeatable)\n  --example name          bundled example to load (repeatable)\n  --json                  print machine readable output where supported";
+export const HELP_TEXT = "usage: wf <command> [options]\n\ncommands:\n  dev                     start postgres, api, web ui and a worker in one process\n  serve                   run the api and the web ui without a worker (production)\n  worker                  run workflows and steps from modules against the database\n  migrate [up|down]       apply pending migrations or revert the last ones (down asks first, --yes skips)\n  run start <type>        start a run (--input json, --idempotency-key k, --wait)\n  run signal <id> <name>  send a signal (--payload json)\n  run update <id> <name>  send an update and print its result (--argument json, --update-id id, --wait-ms n)\n  run query <id> <name>   answer a query from the run's current state (--argument json)\n  run cancel <id>         request cancellation (--reason text)\n  run describe <id>       show a run (--history for its events)\n  run list                list runs (--status s, --type t, --limit n)\n  history export <id>     print the run's whole history as a history export (--out file)\n  replay <file...>        replay history exports against --module code, exit 1 on non-determinism\n  example <name|all>      run a bundled example end to end (payment-saga, etl-pipeline)\n  help                    show this text\n\nserve and worker options (each also reads WF_<NAME>, for example WF_POOL_SIZE):\n  --pool-size n           database connections (default: the pg default of 10)\n  --log-level l           debug, info, warn or error (default: info)\n  --log-format f          json or text (default: json)\n  --otlp-endpoint url     export traces to this OTLP HTTP endpoint\n  --sampling-ratio r      share of new traces recorded, 0 to 1 (default: 1)\n  --migrate               apply pending migrations first (default: refuse when behind)\nserve only:\n  --port n --host h       listen address (default: 8080 on 0.0.0.0)\n  --namespace name        namespace of the api key (default: default); WF_API_KEY sets the key\n  --max-concurrent-runs n --max-pending-tasks n --rate-per-second n --burst n\n                          limits of the namespace\n  --max-queue-depth n     answer 503 to writes while the queue holds this many tasks\n  --metrics-token t       require this bearer token on /metrics\n  --metrics-cache-ms n    serve one rendered scrape for this long\nworker only:\n  --queue name --concurrency n\n  --health-port n         serve /health, /ready and /metrics on this port\n  --health-host h         address for the health port (default: 0.0.0.0)\n  --compact-interval s    compact closed runs every s seconds\n  --compact-retention s   age of a closed run before compaction (default: 604800)\n  --compact-tail-events n events kept per compacted run (default: 20)\n\ncommon options:\n  --database-url url      postgres connection string (default: DATABASE_URL)\n  --api-url url           api address for run commands (default: WF_API_URL or .wf/dev.json)\n  --api-key key           api key for run commands (default: WF_API_KEY or .wf/dev.json)\n  --module file           workflow module exporting workflows and steps (repeatable)\n  --example name          bundled example to load (repeatable)\n  --json                  print machine readable output where supported";
 
 // @public
 export interface HistoryItem {
@@ -262,9 +262,13 @@ export interface RunClient {
     history(runId: string): Promise<readonly HistoryItem[]>;
     // (undocumented)
     listRuns(filter?: ListFilter): Promise<RunListPage>;
+    query(runId: string, name: string, argument?: unknown): Promise<unknown>;
     // (undocumented)
     signal(runId: string, name: string, payload?: unknown): Promise<void>;
     start(workflowType: string, input?: unknown, idempotencyKey?: string): Promise<string>;
+    // Warning: (ae-forgotten-export) The symbol "UpdateCallOptions" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "UpdateAnswer" needs to be exported by the entry point index.d.ts
+    update(runId: string, name: string, argument?: unknown, options?: UpdateCallOptions): Promise<UpdateAnswer>;
     waitForClose(runId: string, options?: WaitOptions): Promise<RunSnapshot>;
 }
 
@@ -393,16 +397,16 @@ export function writeDevState(cwd: string, state: DevState): Promise<void>;
 // dist/run-client.d.ts:41:5 - (ae-undocumented) Missing documentation for "event".
 // dist/run-client.d.ts:50:5 - (ae-undocumented) Missing documentation for "timeoutMs".
 // dist/run-client.d.ts:51:5 - (ae-undocumented) Missing documentation for "pollMs".
-// dist/run-client.d.ts:64:5 - (ae-undocumented) Missing documentation for "signal".
-// dist/run-client.d.ts:65:5 - (ae-undocumented) Missing documentation for "cancel".
-// dist/run-client.d.ts:66:5 - (ae-undocumented) Missing documentation for "describe".
-// dist/run-client.d.ts:67:5 - (ae-undocumented) Missing documentation for "history".
-// dist/run-client.d.ts:68:5 - (ae-undocumented) Missing documentation for "listRuns".
-// dist/run-client.d.ts:81:5 - (ae-undocumented) Missing documentation for "baseUrl".
-// dist/run-client.d.ts:82:5 - (ae-undocumented) Missing documentation for "apiKey".
-// dist/run-client.d.ts:83:5 - (ae-undocumented) Missing documentation for "fetch".
-// dist/run-client.d.ts:84:5 - (ae-undocumented) Missing documentation for "now".
-// dist/run-client.d.ts:85:5 - (ae-undocumented) Missing documentation for "sleep".
+// dist/run-client.d.ts:86:5 - (ae-undocumented) Missing documentation for "signal".
+// dist/run-client.d.ts:91:5 - (ae-undocumented) Missing documentation for "cancel".
+// dist/run-client.d.ts:92:5 - (ae-undocumented) Missing documentation for "describe".
+// dist/run-client.d.ts:93:5 - (ae-undocumented) Missing documentation for "history".
+// dist/run-client.d.ts:94:5 - (ae-undocumented) Missing documentation for "listRuns".
+// dist/run-client.d.ts:107:5 - (ae-undocumented) Missing documentation for "baseUrl".
+// dist/run-client.d.ts:108:5 - (ae-undocumented) Missing documentation for "apiKey".
+// dist/run-client.d.ts:109:5 - (ae-undocumented) Missing documentation for "fetch".
+// dist/run-client.d.ts:110:5 - (ae-undocumented) Missing documentation for "now".
+// dist/run-client.d.ts:111:5 - (ae-undocumented) Missing documentation for "sleep".
 
 // (No @packageDocumentation comment for this package)
 

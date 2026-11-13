@@ -77,6 +77,46 @@ function pad(text: string, width: number): string {
   return text.length >= width ? text : text + " ".repeat(width - text.length);
 }
 
+function waitMsFlag(parsed: ParsedCommand): number | undefined {
+  const text = stringFlag(parsed, "wait-ms");
+  if (text === undefined) {
+    return undefined;
+  }
+  const value = Number(text);
+  if (!/^\d+$/.test(text) || value > 60_000) {
+    throw new CliError("--wait-ms must be a whole number of milliseconds up to 60000", 2);
+  }
+  return value;
+}
+
+async function updateRun(parsed: ParsedCommand, io: CliIo, client: RunClient): Promise<number> {
+  const runId = requirePositional(parsed, 1, "run id");
+  const name = requirePositional(parsed, 2, "update name");
+  const updateId = stringFlag(parsed, "update-id");
+  const waitMs = waitMsFlag(parsed);
+  const answer = await client.update(
+    runId,
+    name,
+    parseJsonFlag(stringFlag(parsed, "argument"), "argument"),
+    {
+      ...(updateId === undefined ? {} : { updateId }),
+      ...(waitMs === undefined ? {} : { waitMs }),
+    },
+  );
+  if (booleanFlag(parsed, "json")) {
+    io.stdout(JSON.stringify(answer));
+  } else if (answer.status === "completed") {
+    io.stdout(JSON.stringify(answer.result ?? null));
+  } else if (answer.status === "failed") {
+    io.stderr(
+      `update ${answer.updateId} failed: ${answer.error?.name ?? "Error"}: ${answer.error?.message ?? ""}`,
+    );
+  } else {
+    io.stderr(`update ${answer.updateId} was accepted but has not finished yet`);
+  }
+  return answer.status === "completed" ? 0 : 1;
+}
+
 async function startRun(parsed: ParsedCommand, io: CliIo, client: RunClient): Promise<number> {
   const workflowType = requirePositional(parsed, 1, "workflow type");
   const input = parseJsonFlag(stringFlag(parsed, "input"), "input");
@@ -136,7 +176,8 @@ async function listRuns(parsed: ParsedCommand, io: CliIo, client: RunClient): Pr
 }
 
 /**
- * `wf run start|signal|cancel|describe|list`: drives runs through the api.
+ * `wf run start|signal|update|query|cancel|describe|list`: drives runs
+ * through the api.
  * The api address and key come from `--api-url` and `--api-key`, the
  * environment (`WF_API_URL`, `WF_API_KEY`) or the state `wf dev` left in
  * the current directory.
@@ -150,6 +191,9 @@ export async function runCommand(
     ...CLIENT_OPTIONS,
     input: { type: "string" },
     payload: { type: "string" },
+    argument: { type: "string" },
+    "update-id": { type: "string" },
+    "wait-ms": { type: "string" },
     reason: { type: "string" },
     status: { type: "string" },
     type: { type: "string" },
@@ -161,7 +205,10 @@ export async function runCommand(
   });
   const action = parsed.positionals[0];
   if (action === undefined) {
-    throw new CliError("missing run action: start, signal, cancel, describe or list", 2);
+    throw new CliError(
+      "missing run action: start, signal, update, query, cancel, describe or list",
+      2,
+    );
   }
   const client = await clientFor(parsed, io, hooks);
   switch (action) {
@@ -172,6 +219,19 @@ export async function runCommand(
       const name = requirePositional(parsed, 2, "signal name");
       await client.signal(runId, name, parseJsonFlag(stringFlag(parsed, "payload"), "payload"));
       io.stdout(`signalled ${runId} with ${name}`);
+      return 0;
+    }
+    case "update":
+      return updateRun(parsed, io, client);
+    case "query": {
+      const runId = requirePositional(parsed, 1, "run id");
+      const name = requirePositional(parsed, 2, "query name");
+      const result = await client.query(
+        runId,
+        name,
+        parseJsonFlag(stringFlag(parsed, "argument"), "argument"),
+      );
+      io.stdout(JSON.stringify(result ?? null));
       return 0;
     }
     case "cancel": {
@@ -199,7 +259,7 @@ export async function runCommand(
       return listRuns(parsed, io, client);
     default:
       throw new CliError(
-        `unknown run action "${action}": use start, signal, cancel, describe or list`,
+        `unknown run action "${action}": use start, signal, update, query, cancel, describe or list`,
         2,
       );
   }

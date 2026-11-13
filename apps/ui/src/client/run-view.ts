@@ -24,8 +24,8 @@ function viewer(testId: string, title: string, value: unknown): HTMLElement {
 
 /**
  * Mounts the detail of one run: status, input, output and error viewers, the
- * event timeline kept live by the run stream, a signal form and the cancel
- * button. Returns a function that closes the stream.
+ * event timeline kept live by the run stream, a signal form, a form that
+ * sends an update or answers a query, and the cancel button. Returns a function that closes the stream.
  */
 export function mountRunView(
   container: HTMLElement,
@@ -60,6 +60,25 @@ export function mountRunView(
     "cancel run",
   );
   const signalButton = h("button", { testId: "signal-send", type: "submit" }, "send signal");
+  const interactionName = h("input", {
+    testId: "interaction-name",
+    type: "text",
+    name: "interaction",
+    placeholder: "update or query name",
+  });
+  const interactionArgument = h("textarea", {
+    testId: "interaction-argument",
+    name: "argument",
+    rows: 2,
+    placeholder: "argument (json, optional)",
+  });
+  const updateButton = h("button", { testId: "update-send", type: "submit" }, "send update");
+  const queryButton = h(
+    "button",
+    { testId: "query-send", type: "button", onClick: () => void runQuery() },
+    "run query",
+  );
+  const interactionResult = h("pre", { testId: "interaction-result" });
 
   function renderHeader(): void {
     if (description === undefined) {
@@ -87,6 +106,7 @@ export function mountRunView(
     );
     cancelButton.disabled = !open;
     signalButton.disabled = !open;
+    updateButton.disabled = !open;
   }
 
   function renderItem(item: TimelineItem): HTMLElement {
@@ -165,6 +185,68 @@ export function mountRunView(
     }
   }
 
+  function readInteraction(): { name: string; argument: unknown } | undefined {
+    const name = interactionName.value.trim();
+    if (name === "") {
+      message.textContent = "an update or a query needs a name";
+      return undefined;
+    }
+    if (interactionArgument.value.trim() === "") {
+      return { name, argument: undefined };
+    }
+    try {
+      return { name, argument: JSON.parse(interactionArgument.value) as unknown };
+    } catch {
+      message.textContent = "the argument is not valid json";
+      return undefined;
+    }
+  }
+
+  async function sendUpdate(event: SubmitEvent): Promise<void> {
+    event.preventDefault();
+    const interaction = readInteraction();
+    if (interaction === undefined) {
+      return;
+    }
+    interactionResult.textContent = "";
+    message.textContent = `update ${interaction.name} sent, waiting for its result`;
+    try {
+      const answer = await api.updateRun(runId, interaction.name, interaction.argument);
+      if (answer.status === "completed") {
+        interactionResult.textContent = formatJson(answer.result ?? null);
+        message.textContent = `update ${interaction.name} completed`;
+      } else if (answer.status === "failed") {
+        message.textContent = `update ${interaction.name} failed: ${answer.error?.message ?? ""}`;
+      } else {
+        message.textContent = `update ${interaction.name} was accepted but has not finished yet`;
+      }
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 400) {
+        message.textContent = error.message;
+        return;
+      }
+      onError(error);
+    }
+  }
+
+  async function runQuery(): Promise<void> {
+    const interaction = readInteraction();
+    if (interaction === undefined) {
+      return;
+    }
+    try {
+      const result = await api.queryRun(runId, interaction.name, interaction.argument);
+      interactionResult.textContent = formatJson(result ?? null);
+      message.textContent = `query ${interaction.name} answered`;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 400) {
+        message.textContent = error.message;
+        return;
+      }
+      onError(error);
+    }
+  }
+
   async function follow(): Promise<void> {
     let after = 0;
     while (!isAborted(abort.signal)) {
@@ -218,6 +300,15 @@ export function mountRunView(
         signalPayload,
         signalButton,
       ),
+      h(
+        "form",
+        { testId: "interaction-form", onSubmit: (event) => void sendUpdate(event) },
+        interactionName,
+        interactionArgument,
+        updateButton,
+        queryButton,
+      ),
+      interactionResult,
       cancelButton,
       message,
     ),

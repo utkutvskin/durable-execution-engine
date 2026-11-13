@@ -1,6 +1,7 @@
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
+  createWorkflowRegistry,
   migrateUp,
   silentLogger,
   type ClockSource,
@@ -92,8 +93,13 @@ export async function startDevEnvironment(options: DevEnvironmentOptions): Promi
     ...(options.pollIntervalMs === undefined ? {} : { pollIntervalMs: options.pollIntervalMs }),
     ...(options.onError === undefined ? {} : { onError: options.onError }),
   });
+  const workflows = createWorkflowRegistry();
+  for (const workflow of options.module.workflows) {
+    workflows.register(workflow);
+  }
   const api = createApiServer(options.pool, {
     queueName,
+    workflows,
     sideHandler: createUiHandler(),
     logger: options.logger ?? silentLogger,
   });

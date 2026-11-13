@@ -104,6 +104,19 @@ const PRESENTATIONS: Readonly<Record<string, Presentation>> = {
   },
   patch_recorded: { label: "patch recorded", tone: "neutral", summary: (e) => text(e["patchId"]) },
   time_recorded: { label: "time recorded", tone: "neutral", summary: (e) => text(e["time"]) },
+  update_accepted: {
+    label: "update accepted",
+    tone: "neutral",
+    summary: (e) => `${text(e["updateName"])} (${text(e["updateId"])})`,
+  },
+  update_completed: {
+    label: "update completed",
+    tone: "good",
+    summary: (e) =>
+      e["error"] === undefined
+        ? text(e["updateId"])
+        : `${text(e["updateId"])}: ${errorText(e["error"])}`,
+  },
 };
 
 /**

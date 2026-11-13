@@ -25,6 +25,8 @@ commands:
   migrate [up|down]       apply pending migrations or revert the last ones (down asks first, --yes skips)
   run start <type>        start a run (--input json, --idempotency-key k, --wait)
   run signal <id> <name>  send a signal (--payload json)
+  run update <id> <name>  send an update and print its result (--argument json, --update-id id, --wait-ms n)
+  run query <id> <name>   answer a query from the run's current state (--argument json)
   run cancel <id>         request cancellation (--reason text)
   run describe <id>       show a run (--history for its events)
   run list                list runs (--status s, --type t, --limit n)

@@ -11,7 +11,9 @@ import {
   createResultRecorder,
   createStepTaskProcessor,
   createTaskQueue,
+  createWorkflowRegistry,
   defineStep,
+  defineUpdate,
   defineWorkflow,
   runDecisionLoop,
   silentLogger,
@@ -38,12 +40,29 @@ if (BROWSER.mode === "skip") {
 }
 
 const approval = defineWorkflow("approval", async (ctx, input: { item: string }) => {
+  const notes: string[] = [];
+  ctx.setQueryHandler("notes", () => [...notes]);
+  ctx.setUpdateHandler(
+    defineUpdate<string, number>("note", {
+      validate: (note) => {
+        if (typeof note !== "string" || note.length === 0) {
+          throw new Error("a note must be a non-empty string");
+        }
+      },
+      handler: (note) => {
+        notes.push(note);
+        return notes.length;
+      },
+    }),
+  );
   const reserved = await ctx.step<string>("reserve", input);
   const decision = await ctx.waitForSignal<{ approved: boolean }>("decision");
   return decision.approved
     ? ctx.step<string>("ship", { reserved })
     : ctx.step<string>("release", { reserved });
 });
+
+const DISPLAY_ONLY_TYPES = ["unregistered", "paged", "odd-one"];
 
 describe.skipIf(BROWSER.mode === "skip")("run explorer in a browser", () => {
   let database: IsolatedSchema;
@@ -185,8 +204,14 @@ describe.skipIf(BROWSER.mode === "skip")("run explorer in a browser", () => {
       clock: systemClock,
     });
     serverPool = createPool(process.env, { schema: database.schema, idleTimeoutMillis: 0 });
+    const workflows = createWorkflowRegistry();
+    workflows.register(approval);
+    for (const displayOnly of DISPLAY_ONLY_TYPES) {
+      workflows.register(defineWorkflow(displayOnly, (ctx) => ctx.waitForSignal("never")));
+    }
     api = createApiServer(serverPool, {
       queueName: "default",
+      workflows,
       streamPollMs: 20,
       sideHandler: createUiHandler(),
       logger: silentLogger,
@@ -256,6 +281,39 @@ describe.skipIf(BROWSER.mode === "skip")("run explorer in a browser", () => {
     const scheduled = await timelineItem("step_scheduled").allTextContents();
     expect(scheduled.some((text) => text.includes("ship"))).toBe(true);
     expect(scheduled.some((text) => text.includes("release"))).toBe(false);
+  }, 30_000);
+
+  it("sends an update and runs a query from the ui", async () => {
+    const runId = await startRun("approval", { item: "mirror" });
+    await signIn();
+    await openRun(runId);
+    await pump();
+    await timelineItem("step_completed").first().waitFor();
+
+    await page.getByTestId("interaction-name").fill("note");
+    await page.getByTestId("interaction-argument").fill('""');
+    await page.getByTestId("update-send").click();
+    await expect
+      .poll(() => page.getByTestId("action-message").textContent())
+      .toContain("a note must be a non-empty string");
+    expect(await timelineItem("update_accepted").count()).toBe(0);
+
+    await page.getByTestId("interaction-argument").fill('"fragile"');
+    await page.getByTestId("update-send").click();
+    await expect
+      .poll(async () => {
+        await pump();
+        return page.getByTestId("interaction-result").textContent();
+      })
+      .toBe("1");
+    await timelineItem("update_completed").first().waitFor();
+
+    await page.getByTestId("interaction-name").fill("notes");
+    await page.getByTestId("interaction-argument").fill("");
+    await page.getByTestId("query-send").click();
+    await expect
+      .poll(() => page.getByTestId("interaction-result").textContent())
+      .toBe('[\n  "fragile"\n]');
   }, 30_000);
 
   it("takes the other branch when the signal says no", async () => {

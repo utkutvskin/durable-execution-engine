@@ -67,6 +67,33 @@ describe("buildTimeline", () => {
     });
   });
 
+  it("labels accepted and completed updates and marks a failed one with its error", () => {
+    const items = buildTimeline([
+      entry(1, "2026-03-01T10:00:00.000Z", {
+        type: "update_accepted",
+        updateId: "u-1",
+        updateName: "add",
+        argument: "apple",
+      }),
+      entry(2, "2026-03-01T10:00:00.100Z", {
+        type: "update_completed",
+        updateId: "u-1",
+        result: 1,
+      }),
+      entry(3, "2026-03-01T10:00:00.200Z", {
+        type: "update_completed",
+        updateId: "u-2",
+        result: null,
+        error: { name: "Error", message: "no room" },
+      }),
+    ]);
+    expect(items.map((item) => [item.label, item.summary, item.tone])).toEqual([
+      ["update accepted", "add (u-1)", "neutral"],
+      ["update completed", "u-1", "good"],
+      ["update completed", "u-2: Error: no room", "good"],
+    ]);
+  });
+
   it("falls back to the type name for an event it does not know", () => {
     const [item] = buildTimeline([
       entry(1, "2026-03-01T10:00:00.000Z", { type: "future_event_kind" }),

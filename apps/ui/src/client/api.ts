@@ -60,6 +60,18 @@ export interface DeadLetter {
 }
 
 /**
+ * What the api reports for an update: `completed` with its result, `failed`
+ * with what the handler threw, or `accepted` when the wait ended first.
+ */
+export interface UpdateAnswer {
+  readonly status: "completed" | "failed" | "accepted";
+  readonly updateId: string;
+  readonly sequenceNumber: number;
+  readonly result?: unknown;
+  readonly error?: { readonly name: string; readonly message: string };
+}
+
+/**
  * What the run stream delivers: new events and the run status after them.
  */
 export interface StreamSlice {
@@ -78,6 +90,10 @@ export interface ApiClient {
   describeRun(runId: string): Promise<RunDescription>;
   signalRun(runId: string, name: string, payload: unknown): Promise<void>;
   cancelRun(runId: string, reason: string): Promise<void>;
+  /** Sends the update `name` and resolves with the api's answer. */
+  updateRun(runId: string, name: string, argument: unknown): Promise<UpdateAnswer>;
+  /** Answers the query `name` from the run's current state. */
+  queryRun(runId: string, name: string, argument: unknown): Promise<unknown>;
   listDeadLetters(): Promise<readonly DeadLetter[]>;
   requeueDeadLetter(id: string): Promise<void>;
   /**
@@ -139,6 +155,21 @@ export function createApiClient(apiKey: string, fetchFn: typeof fetch, baseUrl =
         name,
         ...(payload === undefined ? {} : { payload }),
       });
+    },
+    updateRun: (runId, name, argument) =>
+      request(
+        "POST",
+        `/v1/runs/${encodeURIComponent(runId)}/updates/${encodeURIComponent(name)}`,
+        argument === undefined ? {} : { argument },
+      ),
+    async queryRun(runId, name, argument) {
+      const search =
+        argument === undefined ? "" : `?argument=${encodeURIComponent(JSON.stringify(argument))}`;
+      const answer = await request<{ result: unknown }>(
+        "GET",
+        `/v1/runs/${encodeURIComponent(runId)}/queries/${encodeURIComponent(name)}${search}`,
+      );
+      return answer.result;
     },
     async cancelRun(runId, reason) {
       await request("POST", `/v1/runs/${encodeURIComponent(runId)}/cancel`, {

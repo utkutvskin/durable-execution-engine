@@ -63,6 +63,29 @@ function clientOver(
 }
 
 describe("api run client", () => {
+  it("sends updates and queries with encoded names and a json query argument", async () => {
+    const bodies: unknown[] = [];
+    const { client, urls } = clientOver((url, init) => {
+      if (typeof init?.body === "string") {
+        bodies.push(JSON.parse(init.body));
+      }
+      return url.includes("/queries/")
+        ? json(200, { result: { items: 2 } })
+        : json(200, { status: "completed", updateId: "u-1", sequenceNumber: 4, result: 7 });
+    });
+
+    const answer = await client.update(RUN_ID, "add item", { sku: "a" }, { updateId: "u-1" });
+    const result = await client.query(RUN_ID, "items/count", { since: 1 });
+
+    expect(answer.result).toBe(7);
+    expect(result).toEqual({ items: 2 });
+    expect(urls).toEqual([
+      `http://api.test/v1/runs/${RUN_ID}/updates/add%20item`,
+      `http://api.test/v1/runs/${RUN_ID}/queries/items%2Fcount?argument=${encodeURIComponent('{"since":1}')}`,
+    ]);
+    expect(bodies).toEqual([{ argument: { sku: "a" }, updateId: "u-1" }]);
+  });
+
   it("encodes a run id in every url it builds", async () => {
     const hostile = "a/b?c=d#e f";
     const { client, urls } = clientOver((url) =>

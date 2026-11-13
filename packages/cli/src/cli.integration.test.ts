@@ -156,6 +156,73 @@ describe("wf against a real database", () => {
       expect(dev.out.at(-1)).toBe("stopping");
     });
 
+    it("drives a run with wf run update and wf run query and replays its history", async () => {
+      const env = { DATABASE_URL: urlForSchema(database.schema) };
+      const cartModule = path.join(import.meta.dirname, "fixtures", "cart-module.ts");
+      const dev = captureIo(directory, env);
+      let stop: () => void = () => undefined;
+      const stopped = new Promise<void>((resolve) => {
+        stop = resolve;
+      });
+      const running = main(["dev", "--port", "0", "--module", cartModule], dev.io, {
+        shutdown: () => stopped,
+      });
+      let state = await readDevState(directory);
+      for (let attempt = 0; attempt < 400 && state === undefined; attempt += 1) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 25));
+        state = await readDevState(directory);
+      }
+      expect(state).toBeDefined();
+
+      const started = captureIo(directory);
+      expect(await main(["run", "start", "cart"], started.io)).toBe(0);
+      const runId = started.out[0] ?? "";
+
+      const first = captureIo(directory);
+      expect(await main(["run", "update", runId, "add", "--argument", '"apple"'], first.io)).toBe(
+        0,
+      );
+      expect(first.out).toEqual(["500"]);
+      const second = captureIo(directory);
+      expect(await main(["run", "update", runId, "add", "--argument", '"fig"'], second.io)).toBe(0);
+      expect(second.out).toEqual(["800"]);
+
+      const rejected = captureIo(directory);
+      expect(await main(["run", "update", runId, "add", "--argument", '"fig"'], rejected.io)).toBe(
+        1,
+      );
+      expect(rejected.err.join("\n")).toContain("fig is in the cart already");
+
+      const queried = captureIo(directory);
+      expect(await main(["run", "query", runId, "items"], queried.io)).toBe(0);
+      expect(queried.out).toEqual(['["apple","fig"]']);
+
+      expect(await main(["run", "signal", runId, "checkout"], captureIo(directory).io)).toBe(0);
+      const history = captureIo(directory);
+      for (let attempt = 0; attempt < 400; attempt += 1) {
+        history.out.length = 0;
+        await main(["run", "describe", runId, "--json"], history.io);
+        if ((JSON.parse(history.out[0] ?? "{}") as { status: string }).status !== "RUNNING") {
+          break;
+        }
+        await new Promise<void>((resolve) => setTimeout(resolve, 25));
+      }
+      expect(JSON.parse(history.out[0] ?? "{}")).toMatchObject({
+        status: "COMPLETED",
+        result: { items: ["apple", "fig"], total: 800 },
+      });
+
+      expect(
+        await main(["history", "export", runId, "--out", "cart.json"], captureIo(directory).io),
+      ).toBe(0);
+      const replayed = captureIo(directory);
+      expect(await main(["replay", "--module", cartModule, "cart.json"], replayed.io)).toBe(0);
+      expect(replayed.out.at(-1)).toBe("1 passed, 0 failed");
+
+      stop();
+      expect(await running).toBe(0);
+    });
+
     it("stops the api and the engine when the dev state cannot be written", async () => {
       await writeFile(path.join(directory, ".wf"), "not a directory");
       const probe = createServer();

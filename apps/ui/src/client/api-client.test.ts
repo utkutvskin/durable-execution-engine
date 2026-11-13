@@ -47,6 +47,33 @@ describe("createApiClient", () => {
     expect(bodies).toEqual([{ name: "approve", payload: { ok: true } }, { name: "ping" }]);
   });
 
+  it("posts an update with its argument and reads a query with a json argument", async () => {
+    const seen: { url: string; body: unknown }[] = [];
+    const client = createApiClient("k", (input, init) => {
+      const url = input as string;
+      seen.push({
+        url,
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
+      return Promise.resolve(
+        url.includes("/queries/")
+          ? jsonResponse(200, { result: ["apple"] })
+          : jsonResponse(200, { status: "completed", updateId: "u", sequenceNumber: 2, result: 1 }),
+      );
+    });
+    const answer = await client.updateRun("r 1", "add", "apple");
+    const result = await client.queryRun("r 1", "items", { all: true });
+    expect(answer.result).toBe(1);
+    expect(result).toEqual(["apple"]);
+    expect(seen).toEqual([
+      { url: "/v1/runs/r%201/updates/add", body: { argument: "apple" } },
+      {
+        url: `/v1/runs/r%201/queries/items?argument=${encodeURIComponent('{"all":true}')}`,
+        body: undefined,
+      },
+    ]);
+  });
+
   it("delivers stream slices and reports the last sequence and the end", async () => {
     const slice = (seq: number): string =>
       `id: ${String(seq)}\nevent: slice\ndata: ${JSON.stringify({
