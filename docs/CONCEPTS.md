@@ -76,6 +76,8 @@ A **signal** is an event delivered to a running workflow from outside: `wf run s
 
 A **query** reads the state of a run without changing it. A workflow registers a handler with `ctx.setQueryHandler`, and a query replays the history to answer; it writes no event.
 
+An **update** changes the state of a run and returns a result to the caller: `wf run update`, or `POST /v1/runs/{id}/updates/{name}`. The workflow declares it with `defineUpdate(name, { validate, handler })` and registers it with `ctx.setUpdateHandler`. The validator runs first, against the run's current state; when it throws, the caller gets the error and nothing is recorded. An accepted update is recorded as `update_accepted`, and its handler runs inside the workflow at exactly that point of the history, so replay applies every update in the same order to the same state. The handler's result is recorded as `update_completed` and returned to the caller. Updates sent at the same time are applied one after another in the order they were recorded.
+
 ## Cancellation and compensation
 
 Cancelling a run records `cancel_requested`. The workflow sees it at its next wait, which rejects with `CancelledError`. Code can register compensations with `ctx.onCancel(handler)`; on cancellation they run in reverse order of registration, which is how the payment saga releases a reservation. A compensation that throws does not stop the others. Terminating a run is the forceful form: it ends the run at once and runs no workflow code.

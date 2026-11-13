@@ -8,22 +8,24 @@ npx wf help
 
 ## Commands
 
-| Command                                        | What it does                                                                |
-| ---------------------------------------------- | --------------------------------------------------------------------------- |
-| `wf dev`                                       | Postgres, migrations, api, web ui and a worker in one process               |
-| `wf serve`                                     | The api and the web ui without a worker, for production                     |
-| `wf worker`                                    | A worker for your modules against the database, without an api              |
-| `wf migrate [up\|down] [--steps n] [--yes]`    | Applies pending migrations, or reverts the last `n` (default 1, asks first) |
-| `wf run start <type>`                          | Starts a run: `--input <json>`, `--idempotency-key <k>`, `--wait`, `--json` |
-| `wf run signal <runId> <name>`                 | Sends a signal: `--payload <json>`                                          |
-| `wf run cancel <runId>`                        | Requests a graceful cancellation: `--reason <text>`                         |
-| `wf run describe <runId>`                      | Shows a run: `--history` adds its events, `--json` prints json              |
-| `wf run list`                                  | Lists runs: `--status`, `--type`, `--limit`, `--cursor`                     |
-| `wf history export <runId>`                    | Prints the run's whole history as a history export: `--out <file>`          |
-| `wf replay --module <path> <file...>`          | Replays history exports against your code, exits 1 on non-determinism       |
-| `wf example <payment-saga\|etl-pipeline\|all>` | Runs a bundled example end to end (see `docs/EXAMPLES.md`)                  |
+| Command                                        | What it does                                                                    |
+| ---------------------------------------------- | ------------------------------------------------------------------------------- |
+| `wf dev`                                       | Postgres, migrations, api, web ui and a worker in one process                   |
+| `wf serve`                                     | The api and the web ui without a worker, for production                         |
+| `wf worker`                                    | A worker for your modules against the database, without an api                  |
+| `wf migrate [up\|down] [--steps n] [--yes]`    | Applies pending migrations, or reverts the last `n` (default 1, asks first)     |
+| `wf run start <type>`                          | Starts a run: `--input <json>`, `--idempotency-key <k>`, `--wait`, `--json`     |
+| `wf run signal <runId> <name>`                 | Sends a signal: `--payload <json>`                                              |
+| `wf run update <runId> <name>`                 | Sends an update and prints its result: `--argument`, `--update-id`, `--wait-ms` |
+| `wf run query <runId> <name>`                  | Answers a query from the run's current state: `--argument <json>`               |
+| `wf run cancel <runId>`                        | Requests a graceful cancellation: `--reason <text>`                             |
+| `wf run describe <runId>`                      | Shows a run: `--history` adds its events, `--json` prints json                  |
+| `wf run list`                                  | Lists runs: `--status`, `--type`, `--limit`, `--cursor`                         |
+| `wf history export <runId>`                    | Prints the run's whole history as a history export: `--out <file>`              |
+| `wf replay --module <path> <file...>`          | Replays history exports against your code, exits 1 on non-determinism           |
+| `wf example <payment-saga\|etl-pipeline\|all>` | Runs a bundled example end to end (see `docs/EXAMPLES.md`)                      |
 
-`--limit` must be a whole number from 1 to 200 (usage error otherwise). `--wait` polls the run and, when the API answers 429, sleeps for the `Retry-After` it gave (never past the wait timeout) instead of failing. Run ids are percent encoded in URLs, `wf run describe --history` reads every history page, and an API answer that is not JSON (a proxy's error page) is reported as one line with its status and a short preview, with no stack trace.
+`wf run update` prints the handler's result as JSON and exits 0. It exits 1 when the handler threw (the error goes to stderr), when the wait ended before the handler ran, and when the validator rejected the argument, which writes nothing. `--json` prints the whole answer, `--wait-ms` takes 0 to 60000. See `docs/API.md` for the semantics. `--limit` must be a whole number from 1 to 200 (usage error otherwise). `--wait` polls the run and, when the API answers 429, sleeps for the `Retry-After` it gave (never past the wait timeout) instead of failing. Run ids are percent encoded in URLs, `wf run describe --history` reads every history page, and an API answer that is not JSON (a proxy's error page) is reported as one line with its status and a short preview, with no stack trace.
 
 ## History export and replay
 
@@ -50,6 +52,8 @@ Exit codes: 0 on success, 1 when a command failed (or `--wait` ended in a state 
 3. It starts the api and the web ui on `--port` (default 8080, `0` picks a free port) and an engine that runs your workflows.
 4. It issues a fresh api key for the namespace (`--namespace`, default `default`), prints it, and writes the api address and key to `.wf/dev.json` in the working directory, so `wf run ...` needs no flags there.
 5. It runs until `SIGINT` or `SIGTERM`, then stops the api and drains the worker.
+
+The api of `wf dev` knows the workflows of the loaded modules: it answers updates and queries from their code, and it refuses to start a run of a workflow type none of them defines (400 `unknown_workflow_type`), like `wf serve --module`.
 
 Which workflows run is chosen with `--module <file>` (repeatable) and `--example <name>` (repeatable). Without either, both bundled examples are loaded, so the first start has something to try:
 

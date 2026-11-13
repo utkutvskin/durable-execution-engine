@@ -19,6 +19,12 @@ curl -s -X POST localhost:8080/v1/runs/$RUN_ID/signal \
   -H "authorization: Bearer $KEY" -H 'content-type: application/json' \
   -d '{"name":"approval","payload":{"approved":true}}'
 
+curl -s -X POST localhost:8080/v1/runs/$RUN_ID/updates/add \
+  -H "authorization: Bearer $KEY" -H 'content-type: application/json' \
+  -d '{"argument":"apple","updateId":"add-apple-1"}'
+
+curl -s -H "authorization: Bearer $KEY" localhost:8080/v1/runs/$RUN_ID/queries/items
+
 curl -s -X POST localhost:8080/v1/runs/$RUN_ID/cancel \
   -H "authorization: Bearer $KEY" -H 'content-type: application/json' \
   -d '{"reason":"customer asked"}'
@@ -47,6 +53,8 @@ The key is shown once; only its sha256 hash is stored.
 | GET    | `/v1/runs/{runId}`                        | `describeRun`       | 200     |
 | GET    | `/v1/runs/{runId}/history`                | `getHistory`        | 200     |
 | POST   | `/v1/runs/{runId}/signal`                 | `signalRun`         | 200     |
+| POST   | `/v1/runs/{runId}/updates/{updateName}`   | `updateRun`         | 200/202 |
+| GET    | `/v1/runs/{runId}/queries/{queryName}`    | `queryRun`          | 200     |
 | POST   | `/v1/runs/{runId}/cancel`                 | `cancelRun`         | 202     |
 | POST   | `/v1/runs/{runId}/terminate`              | `terminateRun`      | 200     |
 | GET    | `/v1/namespace`                           | `describeNamespace` | 200     |
@@ -55,7 +63,43 @@ The key is shown once; only its sha256 hash is stored.
 | GET    | `/v1/runs/{runId}/stream`                 | not in OpenAPI      | 200     |
 | GET    | `/openapi.json`                           | public              | 200     |
 
-Errors are `{ "error": { "code", "message", "details"? } }`. 400 is a validation failure or a malformed body or cursor, 409 a closed run or a reused idempotency key with a different request, 413 a body over 1 MiB.
+Errors are `{ "error": { "code", "message", "details"? } }`. 400 is a validation failure or a malformed body or cursor, a rejected or unknown update or an unknown query, 409 a closed run, a compacted history or a reused idempotency key with a different request, 413 a body over 1 MiB, and 501 an update or query to an API that does not have the workflow's code.
+
+## Updates and queries
+
+An update is a validated, synchronous write into a running workflow that returns a result. The workflow declares it with `defineUpdate(name, { validate, handler })` and registers it with `ctx.setUpdateHandler(definition)`:
+
+```ts
+const cart = defineWorkflow("cart", async (ctx) => {
+  const items: string[] = [];
+  ctx.setQueryHandler("items", () => [...items]);
+  ctx.setUpdateHandler(
+    defineUpdate<string, number>("add", {
+      validate: (sku) => {
+        if (items.includes(sku)) throw new Error(`${sku} is in the cart already`);
+      },
+      handler: (sku) => {
+        items.push(sku);
+        return items.length;
+      },
+    }),
+  );
+  await ctx.waitForSignal("checkout");
+  return items;
+});
+```
+
+`POST /v1/runs/{runId}/updates/{updateName}` takes `{ "argument"?, "updateId"?, "waitMs"? }`. The API takes the run's row lock, replays the history and runs the validator against the state the run is in. A validator that throws answers 400 `update_rejected`, an update name the workflow has not registered answers 400 `unknown_update`, and neither writes an event or a task. Otherwise the API records `update_accepted` and enqueues a workflow task in the same transaction, then waits up to `waitMs` (default 10,000, at most 60,000) for `update_completed`:
+
+- 200 `{ "status": "completed", "updateId", "sequenceNumber", "result" }` when the handler returned.
+- 200 `{ "status": "failed", "updateId", "sequenceNumber", "error" }` when the handler threw. The run goes on.
+- 202 `{ "status": "accepted", "updateId", "sequenceNumber" }` when the wait ended first, or the run closed before the handler ran. The update stays accepted.
+
+The handler runs inside the workflow at the position of its `update_accepted` event, so every replay applies the same updates in the same order to the same state. Because the row lock is held from validation to commit, concurrent updates are validated one at a time, each against the state the earlier ones left, and their handlers run in the order of their events. A handler may call `ctx.step()`; its result arrives once the step completes. Send the same `updateId` again to retry safely: an id the run accepted before records nothing new and waits for the first call's outcome.
+
+`GET /v1/runs/{runId}/queries/{queryName}?argument=<json>` answers `{ "result" }` from a replay of the history and writes nothing. An unknown query answers 400 `unknown_query`, an `argument` that is not JSON 400 `validation_failed`.
+
+Both replay the workflow, so the API process needs its code: `wf dev` loads the module it runs, `wf serve` needs `--module`. Without it they answer 501 `workflow_not_loaded`. A closed run answers 409 `run_closed` to an update, a compacted history 409 `history_compacted` to both.
 
 ## Run stream
 

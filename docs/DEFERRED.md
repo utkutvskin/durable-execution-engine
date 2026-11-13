@@ -140,3 +140,7 @@ The API reports in `api-reports/` carry `ae-forgotten-export` warnings: public s
 ## A history export reads every page through the API (day 44)
 
 `wf history export` uses the API, so it needs a running `wf serve` and a key, and a compacted run cannot be exported at all. To close this: add a `--database-url` mode that reads `run_events` directly, and decide whether an export of a compacted run should carry its snapshot.
+
+## Updates leave a few edges open (day 45)
+
+The validator runs once, on the API side, against the state the run is in; it is not run again inside the workflow, so a handler cannot assume anything the validator did not check at that point. An update whose handler still waits (for a step, say) when the run completes, fails or continues as new never records `update_completed`, and its caller gets `accepted`; continue-as-new does not carry it over. The wait for the outcome polls the history every 50 ms instead of using `LISTEN`/`NOTIFY`. The live session of the sticky decider does not resume update handlers, so such a workflow is replayed in full on every decision. To close these: decide whether a handler still running at close should fail its update with a typed error, move the wait onto a notification channel, and teach the live session to deliver `update_accepted`.
