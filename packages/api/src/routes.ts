@@ -1,5 +1,15 @@
 import { z } from "zod";
-import { RunAlreadyClosedError, RunNotFoundError, RunNotOpenError } from "@dee/core";
+import {
+  MAX_UPDATE_WAIT_MS,
+  RunAlreadyClosedError,
+  RunHistoryCompactedError,
+  RunNotFoundError,
+  RunNotOpenError,
+  UnknownQueryError,
+  UnknownUpdateError,
+  UpdateRejectedError,
+  WorkflowNotLoadedError,
+} from "@dee/core";
 import {
   DeadLetterNotFoundError,
   IdempotencyConflictError,
@@ -166,6 +176,38 @@ const signalRequestSchema = z
   .object({ name: z.string().min(1).max(255), payload: z.unknown().optional() })
   .meta({ id: "SignalRequest" });
 
+const updateRequestSchema = z
+  .object({
+    argument: z.unknown().optional(),
+    updateId: z.string().min(1).max(255).optional().meta({
+      description: "Optional. A second call with the same id on the same run waits for the first.",
+    }),
+    waitMs: z.number().int().min(0).max(MAX_UPDATE_WAIT_MS).optional().meta({
+      description: "How long to wait for the result. Defaults to 10000.",
+    }),
+  })
+  .meta({ id: "UpdateRequest" });
+
+const recordedErrorResponseSchema = z.looseObject({ name: z.string(), message: z.string() });
+
+const updateResponseSchema = z
+  .object({
+    status: z.enum(["completed", "failed", "accepted"]),
+    updateId: z.string(),
+    sequenceNumber: z.number().int(),
+    result: z.unknown().optional(),
+    error: recordedErrorResponseSchema.optional(),
+  })
+  .meta({ id: "UpdateResponse" });
+
+const queryParametersSchema = z.object({
+  argument: z.string().max(65_536).optional().meta({
+    description: "Optional. The query argument, encoded as JSON.",
+  }),
+});
+
+const queryResponseSchema = z.object({ result: z.unknown() }).meta({ id: "QueryResponse" });
+
 const reasonRequestSchema = z
   .object({ reason: z.string().max(1000).optional() })
   .meta({ id: "ReasonRequest" });
@@ -239,6 +281,24 @@ function deadLetterIdOf(request: RawRequest): string {
 function runIdOf(request: RawRequest): string {
   return request.params["runId"] ?? "";
 }
+
+function parseQueryArgument(encoded: string | undefined): unknown {
+  if (encoded === undefined) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(encoded) as unknown;
+  } catch {
+    throw new z.ZodError([
+      { code: "custom", path: ["argument"], message: "must be a JSON encoded value" },
+    ]);
+  }
+}
+
+const replayErrors = {
+  409: errorResponse("The run is closed, or its history was compacted."),
+  501: errorResponse("The api process was started without the module of the run's workflow."),
+} as const;
 
 /**
  * Builds the route table over `service`. Every handler reads the caller's
@@ -418,6 +478,71 @@ export function createRoutes(service: RunService): readonly Route[] {
     }),
     defineRoute({
       method: "post",
+      path: "/v1/runs/{runId}/updates/{updateName}",
+      operationId: "updateRun",
+      summary:
+        "Send a validated update to an open run and wait for its result. A rejected update writes nothing.",
+      body: updateRequestSchema,
+      responses: {
+        200: {
+          description:
+            "The update ran: status completed with its result, or failed with what the handler threw.",
+          schema: updateResponseSchema,
+        },
+        202: {
+          description: "The update was accepted, but the wait ended before it ran.",
+          schema: updateResponseSchema,
+        },
+        ...commonErrors,
+        400: errorResponse(
+          "The request is malformed, the run has no such update, or its validator rejected the argument.",
+        ),
+        404: notFound,
+        ...replayErrors,
+      },
+      async handle(request) {
+        const outcome = await service.updateRun(
+          request.namespaceId,
+          runIdOf(request),
+          request.params["updateName"] ?? "",
+          request.parsedBody.argument ?? null,
+          {
+            ...(request.parsedBody.updateId === undefined
+              ? {}
+              : { updateId: request.parsedBody.updateId }),
+            ...(request.parsedBody.waitMs === undefined
+              ? {}
+              : { waitMs: request.parsedBody.waitMs }),
+          },
+        );
+        return { status: outcome.status === "accepted" ? 202 : 200, body: outcome };
+      },
+    }),
+    defineRoute({
+      method: "get",
+      path: "/v1/runs/{runId}/queries/{queryName}",
+      operationId: "queryRun",
+      summary: "Answer a query from the run's current state. Writes nothing.",
+      query: queryParametersSchema,
+      responses: {
+        200: { description: "The query's answer.", schema: queryResponseSchema },
+        ...commonErrors,
+        400: errorResponse("The request is malformed or the run has no such query."),
+        404: notFound,
+        ...replayErrors,
+      },
+      async handle(request) {
+        const result = await service.queryRun(
+          request.namespaceId,
+          runIdOf(request),
+          request.params["queryName"] ?? "",
+          parseQueryArgument(request.parsedQuery.argument),
+        );
+        return { status: 200, body: { result: result ?? null } };
+      },
+    }),
+    defineRoute({
+      method: "post",
       path: "/v1/runs/{runId}/cancel",
       operationId: "cancelRun",
       summary: "Request graceful cancellation of an open run.",
@@ -496,6 +621,24 @@ export function toErrorResult(error: unknown): ErrorResult {
   }
   if (error instanceof RunNotFoundError) {
     return { status: 404, body: { error: { code: "not_found", message: "run not found" } } };
+  }
+  if (error instanceof UpdateRejectedError) {
+    return { status: 400, body: { error: { code: "update_rejected", message: error.message } } };
+  }
+  if (error instanceof UnknownUpdateError) {
+    return { status: 400, body: { error: { code: "unknown_update", message: error.message } } };
+  }
+  if (error instanceof UnknownQueryError) {
+    return { status: 400, body: { error: { code: "unknown_query", message: error.message } } };
+  }
+  if (error instanceof RunHistoryCompactedError) {
+    return { status: 409, body: { error: { code: "history_compacted", message: error.message } } };
+  }
+  if (error instanceof WorkflowNotLoadedError) {
+    return {
+      status: 501,
+      body: { error: { code: "workflow_not_loaded", message: error.message } },
+    };
   }
   if (error instanceof RunNotOpenError || error instanceof RunAlreadyClosedError) {
     return { status: 409, body: { error: { code: "run_closed", message: error.message } } };

@@ -33,10 +33,12 @@ describe("generated openapi document", () => {
       "getHistory",
       "listDeadLetters",
       "listRuns",
+      "queryRun",
       "requeueDeadLetter",
       "signalRun",
       "startRun",
       "terminateRun",
+      "updateRun",
     ]);
   });
 

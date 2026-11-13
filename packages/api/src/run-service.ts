@@ -17,6 +17,9 @@ import {
   type Pool,
   type RunControl,
   type RunInteractions,
+  type UpdateCallOptions,
+  type UpdateOutcome,
+  type UpdateWaitOptions,
   type WorkflowEvent,
   rollbackQuietly,
 } from "@dee/core";
@@ -288,6 +291,34 @@ export interface RunService {
   ) => Promise<{ readonly sequenceNumber: number }>;
 
   /**
+   * Validates the update `updateName` against the run's current state,
+   * records it and waits for its outcome. A rejected update writes nothing.
+   * Rejects with `RunNotFoundError`, `RunNotOpenError`,
+   * `RunHistoryCompactedError`, `WorkflowNotLoadedError`,
+   * `UnknownUpdateError` or `UpdateRejectedError`.
+   */
+  updateRun: (
+    namespaceId: string,
+    runId: string,
+    updateName: string,
+    argument: unknown,
+    options?: UpdateCallOptions,
+  ) => Promise<UpdateOutcome>;
+
+  /**
+   * Answers the query `queryName` from the run's current state without
+   * writing anything. Rejects with `RunNotFoundError`,
+   * `RunHistoryCompactedError`, `WorkflowNotLoadedError` or
+   * `UnknownQueryError`.
+   */
+  queryRun: (
+    namespaceId: string,
+    runId: string,
+    queryName: string,
+    argument?: unknown,
+  ) => Promise<unknown>;
+
+  /**
    * Requests graceful cancellation. Rejects with `RunNotFoundError` or
    * `RunAlreadyClosedError`.
    */
@@ -313,12 +344,16 @@ export interface RunService {
  * task created by the service goes to. With `workflows`, `startRun` rejects
  * a workflow type the registry does not know with `UnknownWorkflowTypeError`;
  * without it any type is accepted, because the process that serves the api
- * need not be the one that runs the workflows.
+ * need not be the one that runs the workflows. Updates and queries replay
+ * the workflow, so they need `workflows` and answer `WorkflowNotLoadedError`
+ * without it. `updateWait` replaces the clock and timer an update waits
+ * for its outcome with.
  */
 export interface RunServiceOptions {
   readonly queueName: string;
   readonly tracing?: Tracing;
   readonly workflows?: WorkflowRegistry;
+  readonly updateWait?: UpdateWaitOptions;
 }
 
 interface RunRow {
@@ -409,9 +444,10 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
   const tracing = options.tracing ?? noopTracing;
   const store = createPostgresEventStore(pool);
   const interactions: RunInteractions = createRunInteractions(pool, {
-    workflows: createWorkflowRegistry(),
+    workflows: options.workflows ?? createWorkflowRegistry(),
     clock: systemClock,
     random: systemRandomSource,
+    ...(options.updateWait === undefined ? {} : { updateWait: options.updateWait }),
   });
   const control: RunControl = createRunControl(pool);
   const deadLetters = createDeadLetterQueue(pool);
@@ -694,6 +730,16 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     async signalRun(namespaceId, runId, signalName, payload) {
       await assertOwned(namespaceId, runId);
       return interactions.signalRun(runId, signalName, payload);
+    },
+
+    async updateRun(namespaceId, runId, updateName, argument, updateOptions) {
+      await assertOwned(namespaceId, runId);
+      return interactions.updateRun(runId, updateName, argument, updateOptions);
+    },
+
+    async queryRun(namespaceId, runId, queryName, argument) {
+      await assertOwned(namespaceId, runId);
+      return interactions.queryRun(runId, queryName, argument);
     },
 
     async cancelRun(namespaceId, runId, reason) {

@@ -14,6 +14,9 @@ import { RateLimiter } from '@dee/core';
 import { Server } from 'node:http';
 import { ServerResponse } from 'node:http';
 import { Tracing } from '@dee/core';
+import { UpdateCallOptions } from '@dee/core';
+import { UpdateOutcome } from '@dee/core';
+import { UpdateWaitOptions } from '@dee/core';
 import { WorkflowEvent } from '@dee/core';
 import { WorkflowRegistry } from '@dee/core';
 import { z } from 'zod';
@@ -398,6 +401,7 @@ export interface RunService {
     getHistory(namespaceId: string, runId: string, page?: PageInput): Promise<HistoryPage>;
     listDeadLetters(namespaceId: string, page?: PageInput): Promise<DeadLetterPage>;
     listRuns(namespaceId: string, input: ListRunsInput): Promise<RunPage>;
+    queryRun: (namespaceId: string, runId: string, queryName: string, argument?: unknown) => Promise<unknown>;
     readHistorySince(namespaceId: string, runId: string, afterSequence: number): Promise<HistorySlice>;
     requeueDeadLetter(namespaceId: string, deadLetterId: string): Promise<{
         readonly taskId: string;
@@ -409,6 +413,7 @@ export interface RunService {
     terminateRun: (namespaceId: string, runId: string, reason?: string) => Promise<{
         readonly sequenceNumber: number;
     }>;
+    updateRun: (namespaceId: string, runId: string, updateName: string, argument: unknown, options?: UpdateCallOptions) => Promise<UpdateOutcome>;
 }
 
 // @public
@@ -417,6 +422,8 @@ export interface RunServiceOptions {
     readonly queueName: string;
     // (undocumented)
     readonly tracing?: Tracing;
+    // (undocumented)
+    readonly updateWait?: UpdateWaitOptions;
     // (undocumented)
     readonly workflows?: WorkflowRegistry;
 }
@@ -562,9 +569,10 @@ export function validateOpenApiDocument(document: unknown): string[];
 // dist/run-service.d.ts:160:5 - (ae-undocumented) Missing documentation for "createdAt".
 // dist/run-service.d.ts:161:5 - (ae-undocumented) Missing documentation for "version".
 // dist/run-service.d.ts:162:5 - (ae-undocumented) Missing documentation for "event".
-// dist/run-service.d.ts:243:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/run-service.d.ts:244:5 - (ae-undocumented) Missing documentation for "tracing".
-// dist/run-service.d.ts:245:5 - (ae-undocumented) Missing documentation for "workflows".
+// dist/run-service.d.ts:261:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/run-service.d.ts:262:5 - (ae-undocumented) Missing documentation for "tracing".
+// dist/run-service.d.ts:263:5 - (ae-undocumented) Missing documentation for "workflows".
+// dist/run-service.d.ts:264:5 - (ae-undocumented) Missing documentation for "updateWait".
 // dist/server.d.ts:48:5 - (ae-undocumented) Missing documentation for "queueName".
 // dist/server.d.ts:49:5 - (ae-undocumented) Missing documentation for "maxBodyBytes".
 // dist/server.d.ts:50:5 - (ae-undocumented) Missing documentation for "apiKeys".
