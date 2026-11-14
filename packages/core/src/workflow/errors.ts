@@ -144,3 +144,21 @@ export function sleepDurationError(durationMs: number): InvalidSleepDurationErro
     ? undefined
     : new InvalidSleepDurationError(durationMs);
 }
+
+/**
+ * Rejects a `ctx.waitForEvent()` call whose timeout fired before an event
+ * named `eventName` with the correlation key `key` was delivered to it.
+ */
+export class EventWaitTimeoutError extends Error {
+  readonly eventName: string;
+  readonly key: string;
+  readonly timeoutMs: number;
+
+  constructor(eventName: string, key: string, timeoutMs: number) {
+    super(`no event "${eventName}" with key "${key}" arrived within ${String(timeoutMs)} ms`);
+    this.name = "EventWaitTimeoutError";
+    this.eventName = eventName;
+    this.key = key;
+    this.timeoutMs = timeoutMs;
+  }
+}

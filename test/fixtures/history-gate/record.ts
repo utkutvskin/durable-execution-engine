@@ -2,6 +2,7 @@ import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createRunService } from "../../../packages/api/src/index.ts";
 import { createIsolatedDatabase } from "../../../packages/core/src/db/test-harness.ts";
+import { createEventService } from "../../../packages/core/src/events/external-events.ts";
 import { createPostgresEventStore } from "../../../packages/core/src/event-store/event-store.ts";
 import { createHistoryExport } from "../../../packages/core/src/replay/history-export.ts";
 import { createRunInteractions } from "../../../packages/core/src/signals/signal-service.ts";
@@ -93,6 +94,12 @@ async function main(): Promise<void> {
     await start("gate-waiting", {}, 300);
     const terminated = await start("gate-waiting", {});
     const updated = await start("gate-update", {});
+    await createEventService(pool).sendEvent(namespaceId, {
+      eventName: "gate.paid",
+      key: "order-9",
+      payload: { amount: 12 },
+    });
+    await start("gate-event", { orderId: "order-9" });
 
     await waitFor(order, "time_recorded");
     await service.signalRun(namespaceId, order, "approve", { by: "ada" });

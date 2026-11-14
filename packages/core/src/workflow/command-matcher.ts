@@ -4,7 +4,7 @@ import { NonDeterminismError } from "./errors.ts";
 
 /**
  * A command as the replaying code issues it, or as the history recorded it:
- * the four kinds whose order a replay has to reproduce.
+ * the kinds whose order a replay has to reproduce.
  */
 export type CommandShape =
   | {
@@ -20,7 +20,13 @@ export type CommandShape =
       readonly workflowType: string;
       readonly input: unknown;
     }
-  | { readonly kind: "patch"; readonly id: string };
+  | { readonly kind: "patch"; readonly id: string }
+  | {
+      readonly kind: "event_wait";
+      readonly id: string;
+      readonly eventName: string;
+      readonly key: string;
+    };
 
 /**
  * The commands `event` records, as a `CommandShape`, or `undefined` for an
@@ -43,6 +49,8 @@ export function recordedCommandOf(event: WorkflowEvent): CommandShape | undefine
       };
     case "patch_recorded":
       return { kind: "patch", id: event.patchId };
+    case "event_wait_started":
+      return { kind: "event_wait", id: event.waitId, eventName: event.eventName, key: event.key };
     default:
       return undefined;
   }
@@ -58,6 +66,8 @@ function describe(shape: CommandShape): { readonly stepType: string; readonly in
       return { stepType: `child:${shape.workflowType}`, input: shape.input };
     case "patch":
       return { stepType: "patch", input: { patchId: shape.id } };
+    case "event_wait":
+      return { stepType: `event:${shape.eventName}`, input: { key: shape.key } };
   }
 }
 
@@ -85,6 +95,12 @@ function sameCommand(recorded: CommandShape, issued: CommandShape): boolean {
       );
     case "patch":
       return true;
+    case "event_wait":
+      return (
+        issued.kind === "event_wait" &&
+        recorded.eventName === issued.eventName &&
+        recorded.key === issued.key
+      );
   }
 }
 

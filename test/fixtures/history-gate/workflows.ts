@@ -52,6 +52,12 @@ export const workflows = [
     return done;
   }),
   defineWorkflow("gate-waiting", async (ctx) => ctx.waitForSignal("never")),
+  defineWorkflow("gate-event", async (ctx, input: { readonly orderId: string }) =>
+    ctx.waitForEvent<{ readonly amount: number }>("gate.paid", {
+      match: input.orderId,
+      timeoutMs: 60_000,
+    }),
+  ),
   defineWorkflow("gate-update", async (ctx) => {
     const notes: string[] = [];
     ctx.setUpdateHandler(

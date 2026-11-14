@@ -52,6 +52,17 @@ export interface ParallelOptions {
 }
 
 /**
+ * Options for `ctx.waitForEvent()`. `match` is the correlation key an event
+ * must carry to be delivered to this wait. `timeoutMs`, when given, rejects
+ * the wait with `EventWaitTimeoutError` once that much time passed without a
+ * matching event.
+ */
+export interface WaitForEventOptions {
+  readonly match: string;
+  readonly timeoutMs?: number;
+}
+
+/**
  * A unit of parallel work: a function returning the promise of a
  * `ctx.step()`, `ctx.executeChild()` or `ctx.startChild().result` call,
  * returned as it is and not wrapped in another promise.
@@ -74,6 +85,27 @@ export interface WorkflowContext {
    * before the call is delivered at once.
    */
   waitForSignal<TPayload = unknown>(signalName: string): Promise<TPayload>;
+  /**
+   * Resolves with the payload of the next external event named `eventName`
+   * sent with the correlation key `options.match` (see `sendEvent`). An
+   * event sent before the call is delivered too, as long as it is still
+   * inside its buffer period. Rejects with `EventWaitTimeoutError` when
+   * `options.timeoutMs` passes first; the timeout is a durable timer.
+   */
+  waitForEvent<TPayload = unknown>(
+    eventName: string,
+    options: WaitForEventOptions,
+  ): Promise<TPayload>;
+  /**
+   * Resolves `true` once `predicate` returns `true`. The predicate is checked
+   * at the call and again every time the run's state may have changed (a
+   * step, timer, signal, event, child or update was applied), always at the
+   * same points of the history, so replay resolves it at the same point.
+   * With `timeoutMs`, resolves `false` when that durable timer fires first.
+   * The predicate must only read workflow state. A condition cannot be a
+   * branch of `ctx.select()`.
+   */
+  condition(predicate: () => boolean, timeoutMs?: number): Promise<boolean>;
   /**
    * Resolves with whichever of `branches` (promises from `ctx.step()`,
    * `ctx.sleep()` or `ctx.waitForSignal()`) completed first in the run's

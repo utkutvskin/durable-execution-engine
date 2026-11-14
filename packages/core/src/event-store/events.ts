@@ -90,10 +90,22 @@ export const runTerminatedEventSchema = z.object({
 /**
  * The run closed by handing over to a new run of the same workflow type that
  * starts with `input`. The new run joins the same chain (`first_run_id`).
+ * `signals` are the signals this run received but never consumed, in the
+ * order it received them: the new run receives them again right after its
+ * `run_started` event.
  */
 export const runContinuedAsNewEventSchema = z.object({
   type: z.literal("run_continued_as_new"),
   input: z.unknown(),
+  signals: z
+    .array(
+      z.object({
+        signalName: z.string().min(1),
+        payload: z.unknown(),
+        signalId: z.string().min(1).optional(),
+      }),
+    )
+    .optional(),
 });
 
 /**
@@ -175,11 +187,14 @@ export const timerFiredEventSchema = z.object({
  * An external signal named `signalName` was delivered to the run with the
  * given payload. It stays in the history until a `ctx.waitForSignal()` call
  * consumes it, so a signal that arrives before the wait is not lost.
+ * `signalId` is the deduplication id the sender gave, if any: a second
+ * signal with the same id is not recorded again anywhere in the run's chain.
  */
 export const signalReceivedEventSchema = z.object({
   type: z.literal("signal_received"),
   signalName: z.string().min(1),
   payload: z.unknown(),
+  signalId: z.string().min(1).optional(),
 });
 
 /**
@@ -273,6 +288,33 @@ export const updateCompletedEventSchema = z.object({
 });
 
 /**
+ * A `ctx.waitForEvent()` call reached the frontier of the run: the run waits
+ * for the external event `eventName` sent with the correlation key `key`.
+ * `expiresAt` (an ISO-8601 string) is when its timeout fires, if it has one;
+ * an event sent after it is no longer delivered to this wait.
+ */
+export const eventWaitStartedEventSchema = z.object({
+  type: z.literal("event_wait_started"),
+  waitId: z.string().min(1),
+  eventName: z.string().min(1),
+  key: z.string(),
+  expiresAt: z.string().min(1).optional(),
+});
+
+/**
+ * The external event `eventId` was delivered to the wait `waitId` with its
+ * payload. The wait resolves with `payload`.
+ */
+export const eventReceivedEventSchema = z.object({
+  type: z.literal("event_received"),
+  waitId: z.string().min(1),
+  eventId: z.string().min(1),
+  eventName: z.string().min(1),
+  key: z.string(),
+  payload: z.unknown(),
+});
+
+/**
  * Every event kind that can be appended to a run's event log, discriminated
  * on `type`. This is the closed set `EventStore.append` validates against:
  * a payload that does not match one of these shapes is rejected before it
@@ -302,6 +344,8 @@ export const workflowEventSchema = z.discriminatedUnion("type", [
   compensationFailedEventSchema,
   updateAcceptedEventSchema,
   updateCompletedEventSchema,
+  eventWaitStartedEventSchema,
+  eventReceivedEventSchema,
 ]);
 
 /**

@@ -9,6 +9,7 @@ import {
   type StoredEvent,
 } from "../event-store/event-store.ts";
 import { closeRunIfTerminal } from "../cancellation/close-run.ts";
+import { lockEventAddressOnClient, registerEventWaitOnClient } from "../events/external-events.ts";
 import { createContinuedRunOnClient } from "../continuation/continued-run.ts";
 import { createChildRunOnClient } from "../children/child-runs.ts";
 import { lockRunWithParent } from "../children/run-locks.ts";
@@ -263,6 +264,21 @@ export function createResultRecorder(
       return withClient(pool, async (client) => {
         const pendingSpans: TraceSpan[] = [];
         await client.query("begin");
+        const waits = events.filter(
+          (event): event is Extract<WorkflowEvent, { type: "event_wait_started" }> =>
+            event.type === "event_wait_started",
+        );
+        if (waits.length > 0) {
+          const namespaceId = await readNamespaceId(client, input.runId);
+          const addresses = [
+            ...new Set(waits.map((wait) => JSON.stringify([wait.eventName, wait.key]))),
+          ]
+            .sort()
+            .map((address) => JSON.parse(address) as [string, string]);
+          for (const [eventName, key] of addresses) {
+            await lockEventAddressOnClient(client, namespaceId, eventName, key);
+          }
+        }
         const status = await lockRunStatus(client, input.runId);
         const runTrace = await client.query<{ traceparent: string | null }>(
           "select traceparent from workflow_runs where id = $1",
@@ -355,6 +371,9 @@ export function createResultRecorder(
         }
         if (events.some((event) => CLOSING_EVENT_TYPES.has(event.type))) {
           await closeRunIfTerminal(client, codec, input.runId);
+        }
+        for (const wait of waits) {
+          await registerEventWaitOnClient(client, codec, input.runId, wait, clock.now());
         }
         const firstSequenceNumber = input.expectedSeq + 1;
         const lastSequenceNumber = input.expectedSeq + stored.length;

@@ -177,6 +177,21 @@ function createInMemoryContext(
         new Error(`signal "${signalName}" cannot be awaited by the in-memory runner`),
       );
     },
+    waitForEvent<TPayload>(eventName: string): Promise<TPayload> {
+      return Promise.reject(
+        new Error(`event "${eventName}" cannot be awaited by the in-memory runner`),
+      );
+    },
+    async condition(predicate: () => boolean, timeoutMs?: number): Promise<boolean> {
+      if (predicate()) {
+        return true;
+      }
+      if (timeoutMs === undefined) {
+        throw new Error("a condition without a timeout cannot be awaited by the in-memory runner");
+      }
+      await this.sleep(timeoutMs);
+      return predicate();
+    },
     async select<TBranches extends readonly Promise<unknown>[]>(
       branches: TBranches,
     ): Promise<SelectResult<Awaited<TBranches[number]>>> {

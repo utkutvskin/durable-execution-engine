@@ -101,17 +101,42 @@ export interface CancelRunCommand {
 
 /**
  * The run hands over to a new run of the same workflow type that starts with
- * `input`, closing this one.
+ * `input`, closing this one. `signals` are the unconsumed signals the new
+ * run receives again.
  */
 export interface ContinueAsNewCommand {
   readonly type: "continue_as_new";
   readonly input: unknown;
+  readonly signals?: readonly CarriedSignal[];
+}
+
+/**
+ * A signal a run received but did not consume before it continued as new,
+ * carried over into the next run of the chain.
+ */
+export interface CarriedSignal {
+  readonly signalName: string;
+  readonly payload: unknown;
+  readonly signalId?: string;
+}
+
+/**
+ * The run started waiting for the external event `eventName` with the
+ * correlation key `key`. `expiresAt` (an ISO-8601 string) is when the wait's
+ * timeout fires, if it has one.
+ */
+export interface WaitForEventCommand {
+  readonly type: "wait_for_event";
+  readonly waitId: string;
+  readonly eventName: string;
+  readonly key: string;
+  readonly expiresAt?: string;
 }
 
 /**
  * Every command kind a workflow decision can produce, discriminated on
  * `type`. A decision produces zero or more `ScheduleStepCommand`,
- * `StartTimerCommand`, `StartChildCommand`, `RecordPatchCommand`, `RecordTimeCommand` and `CompleteUpdateCommand` entries, followed by at most one of
+ * `StartTimerCommand`, `StartChildCommand`, `RecordPatchCommand`, `RecordTimeCommand`, `CompleteUpdateCommand` and `WaitForEventCommand` entries, followed by at most one of
  * `CompleteRunCommand`, `FailRunCommand`, `CancelRunCommand` or
  * `ContinueAsNewCommand`.
  */
@@ -123,6 +148,7 @@ export type WorkflowCommand =
   | RecordTimeCommand
   | RecordCompensationFailureCommand
   | CompleteUpdateCommand
+  | WaitForEventCommand
   | CompleteRunCommand
   | FailRunCommand
   | CancelRunCommand

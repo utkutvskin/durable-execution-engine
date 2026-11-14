@@ -1,7 +1,7 @@
 import type { RecordedError, WorkflowEvent } from "../event-store/events.ts";
 import { deserializeError, toRecordedError } from "./error-serialization.ts";
 import { UnknownUpdateError, type UpdateDefinition } from "./define-update.ts";
-import type { WorkflowCommand } from "./commands.ts";
+import type { CarriedSignal, WorkflowCommand } from "./commands.ts";
 import type {
   ChildHandle,
   ChildOptions,
@@ -10,12 +10,14 @@ import type {
   ParallelTask,
   QueryHandler,
   SelectResult,
+  WaitForEventOptions,
   WorkflowContext,
   WorkflowHandler,
 } from "./context.ts";
 import {
   CancelledError,
   ChildLimitExceededError,
+  EventWaitTimeoutError,
   NonDeterminismError,
   StepFailedError,
   VersionMismatchError,
@@ -180,11 +182,17 @@ function createReplayContext(
   readonly compensationContext: WorkflowContext;
   readonly feedHistory: () => Promise<void>;
   readonly assertAllCommandsIssued: () => void;
+  readonly unconsumedSignals: () => CarriedSignal[];
 } {
   const cancelRequested = history.some((event) => event.type === "cancel_requested");
   let stepSequence = 0;
   let timerSequence = 0;
   let childSequence = 0;
+  let waitSequence = 0;
+  const pendingConditions: {
+    readonly predicate: () => boolean;
+    readonly settle: (outcome: { readonly met: boolean } | { readonly error: unknown }) => void;
+  }[] = [];
   const maxChildren = options.maxChildren ?? DEFAULT_MAX_CHILDREN;
   const cancelledPromises = new WeakSet<Promise<unknown>>();
   const signalSequences = new Map<string, number>();
@@ -200,7 +208,8 @@ function createReplayContext(
     (event) =>
       event.type === "step_scheduled" ||
       event.type === "timer_started" ||
-      event.type === "child_started",
+      event.type === "child_started" ||
+      event.type === "event_wait_started",
   ).length;
   const patchDecisions = new Map<string, boolean>();
   const values = createContextValues(
@@ -262,7 +271,7 @@ function createReplayContext(
     if (recordedPatchIds.has(patchId)) {
       matcher.issue({ kind: "patch", id: patchId });
       useNewPath = true;
-    } else if (stepSequence + timerSequence + childSequence < recordedCommandCount) {
+    } else if (stepSequence + timerSequence + childSequence + waitSequence < recordedCommandCount) {
       useNewPath = false;
     } else {
       matcher.issue({ kind: "patch", id: patchId });
@@ -307,7 +316,52 @@ function createReplayContext(
     return promise;
   }
 
+  function checkConditions(): boolean {
+    let settledAny = false;
+    for (const pending of [...pendingConditions]) {
+      let outcome: { readonly met: boolean } | { readonly error: unknown };
+      try {
+        outcome = { met: pending.predicate() };
+      } catch (error: unknown) {
+        outcome = { error };
+      }
+      if ("error" in outcome || outcome.met) {
+        pendingConditions.splice(pendingConditions.indexOf(pending), 1);
+        pending.settle(outcome);
+        settledAny = true;
+      }
+    }
+    return settledAny;
+  }
+
+  async function settleConditions(): Promise<void> {
+    while (checkConditions()) {
+      await drainToQuiescence();
+    }
+  }
+
+  function unconsumedSignals(): CarriedSignal[] {
+    const seen = new Map<string, number>();
+    const carried: CarriedSignal[] = [];
+    for (const event of history) {
+      if (event.type !== "signal_received") {
+        continue;
+      }
+      const position = seen.get(event.signalName) ?? 0;
+      seen.set(event.signalName, position + 1);
+      if (position >= (signalSequences.get(event.signalName) ?? 0)) {
+        carried.push(
+          event.signalId === undefined
+            ? { signalName: event.signalName, payload: event.payload }
+            : { signalName: event.signalName, payload: event.payload, signalId: event.signalId },
+        );
+      }
+    }
+    return carried;
+  }
+
   async function feedHistory(): Promise<void> {
+    await settleConditions();
     for (;;) {
       let next: number | undefined;
       for (const index of deliveries.keys()) {
@@ -325,6 +379,7 @@ function createReplayContext(
         release();
       }
       await drainToQuiescence();
+      await settleConditions();
     }
   }
 
@@ -424,6 +479,36 @@ function createReplayContext(
       return runParallel(tasks, parallelOptions, mode, chooseNext);
     }
 
+    function sleep(durationMs: number): Promise<void> {
+      const invalid = sleepDurationError(durationMs);
+      if (invalid !== undefined) {
+        return Promise.reject(invalid);
+      }
+      timerSequence += 1;
+      const timerId = `timer-${String(timerSequence)}`;
+      const recorded = matcher.issue({ kind: "timer", id: timerId, durationMs }, cancelled);
+
+      const firedIndex = history.findIndex(
+        (event) => event.type === "timer_fired" && event.timerId === timerId,
+      );
+      if (firedIndex >= 0) {
+        return completedAt(firedIndex, { fulfilled: true, value: undefined });
+      }
+
+      if (cancelled) {
+        return Promise.reject(new CancelledError());
+      }
+
+      if (!recorded) {
+        const fireAt = new Date(
+          runUnguarded(() => options.clock.now()).getTime() + durationMs,
+        ).toISOString();
+        newCommands.push({ type: "start_timer", timerId, fireAt, durationMs });
+      }
+
+      return neverSettles();
+    }
+
     return {
       startChild,
       executeChild<TResult>(
@@ -485,34 +570,109 @@ function createReplayContext(
         }
         return neverSettles<TResult>();
       },
-      sleep(durationMs: number): Promise<void> {
-        const invalid = sleepDurationError(durationMs);
-        if (invalid !== undefined) {
-          return Promise.reject(invalid);
+      sleep,
+      waitForEvent<TPayload>(
+        eventName: string,
+        waitOptions: WaitForEventOptions,
+      ): Promise<TPayload> {
+        const { match: key, timeoutMs } = waitOptions;
+        if (timeoutMs !== undefined) {
+          const invalid = sleepDurationError(timeoutMs);
+          if (invalid !== undefined) {
+            return Promise.reject(invalid);
+          }
         }
-        timerSequence += 1;
-        const timerId = `timer-${String(timerSequence)}`;
-        const recorded = matcher.issue({ kind: "timer", id: timerId, durationMs }, cancelled);
-
-        const firedIndex = history.findIndex(
-          (event) => event.type === "timer_fired" && event.timerId === timerId,
+        waitSequence += 1;
+        const waitId = `wait-${String(waitSequence)}`;
+        const recorded = matcher.issue(
+          { kind: "event_wait", id: waitId, eventName, key },
+          cancelled,
         );
+        if (!recorded && !cancelled) {
+          const expiresAt =
+            timeoutMs === undefined
+              ? undefined
+              : new Date(
+                  runUnguarded(() => options.clock.now()).getTime() + timeoutMs,
+                ).toISOString();
+          newCommands.push(
+            expiresAt === undefined
+              ? { type: "wait_for_event", waitId, eventName, key }
+              : { type: "wait_for_event", waitId, eventName, key, expiresAt },
+          );
+        }
+        const timer = timeoutMs === undefined ? undefined : sleep(timeoutMs);
+        timer?.catch(() => undefined);
+        const timerId = `timer-${String(timerSequence)}`;
+        const receivedIndex = history.findIndex(
+          (event) => event.type === "event_received" && event.waitId === waitId,
+        );
+        const firedIndex =
+          timer === undefined
+            ? -1
+            : history.findIndex(
+                (event) => event.type === "timer_fired" && event.timerId === timerId,
+              );
+        const received = history[receivedIndex];
+        if (received?.type === "event_received" && (firedIndex < 0 || receivedIndex < firedIndex)) {
+          return completedAt(receivedIndex, {
+            fulfilled: true,
+            value: received.payload as TPayload,
+          });
+        }
         if (firedIndex >= 0) {
-          return completedAt(firedIndex, { fulfilled: true, value: undefined });
+          return completedAt<TPayload>(firedIndex, {
+            fulfilled: false,
+            error: new EventWaitTimeoutError(eventName, key, timeoutMs ?? 0),
+          });
         }
-
         if (cancelled) {
-          return Promise.reject(new CancelledError());
+          return rejectedByCancellation<TPayload>();
         }
-
-        if (!recorded) {
-          const fireAt = new Date(
-            runUnguarded(() => options.clock.now()).getTime() + durationMs,
-          ).toISOString();
-          newCommands.push({ type: "start_timer", timerId, fireAt, durationMs });
+        return neverSettles<TPayload>();
+      },
+      condition(predicate: () => boolean, timeoutMs?: number): Promise<boolean> {
+        if (timeoutMs !== undefined) {
+          const invalid = sleepDurationError(timeoutMs);
+          if (invalid !== undefined) {
+            return Promise.reject(invalid);
+          }
         }
-
-        return neverSettles();
+        if (predicate()) {
+          return Promise.resolve(true);
+        }
+        return new Promise<boolean>((resolve, reject) => {
+          const entry = {
+            predicate,
+            settle: (outcome: { readonly met: boolean } | { readonly error: unknown }): void => {
+              if ("error" in outcome) {
+                reject(toError(outcome.error));
+              } else {
+                resolve(outcome.met);
+              }
+            },
+          };
+          pendingConditions.push(entry);
+          if (timeoutMs === undefined) {
+            return;
+          }
+          sleep(timeoutMs).then(
+            () => {
+              const position = pendingConditions.indexOf(entry);
+              if (position >= 0) {
+                pendingConditions.splice(position, 1);
+                resolve(false);
+              }
+            },
+            (reason: unknown) => {
+              const position = pendingConditions.indexOf(entry);
+              if (position >= 0) {
+                pendingConditions.splice(position, 1);
+                reject(toError(reason));
+              }
+            },
+          );
+        });
       },
       waitForSignal<TPayload>(signalName: string): Promise<TPayload> {
         const consumed = signalSequences.get(signalName) ?? 0;
@@ -596,6 +756,7 @@ function createReplayContext(
     assertAllCommandsIssued: () => {
       matcher.assertAllIssued();
     },
+    unconsumedSignals,
   };
 }
 
@@ -612,7 +773,8 @@ export interface ReplayOutcome<TResult> {
   readonly commands: WorkflowCommand[];
   readonly queryHandlers: ReadonlyMap<string, QueryHandler>;
   readonly updateHandlers: ReadonlyMap<string, UpdateDefinition>;
-  readonly continuation: { readonly input: unknown } | undefined;
+  readonly continuation:
+    { readonly input: unknown; readonly signals: readonly CarriedSignal[] } | undefined;
   readonly unconsultedPatches: readonly string[];
   readonly unissuedCommand: Error | undefined;
   readonly cancellation:
@@ -638,18 +800,23 @@ export async function replayHistory<TInput, TResult>(
   const inFlightSteps = new Set<string>();
   const continuation: { requested?: { readonly input: unknown } } = {};
   const consultedPatches = new Set<string>();
-  const { workflowContext, compensationContext, feedHistory, assertAllCommandsIssued } =
-    createReplayContext(
-      history,
-      options,
-      commands,
-      handlers,
-      integrity,
-      compensations,
-      inFlightSteps,
-      continuation,
-      consultedPatches,
-    );
+  const {
+    workflowContext,
+    compensationContext,
+    feedHistory,
+    assertAllCommandsIssued,
+    unconsumedSignals,
+  } = createReplayContext(
+    history,
+    options,
+    commands,
+    handlers,
+    integrity,
+    compensations,
+    inFlightSteps,
+    continuation,
+    consultedPatches,
+  );
   const cancelEvent = history.find(
     (event): event is Extract<WorkflowEvent, { type: "cancel_requested" }> =>
       event.type === "cancel_requested",
@@ -729,13 +896,17 @@ export async function replayHistory<TInput, TResult>(
       ),
     ),
   ];
+  const continued =
+    continuation.requested === undefined
+      ? undefined
+      : { input: continuation.requested.input, signals: unconsumedSignals() };
   if (cancelEvent === undefined) {
     return {
       settled,
       commands,
       queryHandlers: handlers.queries,
       updateHandlers: handlers.updates,
-      continuation: continuation.requested,
+      continuation: continued,
       unconsultedPatches,
       unissuedCommand,
       cancellation: { requested: false },
@@ -746,7 +917,7 @@ export async function replayHistory<TInput, TResult>(
     commands,
     queryHandlers: handlers.queries,
     updateHandlers: handlers.updates,
-    continuation: continuation.requested,
+    continuation: continued,
     unconsultedPatches,
     unissuedCommand,
     cancellation: {
@@ -812,7 +983,11 @@ async function decide<TInput, TResult>(
     return {
       outcome: "continued_as_new",
       input: continuation.input,
-      commands: [{ type: "continue_as_new", input: continuation.input }],
+      commands: [
+        continuation.signals.length === 0
+          ? { type: "continue_as_new", input: continuation.input }
+          : { type: "continue_as_new", input: continuation.input, signals: continuation.signals },
+      ],
     };
   }
   if (settled === undefined) {

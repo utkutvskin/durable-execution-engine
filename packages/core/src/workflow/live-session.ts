@@ -194,6 +194,8 @@ export function createLiveSession<TInput, TResult>(
     all: () => flagUnsupported(),
     allSettled: () => flagUnsupported(),
     select: () => flagUnsupported(),
+    waitForEvent: () => flagUnsupported(),
+    condition: () => flagUnsupported(),
     continueAsNew: () => flagUnsupported(),
     onCancel: () => {
       flags.unsupported = true;

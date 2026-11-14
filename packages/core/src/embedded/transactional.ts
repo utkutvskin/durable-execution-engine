@@ -1,8 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import type { PoolClient } from "pg";
 import { jsonCodec, type Codec } from "../event-store/codec.ts";
-import { appendEventsOnClient } from "../event-store/event-store.ts";
-import { applyRunTimeoutsOnClient } from "../timeouts/run-timeouts.ts";
+import { insertRunOnClient } from "../run/insert-run.ts";
 import { signalRunOnClient, type SignalReceipt } from "../signals/signal-service.ts";
 import { cancelRunOnClient, type CancelReceipt } from "../cancellation/run-control.ts";
 
@@ -243,38 +242,19 @@ export async function startWorkflow(
       client,
       input.namespace ?? DEFAULT_EMBEDDED_NAMESPACE,
     );
-    const inserted = await client.query<{ id: string; started_at: Date }>(
-      `insert into workflow_runs
-         (namespace_id, workflow_type, input, idempotency_key, queue_name)
-       values ($1, $2, $3::jsonb, $4, $5)
-       on conflict (namespace_id, idempotency_key) where idempotency_key is not null
-       do nothing
-       returning id, started_at`,
-      [
-        namespaceId,
-        input.workflowType,
-        JSON.stringify(input.input ?? null),
-        input.idempotencyKey ?? null,
-        queueName,
-      ],
-    );
-    const created = inserted.rows[0];
-    if (created === undefined) {
-      return findByKey(client, namespaceId, input, input.idempotencyKey ?? "");
-    }
-    await applyRunTimeoutsOnClient(client, created.id, created.started_at, {
+    const created = await insertRunOnClient(client, codec, {
+      namespaceId,
+      workflowType: input.workflowType,
+      input: input.input ?? null,
+      idempotencyKey: input.idempotencyKey,
+      queueName,
       runTimeoutMs: input.runTimeoutMs,
       executionTimeoutMs: input.executionTimeoutMs,
     });
-    await appendEventsOnClient(client, codec, created.id, 0, [
-      { type: "run_started", workflowType: input.workflowType, input: input.input ?? null },
-    ]);
-    await client.query(
-      `insert into tasks (namespace_id, run_id, queue_name, task_type, payload)
-       values ($1, $2, $3, 'WORKFLOW_TASK', $4::jsonb)`,
-      [namespaceId, created.id, queueName, JSON.stringify({ reason: "start" })],
-    );
-    return { runId: created.id, created: true };
+    if (created === undefined) {
+      return findByKey(client, namespaceId, input, input.idempotencyKey ?? "");
+    }
+    return { runId: created, created: true };
   });
 }
 

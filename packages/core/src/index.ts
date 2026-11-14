@@ -267,6 +267,25 @@ export type {
   RunInteractionsOptions,
   SignalReceipt,
 } from "./signals/signal-service.ts";
+export {
+  DEFAULT_EVENT_BUFFER_MS,
+  MAX_EVENT_BUFFER_MS,
+  createEventService,
+  sendEventOnClient,
+} from "./events/external-events.ts";
+export type {
+  CreateEventTriggerInput,
+  EventDelivery,
+  EventService,
+  EventServiceOptions,
+  EventTrigger,
+  SendEventInput,
+  SendEventReceipt,
+  TriggeredRunInput,
+} from "./events/external-events.ts";
+export { EventWaitTimeoutError } from "./workflow/errors.ts";
+export type { WaitForEventOptions } from "./workflow/context.ts";
+export type { CarriedSignal, WaitForEventCommand } from "./workflow/commands.ts";
 export { RunAlreadyClosedError, createRunControl } from "./cancellation/run-control.ts";
 export type {
   CancelReceipt,

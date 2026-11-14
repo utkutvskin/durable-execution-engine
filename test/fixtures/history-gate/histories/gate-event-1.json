@@ -1,0 +1,70 @@
+{
+  "format": "dee.history",
+  "formatVersion": 1,
+  "runId": "bf302157-4632-4792-ae33-e8921db1e890",
+  "workflowType": "gate-event",
+  "exportedAt": "2026-11-14T09:25:30.899Z",
+  "events": [
+    {
+      "sequenceNumber": 1,
+      "createdAt": "2026-11-14T09:25:30.433Z",
+      "version": 1,
+      "event": {
+        "type": "run_started",
+        "workflowType": "gate-event",
+        "input": {
+          "orderId": "order-9"
+        }
+      }
+    },
+    {
+      "sequenceNumber": 2,
+      "createdAt": "2026-11-14T09:25:30.453Z",
+      "version": 1,
+      "event": {
+        "type": "event_wait_started",
+        "waitId": "wait-1",
+        "eventName": "gate.paid",
+        "key": "order-9",
+        "expiresAt": "2026-11-14T09:26:30.451Z"
+      }
+    },
+    {
+      "sequenceNumber": 3,
+      "createdAt": "2026-11-14T09:25:30.453Z",
+      "version": 1,
+      "event": {
+        "type": "timer_started",
+        "timerId": "timer-1",
+        "fireAt": "2026-11-14T09:26:30.452Z",
+        "durationMs": 60000
+      }
+    },
+    {
+      "sequenceNumber": 4,
+      "createdAt": "2026-11-14T09:25:30.453Z",
+      "version": 1,
+      "event": {
+        "type": "event_received",
+        "waitId": "wait-1",
+        "eventId": "c147bf9f-3ced-4f78-8234-25afbeed3651",
+        "eventName": "gate.paid",
+        "key": "order-9",
+        "payload": {
+          "amount": 12
+        }
+      }
+    },
+    {
+      "sequenceNumber": 5,
+      "createdAt": "2026-11-14T09:25:30.483Z",
+      "version": 1,
+      "event": {
+        "type": "run_completed",
+        "result": {
+          "amount": 12
+        }
+      }
+    }
+  ]
+}

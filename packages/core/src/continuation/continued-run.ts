@@ -23,7 +23,8 @@ interface PredecessorRow {
  * the caller's transaction: a `workflow_runs` row with the same workflow
  * type, namespace, parent link and schedule as `runId`, the same
  * `first_run_id`, the next `chain_index` and the event's input, plus its
- * `run_started` event and its first workflow task on the queue of the
+ * `run_started` event, a `signal_received` event for every signal the event
+ * carries over, and its first workflow task on the queue of the
  * predecessor. The caller must hold the predecessor's row lock (and its
  * parent's first). Returns the new run's id.
  */
@@ -74,6 +75,16 @@ export async function createContinuedRunOnClient(
   });
   await appendEventsOnClient(client, codec, nextRunId, 0, [
     { type: "run_started", workflowType: row.workflow_type, input: event.input },
+    ...(event.signals ?? []).map((signal): WorkflowEvent =>
+      signal.signalId === undefined
+        ? { type: "signal_received", signalName: signal.signalName, payload: signal.payload }
+        : {
+            type: "signal_received",
+            signalName: signal.signalName,
+            payload: signal.payload,
+            signalId: signal.signalId,
+          },
+    ),
   ]);
   await client.query(
     `insert into tasks (namespace_id, run_id, queue_name, task_type, payload)

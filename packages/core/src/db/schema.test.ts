@@ -85,6 +85,9 @@ describe("initial schema", () => {
     expect(result.rows.map((row) => row.table_name)).toEqual([
       "api_keys",
       "dead_letters",
+      "event_triggers",
+      "event_waits",
+      "external_events",
       "namespace_quotas",
       "namespaces",
       "run_events",
@@ -92,6 +95,7 @@ describe("initial schema", () => {
       "run_stickiness",
       "schedule_triggers",
       "schedules",
+      "signal_ids",
       "step_attempts",
       "step_results",
       "tasks",

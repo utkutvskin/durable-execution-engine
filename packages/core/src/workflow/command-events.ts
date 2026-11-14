@@ -55,7 +55,28 @@ export function commandToEvent(command: WorkflowCommand): WorkflowEvent {
     case "fail_run":
       return { type: "run_failed", error: command.error };
     case "continue_as_new":
-      return { type: "run_continued_as_new", input: command.input };
+      return command.signals === undefined || command.signals.length === 0
+        ? { type: "run_continued_as_new", input: command.input }
+        : {
+            type: "run_continued_as_new",
+            input: command.input,
+            signals: command.signals.map((signal) => ({ ...signal })),
+          };
+    case "wait_for_event":
+      return command.expiresAt === undefined
+        ? {
+            type: "event_wait_started",
+            waitId: command.waitId,
+            eventName: command.eventName,
+            key: command.key,
+          }
+        : {
+            type: "event_wait_started",
+            waitId: command.waitId,
+            eventName: command.eventName,
+            key: command.key,
+            expiresAt: command.expiresAt,
+          };
     case "cancel_run":
       return command.reason === undefined
         ? { type: "run_cancelled" }
