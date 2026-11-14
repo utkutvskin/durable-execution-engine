@@ -244,6 +244,27 @@ describe("transactional workflow start, signal and cancel", () => {
     expect(tasks.rowCount).toBe(2);
   });
 
+  it("records a signal with a repeated signal id once", async () => {
+    const runId = await startCommitted();
+    const send = (): Promise<{ readonly duplicate: boolean }> =>
+      inAppTransaction(
+        (client) =>
+          signalWorkflow(client, {
+            runId,
+            signalName: "paid",
+            signalId: "payment-77",
+            schema: engine.schema,
+          }),
+        "commit",
+      );
+
+    const first = await send();
+    const second = await send();
+
+    expect([first.duplicate, second.duplicate]).toEqual([false, true]);
+    expect(await eventTypes(runId)).toEqual(["run_started", "signal_received"]);
+  });
+
   it("requests cancellation only when the caller commits", async () => {
     const runId = await startCommitted();
     await inAppTransaction(

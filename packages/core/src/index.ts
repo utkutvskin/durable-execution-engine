@@ -260,12 +260,18 @@ export type { CompensationHandler, QueryHandler, SelectResult } from "./workflow
 export {
   RunNotFoundError,
   RunNotOpenError,
+  WorkflowKeyConflictError,
   createRunInteractions,
+  signalRunOnClient,
+  signalWithStartOnClient,
 } from "./signals/signal-service.ts";
 export type {
   RunInteractions,
   RunInteractionsOptions,
+  SignalOptions,
   SignalReceipt,
+  SignalWithStartInput,
+  SignalWithStartReceipt,
 } from "./signals/signal-service.ts";
 export {
   DEFAULT_EVENT_BUFFER_MS,

@@ -91,12 +91,14 @@ export interface StartWorkflowResult {
 }
 
 /**
- * What `signalWorkflow` sends.
+ * What `signalWorkflow` sends. A repeated `signalId` in the run's chain is
+ * recorded once.
  */
 export interface SignalWorkflowInput extends EmbeddedOptions {
   readonly runId: string;
   readonly signalName: string;
   readonly payload?: unknown;
+  readonly signalId?: string | undefined;
 }
 
 /**
@@ -271,7 +273,9 @@ export async function signalWorkflow(
 ): Promise<SignalReceipt> {
   const codec = input.codec ?? jsonCodec;
   return inEmbeddedTransaction(client, input, () =>
-    signalRunOnClient(client, codec, input.runId, input.signalName, input.payload ?? null),
+    signalRunOnClient(client, codec, input.runId, input.signalName, input.payload ?? null, {
+      signalId: input.signalId,
+    }),
   );
 }
 
