@@ -76,6 +76,12 @@ A **signal** is an event delivered to a running workflow from outside: `wf run s
 
 A **query** reads the state of a run without changing it. A workflow registers a handler with `ctx.setQueryHandler`, and a query replays the history to answer; it writes no event.
 
+A signal may carry a **signal id**; a repeated id anywhere in the run's continue-as-new chain is recorded once. **Signal-with-start** signals the run that holds a workflow key and starts it first when there is none, so a caller does not need to know whether the run exists. When a run continues as new, the signals it received but did not consume are recorded again at the start of the next run, and a signal sent to the old run is forwarded to the current one, so no signal is lost at the hand-over.
+
+An **event** is addressed by a name and a correlation key instead of a run id: `POST /v1/events`. A workflow waits for it with `ctx.waitForEvent(name, { match, timeoutMs })`. Every event is kept for a buffer period, so a run that starts waiting after the event arrived still receives it, and each run receives an event at most once. An **event trigger** starts a run for every matching event. The timeout of a wait is a durable timer like `ctx.sleep`.
+
+`ctx.condition(predicate, timeoutMs)` waits until a predicate over the workflow's own state holds, for example "two approvals arrived". The engine checks the predicate after each history event the replay applies, so it resolves at the same point on every replay; with a timeout it resolves `false` when the timer fires first.
+
 An **update** changes the state of a run and returns a result to the caller: `wf run update`, or `POST /v1/runs/{id}/updates/{name}`. The workflow declares it with `defineUpdate(name, { validate, handler })` and registers it with `ctx.setUpdateHandler`. The validator runs first, against the run's current state; when it throws, the caller gets the error and nothing is recorded. An accepted update is recorded as `update_accepted`, and its handler runs inside the workflow at exactly that point of the history, so replay applies every update in the same order to the same state. The handler's result is recorded as `update_completed` and returned to the caller. Updates sent at the same time are applied one after another in the order they were recorded.
 
 ## Cancellation and compensation

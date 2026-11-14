@@ -46,24 +46,28 @@ The key is shown once; only its sha256 hash is stored.
 
 ## Endpoints
 
-| Method | Path                                      | Operation           | Success |
-| ------ | ----------------------------------------- | ------------------- | ------- |
-| POST   | `/v1/runs`                                | `startRun`          | 201/200 |
-| GET    | `/v1/runs`                                | `listRuns`          | 200     |
-| GET    | `/v1/runs/{runId}`                        | `describeRun`       | 200     |
-| GET    | `/v1/runs/{runId}/history`                | `getHistory`        | 200     |
-| POST   | `/v1/runs/{runId}/signal`                 | `signalRun`         | 200     |
-| POST   | `/v1/runs/{runId}/updates/{updateName}`   | `updateRun`         | 200/202 |
-| GET    | `/v1/runs/{runId}/queries/{queryName}`    | `queryRun`          | 200     |
-| POST   | `/v1/runs/{runId}/cancel`                 | `cancelRun`         | 202     |
-| POST   | `/v1/runs/{runId}/terminate`              | `terminateRun`      | 200     |
-| GET    | `/v1/namespace`                           | `describeNamespace` | 200     |
-| GET    | `/v1/dead-letters`                        | `listDeadLetters`   | 200     |
-| POST   | `/v1/dead-letters/{deadLetterId}/requeue` | `requeueDeadLetter` | 200     |
-| GET    | `/v1/runs/{runId}/stream`                 | not in OpenAPI      | 200     |
-| GET    | `/openapi.json`                           | public              | 200     |
+| Method | Path                                      | Operation            | Success |
+| ------ | ----------------------------------------- | -------------------- | ------- |
+| POST   | `/v1/runs`                                | `startRun`           | 201/200 |
+| GET    | `/v1/runs`                                | `listRuns`           | 200     |
+| GET    | `/v1/runs/{runId}`                        | `describeRun`        | 200     |
+| GET    | `/v1/runs/{runId}/history`                | `getHistory`         | 200     |
+| POST   | `/v1/runs/{runId}/signal`                 | `signalRun`          | 200     |
+| POST   | `/v1/signal-with-start`                   | `signalWithStart`    | 201/200 |
+| POST   | `/v1/events`                              | `sendEvent`          | 202     |
+| POST   | `/v1/event-triggers`                      | `createEventTrigger` | 201     |
+| GET    | `/v1/event-triggers`                      | `listEventTriggers`  | 200     |
+| POST   | `/v1/runs/{runId}/updates/{updateName}`   | `updateRun`          | 200/202 |
+| GET    | `/v1/runs/{runId}/queries/{queryName}`    | `queryRun`           | 200     |
+| POST   | `/v1/runs/{runId}/cancel`                 | `cancelRun`          | 202     |
+| POST   | `/v1/runs/{runId}/terminate`              | `terminateRun`       | 200     |
+| GET    | `/v1/namespace`                           | `describeNamespace`  | 200     |
+| GET    | `/v1/dead-letters`                        | `listDeadLetters`    | 200     |
+| POST   | `/v1/dead-letters/{deadLetterId}/requeue` | `requeueDeadLetter`  | 200     |
+| GET    | `/v1/runs/{runId}/stream`                 | not in OpenAPI       | 200     |
+| GET    | `/openapi.json`                           | public               | 200     |
 
-Errors are `{ "error": { "code", "message", "details"? } }`. 400 is a validation failure or a malformed body or cursor, a rejected or unknown update or an unknown query, 409 a closed run, a compacted history or a reused idempotency key with a different request, 413 a body over 1 MiB, and 501 an update or query to an API that does not have the workflow's code.
+Errors are `{ "error": { "code", "message", "details"? } }`. 400 is a validation failure or a malformed body or cursor, a rejected or unknown update or an unknown query, 409 a closed run, a compacted history, a reused idempotency key with a different request or a workflow key of another type, 413 a body over 1 MiB, and 501 an update or query to an API that does not have the workflow's code.
 
 ## Updates and queries
 
@@ -100,6 +104,30 @@ The handler runs inside the workflow at the position of its `update_accepted` ev
 `GET /v1/runs/{runId}/queries/{queryName}?argument=<json>` answers `{ "result" }` from a replay of the history and writes nothing. An unknown query answers 400 `unknown_query`, an `argument` that is not JSON 400 `validation_failed`.
 
 Both replay the workflow, so the API process needs its code: `wf dev` loads the module it runs, `wf serve` needs `--module`. Without it they answer 501 `workflow_not_loaded`. A closed run answers 409 `run_closed` to an update, a compacted history 409 `history_compacted` to both.
+
+## Signals
+
+`POST /v1/runs/{runId}/signal` takes `{ "name", "payload"?, "signalId"? }` and answers `{ "runId", "sequenceNumber", "duplicate" }`. `signalId` deduplicates: the first signal with an id in the run's continue-as-new chain is recorded, a repeat records nothing and answers `duplicate: true` with the first signal's run and sequence number. A signal sent to a run that continued as new is recorded on the current run of its chain, and `runId` names that run. A signal to a chain whose last run is closed answers 409 `run_closed`.
+
+`POST /v1/signal-with-start` takes `{ "workflowType", "workflowKey", "input"?, "signal": { "name", "payload"?, "signalId"? } }`. `workflowKey` is the run's idempotency key: the run that holds it is signalled; when no run holds it, a run of `workflowType` with `input` is started and signalled in the same transaction (201). Concurrent calls with the same key start exactly one run, and every signal reaches it. A key that holds a run of another type answers 409 `workflow_key_conflict`, an unknown type 400 `unknown_workflow_type`.
+
+## Events
+
+An event is addressed by a name and a correlation key, not by a run id. A workflow waits for one with `ctx.waitForEvent(name, { match, timeoutMs })`:
+
+```ts
+const order = defineWorkflow("order", async (ctx, input: { orderId: string }) => {
+  const paid = await ctx.waitForEvent<{ amount: number }>("payment.received", {
+    match: input.orderId,
+    timeoutMs: 24 * 60 * 60 * 1000,
+  });
+  return paid.amount;
+});
+```
+
+`POST /v1/events` takes `{ "name", "key", "payload"?, "bufferMs"? }` and answers 202 `{ "eventId", "expiresAt", "deliveredTo": [{ "runId", "waitId" }], "startedRunIds" }`. The event is delivered at once to every run waiting for its name and key, and stays deliverable for `bufferMs` (default one hour, at most seven days, 0 for none) to runs that start waiting later, so an event that arrives before the wait is not lost. Each run receives one event at most once: a second wait in the same run takes the next event. A wait whose timeout fired receives nothing more, and the workflow sees `EventWaitTimeoutError`.
+
+`POST /v1/event-triggers` takes `{ "eventName", "key"?, "workflowType" }` and answers 201 with the trigger. From then on every event of that name (and, with `key`, only that correlation key) starts a run of `workflowType` with the input `{ "eventId", "eventName", "key", "payload" }`, once per event and trigger. `GET /v1/event-triggers` lists them, oldest first.
 
 ## Run stream
 

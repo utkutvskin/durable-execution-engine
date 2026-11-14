@@ -3,7 +3,7 @@
 A durable execution engine: workflows and steps that survive process crashes, written in
 TypeScript on top of PostgreSQL. Every decision a workflow makes is an event in an append-only log; when a worker dies, another one replays the log and carries on exactly where the first stopped.
 
-What you get in v0.1.0: steps with retries and a dead letter queue, durable timers and cron schedules, signals and queries, validated updates that return a result, cancellation with compensation, child workflows, continue-as-new, workflow versioning, an HTTP API with keys, namespaces and quotas, a run explorer web ui, metrics, tracing and a command line. Read `docs/CONCEPTS.md` for the ideas and `docs/ARCHITECTURE.md` for the moving parts.
+What you get in v0.1.0: steps with retries and a dead letter queue, durable timers and cron schedules, signals with deduplication ids and signal-with-start, queries, validated updates that return a result, events addressed by a correlation key with buffering and triggers, conditions, cancellation with compensation, child workflows, continue-as-new, workflow versioning, an HTTP API with keys, namespaces and quotas, a run explorer web ui, metrics, tracing and a command line. Read `docs/CONCEPTS.md` for the ideas and `docs/ARCHITECTURE.md` for the moving parts.
 
 ## Stack
 
