@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  MAX_EVENT_BUFFER_MS,
   MAX_UPDATE_WAIT_MS,
   RunAlreadyClosedError,
   RunHistoryCompactedError,
@@ -8,6 +9,7 @@ import {
   UnknownQueryError,
   UnknownUpdateError,
   UpdateRejectedError,
+  WorkflowKeyConflictError,
   WorkflowNotLoadedError,
 } from "@dee/core";
 import {
@@ -172,9 +174,115 @@ const deadLetterListSchema = z
 
 const requeueResponseSchema = z.object({ taskId: z.uuid() }).meta({ id: "RequeueResponse" });
 
+const signalIdSchema = z.string().min(1).max(255).optional().meta({
+  description:
+    "Optional. A deduplication id: a second signal with the same id in the run's continue-as-new chain is not recorded again.",
+});
+
 const signalRequestSchema = z
-  .object({ name: z.string().min(1).max(255), payload: z.unknown().optional() })
+  .object({
+    name: z.string().min(1).max(255),
+    payload: z.unknown().optional(),
+    signalId: signalIdSchema,
+  })
   .meta({ id: "SignalRequest" });
+
+const signalResponseSchema = z
+  .object({
+    runId: z.uuid().meta({
+      description:
+        "The run that received the signal: the current run of the chain when the addressed run continued as new.",
+    }),
+    sequenceNumber: z.number().int(),
+    duplicate: z.boolean().meta({
+      description: "True when the signal id was used before; nothing was recorded.",
+    }),
+  })
+  .meta({ id: "SignalResponse" });
+
+const signalWithStartRequestSchema = z
+  .object({
+    workflowType: z.string().min(1).max(255),
+    workflowKey: z.string().min(1).max(255).meta({
+      description:
+        "The run's idempotency key. The run holding it is signalled; without one, a run is started first.",
+    }),
+    input: z.unknown().optional(),
+    signal: z.object({
+      name: z.string().min(1).max(255),
+      payload: z.unknown().optional(),
+      signalId: signalIdSchema,
+    }),
+  })
+  .meta({ id: "SignalWithStartRequest" });
+
+const signalWithStartResponseSchema = signalResponseSchema
+  .extend({ created: z.boolean() })
+  .meta({ id: "SignalWithStartResponse" });
+
+const sendEventRequestSchema = z
+  .object({
+    name: z.string().min(1).max(255),
+    key: z.string().max(1024).meta({ description: "The correlation key waits match on." }),
+    payload: z.unknown().optional(),
+    bufferMs: z.number().int().min(0).max(MAX_EVENT_BUFFER_MS).optional().meta({
+      description:
+        "How long the event stays deliverable to runs that wait for it later. Defaults to 3600000.",
+    }),
+  })
+  .meta({ id: "SendEventRequest" });
+
+const sendEventResponseSchema = z
+  .object({
+    eventId: z.uuid(),
+    expiresAt: z.iso.datetime(),
+    deliveredTo: z.array(z.object({ runId: z.uuid(), waitId: z.string() })),
+    startedRunIds: z.array(z.uuid()),
+  })
+  .meta({ id: "SendEventResponse" });
+
+const eventTriggerRequestSchema = z
+  .object({
+    eventName: z.string().min(1).max(255),
+    key: z.string().max(1024).optional().meta({
+      description: "Optional. Only events with exactly this correlation key start a run.",
+    }),
+    workflowType: z.string().min(1).max(255),
+  })
+  .meta({ id: "EventTriggerRequest" });
+
+const eventTriggerSchema = z
+  .object({
+    id: z.uuid(),
+    eventName: z.string(),
+    key: z.string().optional(),
+    workflowType: z.string(),
+    queueName: z.string(),
+    createdAt: z.iso.datetime(),
+  })
+  .meta({ id: "EventTrigger" });
+
+const eventTriggerListSchema = z
+  .object({ triggers: z.array(eventTriggerSchema) })
+  .meta({ id: "EventTriggerListResponse" });
+
+function toTriggerBody(trigger: {
+  readonly id: string;
+  readonly eventName: string;
+  readonly key: string | undefined;
+  readonly workflowType: string;
+  readonly queueName: string;
+  readonly createdAt: Date;
+}): z.infer<typeof eventTriggerSchema> {
+  return {
+    id: trigger.id,
+    eventName: trigger.eventName,
+    ...(trigger.key === undefined ? {} : { key: trigger.key }),
+    workflowType: trigger.workflowType,
+    queueName: trigger.queueName,
+    createdAt: trigger.createdAt.toISOString(),
+  };
+}
 
 const updateRequestSchema = z
   .object({
@@ -461,10 +569,13 @@ export function createRoutes(service: RunService): readonly Route[] {
       summary: "Send a signal to an open run.",
       body: signalRequestSchema,
       responses: {
-        200: { description: "The signal was recorded.", schema: sequenceResponseSchema },
+        200: {
+          description: "The signal was recorded, or its signal id was used before.",
+          schema: signalResponseSchema,
+        },
         ...commonErrors,
         404: notFound,
-        409: errorResponse("The run is closed."),
+        409: errorResponse("The run and every run it continued as are closed."),
       },
       async handle(request) {
         const receipt = await service.signalRun(
@@ -472,8 +583,110 @@ export function createRoutes(service: RunService): readonly Route[] {
           runIdOf(request),
           request.parsedBody.name,
           request.parsedBody.payload,
+          request.parsedBody.signalId,
         );
         return { status: 200, body: receipt };
+      },
+    }),
+    defineRoute({
+      method: "post",
+      path: "/v1/signal-with-start",
+      operationId: "signalWithStart",
+      summary:
+        "Signal the run that holds a workflow key, starting it first when no run holds the key.",
+      body: signalWithStartRequestSchema,
+      responses: {
+        200: {
+          description: "An existing run was signalled.",
+          schema: signalWithStartResponseSchema,
+        },
+        201: {
+          description: "The run was started and signalled.",
+          schema: signalWithStartResponseSchema,
+        },
+        ...commonErrors,
+        409: errorResponse(
+          "The run of the key is closed, or the key holds a run of another workflow type.",
+        ),
+      },
+      async handle(request) {
+        const body = request.parsedBody;
+        const receipt = await service.signalWithStart(request.namespaceId, {
+          workflowType: body.workflowType,
+          workflowKey: body.workflowKey,
+          input: body.input,
+          signalName: body.signal.name,
+          payload: body.signal.payload,
+          signalId: body.signal.signalId,
+        });
+        return { status: receipt.created ? 201 : 200, body: receipt };
+      },
+    }),
+    defineRoute({
+      method: "post",
+      path: "/v1/events",
+      operationId: "sendEvent",
+      summary:
+        "Send an external event: delivered to the runs waiting for its name and key, buffered for runs that wait later, and starting the runs of matching triggers.",
+      body: sendEventRequestSchema,
+      responses: {
+        202: {
+          description: "The event was stored and delivered.",
+          schema: sendEventResponseSchema,
+        },
+        ...commonErrors,
+      },
+      async handle(request) {
+        const body = request.parsedBody;
+        const receipt = await service.sendEvent(request.namespaceId, {
+          eventName: body.name,
+          key: body.key,
+          payload: body.payload ?? null,
+          ...(body.bufferMs === undefined ? {} : { bufferMs: body.bufferMs }),
+        });
+        return {
+          status: 202,
+          body: {
+            eventId: receipt.eventId,
+            expiresAt: receipt.expiresAt.toISOString(),
+            deliveredTo: receipt.deliveredTo,
+            startedRunIds: receipt.startedRunIds,
+          },
+        };
+      },
+    }),
+    defineRoute({
+      method: "post",
+      path: "/v1/event-triggers",
+      operationId: "createEventTrigger",
+      summary: "Register a trigger: every matching event starts a run of the workflow type.",
+      body: eventTriggerRequestSchema,
+      responses: {
+        201: { description: "The trigger was registered.", schema: eventTriggerSchema },
+        ...commonErrors,
+      },
+      async handle(request) {
+        const body = request.parsedBody;
+        const trigger = await service.createEventTrigger(request.namespaceId, {
+          eventName: body.eventName,
+          workflowType: body.workflowType,
+          ...(body.key === undefined ? {} : { key: body.key }),
+        });
+        return { status: 201, body: toTriggerBody(trigger) };
+      },
+    }),
+    defineRoute({
+      method: "get",
+      path: "/v1/event-triggers",
+      operationId: "listEventTriggers",
+      summary: "List the namespace's event triggers, oldest first.",
+      responses: {
+        200: { description: "The triggers.", schema: eventTriggerListSchema },
+        ...commonErrors,
+      },
+      async handle(request) {
+        const triggers = await service.listEventTriggers(request.namespaceId);
+        return { status: 200, body: { triggers: triggers.map(toTriggerBody) } };
       },
     }),
     defineRoute({
@@ -642,6 +855,12 @@ export function toErrorResult(error: unknown): ErrorResult {
   }
   if (error instanceof RunNotOpenError || error instanceof RunAlreadyClosedError) {
     return { status: 409, body: { error: { code: "run_closed", message: error.message } } };
+  }
+  if (error instanceof WorkflowKeyConflictError) {
+    return {
+      status: 409,
+      body: { error: { code: "workflow_key_conflict", message: error.message } },
+    };
   }
   if (error instanceof IdempotencyConflictError) {
     return {

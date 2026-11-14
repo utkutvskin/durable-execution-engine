@@ -21,8 +21,28 @@ import {
   type UpdateOutcome,
   type UpdateWaitOptions,
   type WorkflowEvent,
+  createEventService,
   rollbackQuietly,
+  type CreateEventTriggerInput,
+  type EventTrigger,
+  type SendEventInput,
+  type SendEventReceipt,
+  type SignalReceipt,
+  type SignalWithStartReceipt,
 } from "@dee/core";
+
+/**
+ * What `RunService.signalWithStart` sends: the run to start when no run
+ * holds `workflowKey` yet, and the signal.
+ */
+export interface SignalWithStartRequest {
+  readonly workflowType: string;
+  readonly workflowKey: string;
+  readonly input?: unknown;
+  readonly signalName: string;
+  readonly payload?: unknown;
+  readonly signalId?: string | undefined;
+}
 
 /**
  * Raised when a start request reuses an idempotency key with a different
@@ -288,7 +308,37 @@ export interface RunService {
     runId: string,
     signalName: string,
     payload?: unknown,
-  ) => Promise<{ readonly sequenceNumber: number }>;
+    signalId?: string,
+  ) => Promise<SignalReceipt>;
+
+  /**
+   * Signals the open run that holds `request.workflowKey`, starting it first
+   * when no run holds the key. Rejects with `UnknownWorkflowTypeError`,
+   * `RunNotOpenError` or `WorkflowKeyConflictError`.
+   */
+  signalWithStart: (
+    namespaceId: string,
+    request: SignalWithStartRequest,
+  ) => Promise<SignalWithStartReceipt>;
+
+  /**
+   * Sends an external event to the runs waiting for its name and key and
+   * starts the runs of its matching triggers.
+   */
+  sendEvent: (namespaceId: string, input: SendEventInput) => Promise<SendEventReceipt>;
+
+  /**
+   * Registers an event trigger. Rejects with `UnknownWorkflowTypeError`.
+   */
+  createEventTrigger: (
+    namespaceId: string,
+    input: CreateEventTriggerInput,
+  ) => Promise<EventTrigger>;
+
+  /**
+   * Lists the namespace's event triggers, oldest first.
+   */
+  listEventTriggers: (namespaceId: string) => Promise<EventTrigger[]>;
 
   /**
    * Validates the update `updateName` against the run's current state,
@@ -450,6 +500,13 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     ...(options.updateWait === undefined ? {} : { updateWait: options.updateWait }),
   });
   const control: RunControl = createRunControl(pool);
+  const events = createEventService(pool);
+
+  function assertKnownType(workflowType: string): void {
+    if (options.workflows !== undefined && options.workflows.get(workflowType) === undefined) {
+      throw new UnknownWorkflowTypeError(workflowType);
+    }
+  }
   const deadLetters = createDeadLetterQueue(pool);
 
   async function assertOwned(namespaceId: string, runId: string): Promise<void> {
@@ -727,9 +784,39 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
       return { taskId };
     },
 
-    async signalRun(namespaceId, runId, signalName, payload) {
+    async signalRun(namespaceId, runId, signalName, payload, signalId) {
       await assertOwned(namespaceId, runId);
-      return interactions.signalRun(runId, signalName, payload);
+      return interactions.signalRun(runId, signalName, payload, { signalId });
+    },
+
+    async signalWithStart(namespaceId, request) {
+      assertKnownType(request.workflowType);
+      return interactions.signalWithStart({
+        namespaceId,
+        workflowType: request.workflowType,
+        workflowKey: request.workflowKey,
+        input: request.input ?? null,
+        queueName: options.queueName,
+        signalName: request.signalName,
+        payload: request.payload ?? null,
+        signalId: request.signalId,
+      });
+    },
+
+    async sendEvent(namespaceId, input) {
+      return events.sendEvent(namespaceId, input);
+    },
+
+    async createEventTrigger(namespaceId, input) {
+      assertKnownType(input.workflowType);
+      return events.createTrigger(namespaceId, {
+        ...input,
+        queueName: input.queueName ?? options.queueName,
+      });
+    },
+
+    async listEventTriggers(namespaceId) {
+      return events.listTriggers(namespaceId);
     },
 
     async updateRun(namespaceId, runId, updateName, argument, updateOptions) {

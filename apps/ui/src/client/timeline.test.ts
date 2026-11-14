@@ -94,6 +94,29 @@ describe("buildTimeline", () => {
     ]);
   });
 
+  it("labels an event wait and the event delivered to it", () => {
+    const items = buildTimeline([
+      entry(1, "2026-03-01T10:00:00.000Z", {
+        type: "event_wait_started",
+        waitId: "wait-1",
+        eventName: "payment.received",
+        key: "o-1",
+      }),
+      entry(2, "2026-03-01T10:00:01.000Z", {
+        type: "event_received",
+        waitId: "wait-1",
+        eventId: "e-1",
+        eventName: "payment.received",
+        key: "o-1",
+        payload: { amount: 3 },
+      }),
+    ]);
+    expect(items.map((item) => [item.label, item.summary, item.tone])).toEqual([
+      ["waiting for event", "payment.received key o-1 (wait-1)", "neutral"],
+      ["event received", "payment.received key o-1 (wait-1)", "good"],
+    ]);
+  });
+
   it("falls back to the type name for an event it does not know", () => {
     const [item] = buildTimeline([
       entry(1, "2026-03-01T10:00:00.000Z", { type: "future_event_kind" }),

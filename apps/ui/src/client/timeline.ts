@@ -117,6 +117,16 @@ const PRESENTATIONS: Readonly<Record<string, Presentation>> = {
         ? text(e["updateId"])
         : `${text(e["updateId"])}: ${errorText(e["error"])}`,
   },
+  event_wait_started: {
+    label: "waiting for event",
+    tone: "neutral",
+    summary: (e) => `${text(e["eventName"])} key ${text(e["key"])} (${text(e["waitId"])})`,
+  },
+  event_received: {
+    label: "event received",
+    tone: "good",
+    summary: (e) => `${text(e["eventName"])} key ${text(e["key"])} (${text(e["waitId"])})`,
+  },
 };
 
 /**

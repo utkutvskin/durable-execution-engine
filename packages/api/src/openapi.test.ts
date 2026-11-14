@@ -28,14 +28,18 @@ describe("generated openapi document", () => {
   it("covers the endpoints of the product surface and the ui", () => {
     expect(routes.map((route) => route.operationId).sort()).toEqual([
       "cancelRun",
+      "createEventTrigger",
       "describeNamespace",
       "describeRun",
       "getHistory",
       "listDeadLetters",
+      "listEventTriggers",
       "listRuns",
       "queryRun",
       "requeueDeadLetter",
+      "sendEvent",
       "signalRun",
+      "signalWithStart",
       "startRun",
       "terminateRun",
       "updateRun",

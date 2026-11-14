@@ -91,6 +91,16 @@ export interface CancelWorkflowInput extends EmbeddedOptions {
 }
 
 // @public
+export interface CarriedSignal {
+    // (undocumented)
+    readonly payload: unknown;
+    // (undocumented)
+    readonly signalId?: string;
+    // (undocumented)
+    readonly signalName: string;
+}
+
+// @public
 export type CatchUpPolicy = "latest_only" | "all";
 
 // @public
@@ -286,6 +296,21 @@ export function createDeadLetterQueue(pool: Pool, options?: {
 
 // @public
 export function createEngineMetrics(pool: Pool, options?: EngineMetricsOptions): EngineMetrics;
+
+// @public
+export function createEventService(pool: Pool, options?: EventServiceOptions): EventService;
+
+// @public
+export interface CreateEventTriggerInput {
+    // (undocumented)
+    readonly eventName: string;
+    // (undocumented)
+    readonly key?: string | undefined;
+    // (undocumented)
+    readonly queueName?: string | undefined;
+    // (undocumented)
+    readonly workflowType: string;
+}
 
 // @public
 export function createGzipCodec(codec: Codec): Codec;
@@ -572,6 +597,9 @@ export const DEFAULT_EMBEDDED_NAMESPACE = "default";
 export const DEFAULT_EMBEDDED_QUEUE = "default";
 
 // @public
+export const DEFAULT_EVENT_BUFFER_MS: number;
+
+// @public
 export const DEFAULT_MAX_CHILDREN = 1000;
 
 // @public
@@ -753,6 +781,14 @@ export interface EnqueueInput {
 export function enqueueStepTaskOnClient(client: PoolClient, input: StepTaskEnqueueInput): Promise<boolean>;
 
 // @public
+export interface EventDelivery {
+    // (undocumented)
+    readonly runId: string;
+    // (undocumented)
+    readonly waitId: string;
+}
+
+// @public
 export interface EventReader {
     // (undocumented)
     readonly knownTypes: readonly string[];
@@ -761,9 +797,51 @@ export interface EventReader {
 }
 
 // @public
+export interface EventService {
+    createTrigger(namespaceId: string, input: CreateEventTriggerInput): Promise<EventTrigger>;
+    listTriggers(namespaceId: string): Promise<EventTrigger[]>;
+    sendEvent(namespaceId: string, input: SendEventInput): Promise<SendEventReceipt>;
+}
+
+// @public
+export interface EventServiceOptions {
+    // (undocumented)
+    readonly clock?: ClockSource;
+    // (undocumented)
+    readonly codec?: Codec;
+}
+
+// @public
 export interface EventStore {
     append(runId: string, expectedSeq: number, events: readonly WorkflowEvent[]): Promise<StoredEvent[]>;
     read(runId: string, fromSeq?: number, limit?: number): Promise<StoredEvent[]>;
+}
+
+// @public
+export interface EventTrigger {
+    // (undocumented)
+    readonly createdAt: Date;
+    // (undocumented)
+    readonly eventName: string;
+    // (undocumented)
+    readonly id: string;
+    // (undocumented)
+    readonly key: string | undefined;
+    // (undocumented)
+    readonly queueName: string;
+    // (undocumented)
+    readonly workflowType: string;
+}
+
+// @public
+export class EventWaitTimeoutError extends Error {
+    constructor(eventName: string, key: string, timeoutMs: number);
+    // (undocumented)
+    readonly eventName: string;
+    // (undocumented)
+    readonly key: string;
+    // (undocumented)
+    readonly timeoutMs: number;
 }
 
 // @public
@@ -1175,6 +1253,9 @@ export function markRunWaiting(pool: Pool, mark: RunWaitingMark): Promise<void>;
 
 // @public
 export function maskSensitiveFields(value: unknown, sensitiveFields: readonly string[]): unknown;
+
+// @public
+export const MAX_EVENT_BUFFER_MS: number;
 
 // @public
 export const MAX_RECOVERY_BACKOFF_MS = 3600000;
@@ -1604,6 +1685,7 @@ export interface ReplayOutcome<TResult> {
     // (undocumented)
     readonly continuation: {
         readonly input: unknown;
+        readonly signals: readonly CarriedSignal[];
     } | undefined;
     // (undocumented)
     readonly queryHandlers: ReadonlyMap<string, QueryHandler>;
@@ -1818,7 +1900,8 @@ export class RunHistoryCompactedError extends Error {
 // @public
 export interface RunInteractions {
     queryRun(runId: string, queryName: string, argument?: unknown): Promise<unknown>;
-    signalRun(runId: string, signalName: string, payload?: unknown): Promise<SignalReceipt>;
+    signalRun(runId: string, signalName: string, payload?: unknown, options?: SignalOptions): Promise<SignalReceipt>;
+    signalWithStart(input: SignalWithStartInput): Promise<SignalWithStartReceipt>;
     updateRun(runId: string, updateName: string, argument?: unknown, options?: UpdateCallOptions): Promise<UpdateOutcome>;
 }
 
@@ -2082,6 +2165,33 @@ export interface SelectResult<TValue = unknown> {
 }
 
 // @public
+export interface SendEventInput {
+    // (undocumented)
+    readonly bufferMs?: number;
+    // (undocumented)
+    readonly eventName: string;
+    // (undocumented)
+    readonly key: string;
+    // (undocumented)
+    readonly payload?: unknown;
+}
+
+// @public
+export function sendEventOnClient(client: PoolClient, codec: Codec, namespaceId: string, input: SendEventInput, now: Date): Promise<SendEventReceipt>;
+
+// @public
+export interface SendEventReceipt {
+    // (undocumented)
+    readonly deliveredTo: readonly EventDelivery[];
+    // (undocumented)
+    readonly eventId: string;
+    // (undocumented)
+    readonly expiresAt: Date;
+    // (undocumented)
+    readonly startedRunIds: readonly string[];
+}
+
+// @public
 export interface SerializedError {
     // (undocumented)
     readonly cause?: SerializedError | undefined;
@@ -2099,9 +2209,51 @@ export interface SerializedError {
 export function serializeError(reason: unknown): SerializedError;
 
 // @public
+export interface SignalOptions {
+    // (undocumented)
+    readonly signalId?: string | undefined;
+}
+
+// @public
 export interface SignalReceipt {
     // (undocumented)
+    readonly duplicate: boolean;
+    // (undocumented)
+    readonly runId: string;
+    // (undocumented)
     readonly sequenceNumber: number;
+}
+
+// @public
+export function signalRunOnClient(client: PoolClient, codec: Codec, runId: string, signalName: string, payload?: unknown, options?: SignalOptions): Promise<SignalReceipt>;
+
+// @public
+export interface SignalWithStartInput {
+    // (undocumented)
+    readonly input?: unknown;
+    // (undocumented)
+    readonly namespaceId: string;
+    // (undocumented)
+    readonly payload?: unknown;
+    // (undocumented)
+    readonly queueName?: string | undefined;
+    // (undocumented)
+    readonly signalId?: string | undefined;
+    // (undocumented)
+    readonly signalName: string;
+    // (undocumented)
+    readonly workflowKey: string;
+    // (undocumented)
+    readonly workflowType: string;
+}
+
+// @public
+export function signalWithStartOnClient(client: PoolClient, codec: Codec, input: SignalWithStartInput): Promise<SignalWithStartReceipt>;
+
+// @public
+export interface SignalWithStartReceipt extends SignalReceipt {
+    // (undocumented)
+    readonly created: boolean;
 }
 
 // @public
@@ -2113,6 +2265,8 @@ export interface SignalWorkflowInput extends EmbeddedOptions {
     readonly payload?: unknown;
     // (undocumented)
     readonly runId: string;
+    // (undocumented)
+    readonly signalId?: string | undefined;
     // (undocumented)
     readonly signalName: string;
 }
@@ -2598,6 +2752,18 @@ export interface TracingProviderOptions {
 }
 
 // @public
+export interface TriggeredRunInput {
+    // (undocumented)
+    readonly eventId: string;
+    // (undocumented)
+    readonly eventName: string;
+    // (undocumented)
+    readonly key: string;
+    // (undocumented)
+    readonly payload: unknown;
+}
+
+// @public
 export type TriggerOutcome = "STARTED" | "SKIPPED" | "BUFFERED";
 
 // @public
@@ -2744,6 +2910,28 @@ export class VersionMismatchError extends Error {
 }
 
 // @public
+export interface WaitForEventCommand {
+    // (undocumented)
+    readonly eventName: string;
+    // (undocumented)
+    readonly expiresAt?: string;
+    // (undocumented)
+    readonly key: string;
+    // (undocumented)
+    readonly type: "wait_for_event";
+    // (undocumented)
+    readonly waitId: string;
+}
+
+// @public
+export interface WaitForEventOptions {
+    // (undocumented)
+    readonly match: string;
+    // (undocumented)
+    readonly timeoutMs?: number;
+}
+
+// @public
 export type WaitingOn = "external" | "dead_letter";
 
 // @public
@@ -2762,12 +2950,13 @@ export function withTransaction<T>(pool: Pool, work: (client: PoolClient) => Pro
 // Warning: (ae-forgotten-export) The symbol "ContinueAsNewCommand" needs to be exported by the entry point index.d.ts
 //
 // @public
-export type WorkflowCommand = ScheduleStepCommand | StartTimerCommand | StartChildCommand | RecordPatchCommand | RecordTimeCommand | RecordCompensationFailureCommand | CompleteUpdateCommand | CompleteRunCommand | FailRunCommand | CancelRunCommand | ContinueAsNewCommand;
+export type WorkflowCommand = ScheduleStepCommand | StartTimerCommand | StartChildCommand | RecordPatchCommand | RecordTimeCommand | RecordCompensationFailureCommand | CompleteUpdateCommand | WaitForEventCommand | CompleteRunCommand | FailRunCommand | CancelRunCommand | ContinueAsNewCommand;
 
 // @public
 export interface WorkflowContext {
     all<TResult>(tasks: readonly ParallelTask<TResult>[], options?: ParallelOptions): Promise<TResult[]>;
     allSettled<TResult>(tasks: readonly ParallelTask<TResult>[], options?: ParallelOptions): Promise<PromiseSettledResult<TResult>[]>;
+    condition(predicate: () => boolean, timeoutMs?: number): Promise<boolean>;
     continueAsNew(input: unknown): Promise<never>;
     deprecatePatch(patchId: string): void;
     executeChild<TResult = unknown>(workflowType: string, input: unknown, options?: ChildOptions): Promise<TResult>;
@@ -2787,6 +2976,7 @@ export interface WorkflowContext {
     step<TResult>(stepType: string, input: unknown): Promise<TResult>;
     // (undocumented)
     uuid(): string;
+    waitForEvent<TPayload = unknown>(eventName: string, options: WaitForEventOptions): Promise<TPayload>;
     waitForSignal<TPayload = unknown>(signalName: string): Promise<TPayload>;
 }
 
@@ -2833,6 +3023,11 @@ export const workflowEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"run_continued_as_new">;
     input: z.ZodUnknown;
+    signals: z.ZodOptional<z.ZodArray<z.ZodObject<{
+        signalName: z.ZodString;
+        payload: z.ZodUnknown;
+        signalId: z.ZodOptional<z.ZodString>;
+    }, z.core.$strip>>>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"step_scheduled">;
     stepId: z.ZodString;
@@ -2865,6 +3060,7 @@ export const workflowEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"signal_received">;
     signalName: z.ZodString;
     payload: z.ZodUnknown;
+    signalId: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"child_started">;
     childId: z.ZodString;
@@ -2906,10 +3102,32 @@ export const workflowEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     updateId: z.ZodString;
     result: z.ZodUnknown;
     error: z.ZodOptional<z.ZodType<RecordedError, unknown, z.core.$ZodTypeInternals<RecordedError, unknown>>>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"event_wait_started">;
+    waitId: z.ZodString;
+    eventName: z.ZodString;
+    key: z.ZodString;
+    expiresAt: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"event_received">;
+    waitId: z.ZodString;
+    eventId: z.ZodString;
+    eventName: z.ZodString;
+    key: z.ZodString;
+    payload: z.ZodUnknown;
 }, z.core.$strip>], "type">;
 
 // @public
 export type WorkflowHandler<TInput = unknown, TResult = unknown> = (ctx: WorkflowContext, input: TInput) => Promise<TResult>;
+
+// @public
+export class WorkflowKeyConflictError extends Error {
+    constructor(workflowKey: string, runId: string, workflowType: string);
+    // (undocumented)
+    readonly runId: string;
+    // (undocumented)
+    readonly workflowKey: string;
+}
 
 // @public
 export class WorkflowNotLoadedError extends Error {
@@ -3010,11 +3228,12 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/embedded/transactional.d.ts:56:5 - (ae-undocumented) Missing documentation for "executionTimeoutMs".
 // dist/embedded/transactional.d.ts:63:5 - (ae-undocumented) Missing documentation for "runId".
 // dist/embedded/transactional.d.ts:64:5 - (ae-undocumented) Missing documentation for "created".
-// dist/embedded/transactional.d.ts:70:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/embedded/transactional.d.ts:71:5 - (ae-undocumented) Missing documentation for "signalName".
-// dist/embedded/transactional.d.ts:72:5 - (ae-undocumented) Missing documentation for "payload".
-// dist/embedded/transactional.d.ts:78:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/embedded/transactional.d.ts:79:5 - (ae-undocumented) Missing documentation for "reason".
+// dist/embedded/transactional.d.ts:71:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/embedded/transactional.d.ts:72:5 - (ae-undocumented) Missing documentation for "signalName".
+// dist/embedded/transactional.d.ts:73:5 - (ae-undocumented) Missing documentation for "payload".
+// dist/embedded/transactional.d.ts:74:5 - (ae-undocumented) Missing documentation for "signalId".
+// dist/embedded/transactional.d.ts:80:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/embedded/transactional.d.ts:81:5 - (ae-undocumented) Missing documentation for "reason".
 // dist/event-store/codec.d.ts:9:5 - (ae-undocumented) Missing documentation for "encode".
 // dist/event-store/codec.d.ts:10:5 - (ae-undocumented) Missing documentation for "decode".
 // dist/event-store/errors.d.ts:8:5 - (ae-undocumented) Missing documentation for "runId".
@@ -3030,7 +3249,33 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/event-store/event-version.d.ts:23:5 - (ae-undocumented) Missing documentation for "version".
 // dist/event-store/event-version.d.ts:32:5 - (ae-undocumented) Missing documentation for "knownTypes".
 // dist/event-store/event-version.d.ts:33:5 - (ae-undocumented) Missing documentation for "parse".
-// dist/event-store/events.d.ts:208:5 - (ae-forgotten-export) The symbol "RecordedError" needs to be exported by the entry point index.d.ts
+// dist/event-store/events.d.ts:219:5 - (ae-forgotten-export) The symbol "RecordedError" needs to be exported by the entry point index.d.ts
+// dist/events/external-events.d.ts:21:5 - (ae-undocumented) Missing documentation for "eventName".
+// dist/events/external-events.d.ts:22:5 - (ae-undocumented) Missing documentation for "key".
+// dist/events/external-events.d.ts:23:5 - (ae-undocumented) Missing documentation for "payload".
+// dist/events/external-events.d.ts:24:5 - (ae-undocumented) Missing documentation for "bufferMs".
+// dist/events/external-events.d.ts:30:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/events/external-events.d.ts:31:5 - (ae-undocumented) Missing documentation for "waitId".
+// dist/events/external-events.d.ts:38:5 - (ae-undocumented) Missing documentation for "eventId".
+// dist/events/external-events.d.ts:39:5 - (ae-undocumented) Missing documentation for "expiresAt".
+// dist/events/external-events.d.ts:40:5 - (ae-undocumented) Missing documentation for "deliveredTo".
+// dist/events/external-events.d.ts:41:5 - (ae-undocumented) Missing documentation for "startedRunIds".
+// dist/events/external-events.d.ts:50:5 - (ae-undocumented) Missing documentation for "eventName".
+// dist/events/external-events.d.ts:51:5 - (ae-undocumented) Missing documentation for "key".
+// dist/events/external-events.d.ts:52:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/events/external-events.d.ts:53:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/events/external-events.d.ts:59:5 - (ae-undocumented) Missing documentation for "id".
+// dist/events/external-events.d.ts:60:5 - (ae-undocumented) Missing documentation for "eventName".
+// dist/events/external-events.d.ts:61:5 - (ae-undocumented) Missing documentation for "key".
+// dist/events/external-events.d.ts:62:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/events/external-events.d.ts:63:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/events/external-events.d.ts:64:5 - (ae-undocumented) Missing documentation for "createdAt".
+// dist/events/external-events.d.ts:70:5 - (ae-undocumented) Missing documentation for "eventId".
+// dist/events/external-events.d.ts:71:5 - (ae-undocumented) Missing documentation for "eventName".
+// dist/events/external-events.d.ts:72:5 - (ae-undocumented) Missing documentation for "key".
+// dist/events/external-events.d.ts:73:5 - (ae-undocumented) Missing documentation for "payload".
+// dist/events/external-events.d.ts:102:5 - (ae-undocumented) Missing documentation for "codec".
+// dist/events/external-events.d.ts:103:5 - (ae-undocumented) Missing documentation for "clock".
 // dist/idempotency/recorder.d.ts:25:5 - (ae-undocumented) Missing documentation for "runId".
 // dist/idempotency/recorder.d.ts:26:5 - (ae-undocumented) Missing documentation for "stepId".
 // dist/idempotency/recorder.d.ts:27:5 - (ae-undocumented) Missing documentation for "attemptKey".
@@ -3342,12 +3587,26 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/signals/signal-service.d.ts:18:5 - (ae-undocumented) Missing documentation for "runId".
 // dist/signals/signal-service.d.ts:26:5 - (ae-undocumented) Missing documentation for "runId".
 // dist/signals/signal-service.d.ts:27:5 - (ae-undocumented) Missing documentation for "status".
-// dist/signals/signal-service.d.ts:35:5 - (ae-undocumented) Missing documentation for "sequenceNumber".
-// dist/signals/signal-service.d.ts:70:5 - (ae-undocumented) Missing documentation for "workflows".
-// dist/signals/signal-service.d.ts:71:5 - (ae-undocumented) Missing documentation for "clock".
-// dist/signals/signal-service.d.ts:72:5 - (ae-undocumented) Missing documentation for "random".
-// dist/signals/signal-service.d.ts:73:5 - (ae-undocumented) Missing documentation for "codec".
-// dist/signals/signal-service.d.ts:74:5 - (ae-undocumented) Missing documentation for "updateWait".
+// dist/signals/signal-service.d.ts:38:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/signals/signal-service.d.ts:39:5 - (ae-undocumented) Missing documentation for "sequenceNumber".
+// dist/signals/signal-service.d.ts:40:5 - (ae-undocumented) Missing documentation for "duplicate".
+// dist/signals/signal-service.d.ts:47:5 - (ae-undocumented) Missing documentation for "signalId".
+// dist/signals/signal-service.d.ts:55:5 - (ae-undocumented) Missing documentation for "namespaceId".
+// dist/signals/signal-service.d.ts:56:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/signals/signal-service.d.ts:57:5 - (ae-undocumented) Missing documentation for "workflowKey".
+// dist/signals/signal-service.d.ts:58:5 - (ae-undocumented) Missing documentation for "input".
+// dist/signals/signal-service.d.ts:59:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/signals/signal-service.d.ts:60:5 - (ae-undocumented) Missing documentation for "signalName".
+// dist/signals/signal-service.d.ts:61:5 - (ae-undocumented) Missing documentation for "payload".
+// dist/signals/signal-service.d.ts:62:5 - (ae-undocumented) Missing documentation for "signalId".
+// dist/signals/signal-service.d.ts:69:5 - (ae-undocumented) Missing documentation for "created".
+// dist/signals/signal-service.d.ts:76:5 - (ae-undocumented) Missing documentation for "workflowKey".
+// dist/signals/signal-service.d.ts:77:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/signals/signal-service.d.ts:123:5 - (ae-undocumented) Missing documentation for "workflows".
+// dist/signals/signal-service.d.ts:124:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/signals/signal-service.d.ts:125:5 - (ae-undocumented) Missing documentation for "random".
+// dist/signals/signal-service.d.ts:126:5 - (ae-undocumented) Missing documentation for "codec".
+// dist/signals/signal-service.d.ts:127:5 - (ae-undocumented) Missing documentation for "updateWait".
 // dist/signals/update-service.d.ts:12:5 - (ae-undocumented) Missing documentation for "workflowType".
 // dist/signals/update-service.d.ts:31:5 - (ae-undocumented) Missing documentation for "updateId".
 // dist/signals/update-service.d.ts:32:5 - (ae-undocumented) Missing documentation for "waitMs".
@@ -3435,6 +3694,14 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/workflow/commands.d.ts:74:5 - (ae-undocumented) Missing documentation for "result".
 // dist/workflow/commands.d.ts:80:5 - (ae-undocumented) Missing documentation for "type".
 // dist/workflow/commands.d.ts:81:5 - (ae-undocumented) Missing documentation for "error".
+// dist/workflow/commands.d.ts:106:5 - (ae-undocumented) Missing documentation for "signalName".
+// dist/workflow/commands.d.ts:107:5 - (ae-undocumented) Missing documentation for "payload".
+// dist/workflow/commands.d.ts:108:5 - (ae-undocumented) Missing documentation for "signalId".
+// dist/workflow/commands.d.ts:116:5 - (ae-undocumented) Missing documentation for "type".
+// dist/workflow/commands.d.ts:117:5 - (ae-undocumented) Missing documentation for "waitId".
+// dist/workflow/commands.d.ts:118:5 - (ae-undocumented) Missing documentation for "eventName".
+// dist/workflow/commands.d.ts:119:5 - (ae-undocumented) Missing documentation for "key".
+// dist/workflow/commands.d.ts:120:5 - (ae-undocumented) Missing documentation for "expiresAt".
 // dist/workflow/context.d.ts:8:5 - (ae-undocumented) Missing documentation for "index".
 // dist/workflow/context.d.ts:9:5 - (ae-undocumented) Missing documentation for "value".
 // dist/workflow/context.d.ts:28:5 - (ae-undocumented) Missing documentation for "parentClosePolicy".
@@ -3443,11 +3710,13 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/workflow/context.d.ts:37:5 - (ae-undocumented) Missing documentation for "childId".
 // dist/workflow/context.d.ts:38:5 - (ae-undocumented) Missing documentation for "result".
 // dist/workflow/context.d.ts:45:5 - (ae-undocumented) Missing documentation for "concurrency".
-// dist/workflow/context.d.ts:60:5 - (ae-undocumented) Missing documentation for "step".
-// dist/workflow/context.d.ts:61:5 - (ae-undocumented) Missing documentation for "sleep".
-// dist/workflow/context.d.ts:144:5 - (ae-undocumented) Missing documentation for "now".
-// dist/workflow/context.d.ts:145:5 - (ae-undocumented) Missing documentation for "random".
-// dist/workflow/context.d.ts:146:5 - (ae-undocumented) Missing documentation for "uuid".
+// dist/workflow/context.d.ts:54:5 - (ae-undocumented) Missing documentation for "match".
+// dist/workflow/context.d.ts:55:5 - (ae-undocumented) Missing documentation for "timeoutMs".
+// dist/workflow/context.d.ts:70:5 - (ae-undocumented) Missing documentation for "step".
+// dist/workflow/context.d.ts:71:5 - (ae-undocumented) Missing documentation for "sleep".
+// dist/workflow/context.d.ts:172:5 - (ae-undocumented) Missing documentation for "now".
+// dist/workflow/context.d.ts:173:5 - (ae-undocumented) Missing documentation for "random".
+// dist/workflow/context.d.ts:174:5 - (ae-undocumented) Missing documentation for "uuid".
 // dist/workflow/decision-loop.d.ts:14:5 - (ae-undocumented) Missing documentation for "clock".
 // dist/workflow/decision-loop.d.ts:29:5 - (ae-undocumented) Missing documentation for "maxChildren".
 // dist/workflow/decision-loop.d.ts:30:5 - (ae-undocumented) Missing documentation for "historyWarningThreshold".
@@ -3459,9 +3728,9 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/workflow/decision-loop.d.ts:128:5 - (ae-undocumented) Missing documentation for "queryHandlers".
 // dist/workflow/decision-loop.d.ts:129:5 - (ae-undocumented) Missing documentation for "updateHandlers".
 // dist/workflow/decision-loop.d.ts:130:5 - (ae-undocumented) Missing documentation for "continuation".
-// dist/workflow/decision-loop.d.ts:133:5 - (ae-undocumented) Missing documentation for "unconsultedPatches".
-// dist/workflow/decision-loop.d.ts:134:5 - (ae-undocumented) Missing documentation for "unissuedCommand".
-// dist/workflow/decision-loop.d.ts:135:5 - (ae-undocumented) Missing documentation for "cancellation".
+// dist/workflow/decision-loop.d.ts:134:5 - (ae-undocumented) Missing documentation for "unconsultedPatches".
+// dist/workflow/decision-loop.d.ts:135:5 - (ae-undocumented) Missing documentation for "unissuedCommand".
+// dist/workflow/decision-loop.d.ts:136:5 - (ae-undocumented) Missing documentation for "cancellation".
 // dist/workflow/define-step.d.ts:12:5 - (ae-undocumented) Missing documentation for "stepType".
 // dist/workflow/define-step.d.ts:13:5 - (ae-undocumented) Missing documentation for "handler".
 // dist/workflow/define-step.d.ts:14:5 - (ae-undocumented) Missing documentation for "timeoutMs".
@@ -3494,6 +3763,9 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/workflow/errors.d.ts:74:5 - (ae-undocumented) Missing documentation for "stepId".
 // dist/workflow/errors.d.ts:75:5 - (ae-undocumented) Missing documentation for "stepType".
 // dist/workflow/errors.d.ts:83:5 - (ae-undocumented) Missing documentation for "durationMs".
+// dist/workflow/errors.d.ts:96:5 - (ae-undocumented) Missing documentation for "eventName".
+// dist/workflow/errors.d.ts:97:5 - (ae-undocumented) Missing documentation for "key".
+// dist/workflow/errors.d.ts:98:5 - (ae-undocumented) Missing documentation for "timeoutMs".
 // dist/workflow/query.d.ts:9:5 - (ae-undocumented) Missing documentation for "queryName".
 // dist/workflow/run-workflow.d.ts:12:5 - (ae-undocumented) Missing documentation for "clock".
 // dist/workflow/run-workflow.d.ts:13:5 - (ae-undocumented) Missing documentation for "random".
