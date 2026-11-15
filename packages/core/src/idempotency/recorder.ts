@@ -11,6 +11,7 @@ import {
 import { closeRunIfTerminal } from "../cancellation/close-run.ts";
 import { lockEventAddressOnClient, registerEventWaitOnClient } from "../events/external-events.ts";
 import { createContinuedRunOnClient } from "../continuation/continued-run.ts";
+import { applySearchAttributeUpsertOnClient } from "../visibility/search-attribute-store.ts";
 import { createChildRunOnClient } from "../children/child-runs.ts";
 import { lockRunWithParent } from "../children/run-locks.ts";
 import { isTerminalState, type RunState } from "../run/state-machine.ts";
@@ -346,6 +347,9 @@ export function createResultRecorder(
             if (child.created) {
               pendingSpans.push(childSpan);
             }
+          }
+          if (event.type === "search_attributes_upserted") {
+            await applySearchAttributeUpsertOnClient(client, input.runId, event.searchAttributes);
           }
           if (event.type === "run_continued_as_new") {
             await createContinuedRunOnClient(client, codec, input.runId, event, clock.now());

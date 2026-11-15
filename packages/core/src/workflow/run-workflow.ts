@@ -12,6 +12,10 @@ import { toRecordedError } from "./error-serialization.ts";
 import { ChildLimitExceededError, sleepDurationError } from "./errors.ts";
 import { fulfilledValues, runParallel } from "./parallel.ts";
 import type { ClockSource, RandomSource } from "./sources.ts";
+import {
+  validateSearchAttributeUpsert,
+  type SearchAttributeUpsert,
+} from "../visibility/search-attributes.ts";
 import type { StepRegistry } from "./step-registry.ts";
 import type { WorkflowRegistry } from "./workflow-registry.ts";
 
@@ -225,6 +229,12 @@ function createInMemoryContext(
         recordedPatches.add(patchId);
         commands.push({ type: "record_patch", patchId });
       }
+    },
+    upsertSearchAttributes(attributes: SearchAttributeUpsert): void {
+      commands.push({
+        type: "upsert_search_attributes",
+        searchAttributes: { ...validateSearchAttributeUpsert(attributes) },
+      });
     },
     now(): Date {
       return options.clock.now();

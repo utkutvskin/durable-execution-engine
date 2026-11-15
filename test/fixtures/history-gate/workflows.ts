@@ -83,6 +83,15 @@ export const workflows = [
     await ctx.waitForSignal("close");
     return notes;
   }),
+  defineWorkflow("gate-search", async (ctx, input: { readonly round: number }) => {
+    ctx.upsertSearchAttributes({ stage: "working", round: input.round });
+    await ctx.step<number>("gate.count", input);
+    if (input.round < 1) {
+      return ctx.continueAsNew({ round: input.round + 1 });
+    }
+    ctx.upsertSearchAttributes({ stage: "done", customerId: null });
+    return input.round;
+  }),
 ];
 
 /**

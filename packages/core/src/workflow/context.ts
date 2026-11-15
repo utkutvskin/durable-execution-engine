@@ -1,5 +1,6 @@
 import type { ParentClosePolicy } from "../event-store/events.ts";
 import type { UpdateDefinition } from "./define-update.ts";
+import type { SearchAttributeUpsert } from "../visibility/search-attributes.ts";
 
 /**
  * What `ctx.select()` resolves with: the position in the branch list of the
@@ -197,6 +198,16 @@ export interface WorkflowContext {
    * the first time, so code that still calls `patched(patchId)` replays them.
    */
   deprecatePatch(patchId: string): void;
+  /**
+   * Upserts the run's search attributes: each value replaces the attribute
+   * of that name and `null` removes it. The call is recorded, so the run row
+   * holds the new values once the decision is stored, a replay matches the
+   * nth call against the nth recorded upsert (a different upsert is a
+   * `NonDeterminismError`), and the attributes carry over when the run
+   * continues as new. Throws `InvalidSearchAttributesError` for a name or
+   * value that breaks the rules of `validateSearchAttributeUpsert`.
+   */
+  upsertSearchAttributes(attributes: SearchAttributeUpsert): void;
   now(): Date;
   random(): number;
   uuid(): string;

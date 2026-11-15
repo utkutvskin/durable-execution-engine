@@ -16,13 +16,16 @@ interface PredecessorRow {
   queue_name: string;
   run_timeout_ms: string | null;
   execution_deadline: Date | null;
+  search_attributes: Record<string, string | number | boolean>;
+  memo: unknown;
 }
 
 /**
  * Creates the next run of a chain for a `run_continued_as_new` event inside
  * the caller's transaction: a `workflow_runs` row with the same workflow
  * type, namespace, parent link and schedule as `runId`, the same
- * `first_run_id`, the next `chain_index` and the event's input, plus its
+ * `first_run_id`, the next `chain_index`, the predecessor's current search
+ * attributes and memo and the event's input, plus its
  * `run_started` event, a `signal_received` event for every signal the event
  * carries over, and its first workflow task on the queue of the
  * predecessor. The caller must hold the predecessor's row lock (and its
@@ -37,7 +40,8 @@ export async function createContinuedRunOnClient(
 ): Promise<string> {
   const predecessor = await client.query<PredecessorRow>(
     `select namespace_id, workflow_type, parent_run_id, parent_close_policy, schedule_id,
-            first_run_id, chain_index, traceparent, queue_name, run_timeout_ms, execution_deadline
+            first_run_id, chain_index, traceparent, queue_name, run_timeout_ms, execution_deadline,
+            search_attributes, memo
      from workflow_runs where id = $1`,
     [runId],
   );
@@ -48,8 +52,9 @@ export async function createContinuedRunOnClient(
   const inserted = await client.query<{ id: string }>(
     `insert into workflow_runs
        (namespace_id, workflow_type, input, parent_run_id, parent_close_policy, schedule_id,
-        first_run_id, continued_from_run_id, chain_index, traceparent, queue_name)
-     values ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11)
+        first_run_id, continued_from_run_id, chain_index, traceparent, queue_name,
+        search_attributes, memo)
+     values ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb)
      returning id`,
     [
       row.namespace_id,
@@ -63,6 +68,8 @@ export async function createContinuedRunOnClient(
       row.chain_index + 1,
       row.traceparent,
       row.queue_name,
+      JSON.stringify(row.search_attributes),
+      row.memo === null ? null : JSON.stringify(row.memo),
     ],
   );
   const nextRunId = inserted.rows[0]?.id;
@@ -74,7 +81,15 @@ export async function createContinuedRunOnClient(
     executionDeadline: row.execution_deadline ?? undefined,
   });
   await appendEventsOnClient(client, codec, nextRunId, 0, [
-    { type: "run_started", workflowType: row.workflow_type, input: event.input },
+    {
+      type: "run_started",
+      workflowType: row.workflow_type,
+      input: event.input,
+      ...(Object.keys(row.search_attributes).length === 0
+        ? {}
+        : { searchAttributes: row.search_attributes }),
+      ...(row.memo === null ? {} : { memo: row.memo }),
+    },
     ...(event.signals ?? []).map((signal): WorkflowEvent =>
       signal.signalId === undefined
         ? { type: "signal_received", signalName: signal.signalName, payload: signal.payload }

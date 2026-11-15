@@ -34,6 +34,13 @@ import {
   WorkflowActiveAfterQuiescenceError,
 } from "./sandbox.ts";
 import type { ClockSource, RandomSource } from "./sources.ts";
+import { isDeepStrictEqual } from "node:util";
+import {
+  mergeSearchAttributes,
+  validateSearchAttributeUpsert,
+  type SearchAttributes,
+  type SearchAttributeUpsert,
+} from "../visibility/search-attributes.ts";
 
 /**
  * Everything `runDecisionLoop` needs beyond the workflow itself and its
@@ -218,6 +225,39 @@ function createReplayContext(
     () => options.triggeredAt,
     (command) => newCommands.push(command),
   );
+  const recordedUpserts = history.flatMap((event) =>
+    event.type === "search_attributes_upserted" ? [event.searchAttributes] : [],
+  );
+  let upsertCalls = 0;
+  const started = history[0];
+  let currentAttributes: SearchAttributes =
+    started?.type === "run_started" ? (started.searchAttributes ?? {}) : {};
+
+  function upsertSearchAttributes(attributes: SearchAttributeUpsert): void {
+    const upsert = validateSearchAttributeUpsert(attributes);
+    currentAttributes = mergeSearchAttributes(currentAttributes, upsert);
+    const position = upsertCalls;
+    upsertCalls += 1;
+    const recorded = recordedUpserts[position];
+    if (recorded === undefined) {
+      newCommands.push({ type: "upsert_search_attributes", searchAttributes: { ...upsert } });
+      return;
+    }
+    if (!isDeepStrictEqual({ ...recorded }, { ...upsert })) {
+      const id = `upsert-${String(position)}`;
+      const error = new NonDeterminismError(
+        id,
+        { stepType: "upsert_search_attributes", input: recorded },
+        { stepType: "upsert_search_attributes", input: upsert },
+        `non-deterministic replay at "${id}": history recorded the search attribute upsert ` +
+          `${JSON.stringify(recorded)}, but the workflow code now upserts ${JSON.stringify(upsert)}`,
+        id,
+      );
+      integrity.error ??= error;
+      throw error;
+    }
+  }
+
   const completedUpdates = new Set(
     history.flatMap((event) => (event.type === "update_completed" ? [event.updateId] : [])),
   );
@@ -743,6 +783,7 @@ function createReplayContext(
       deprecatePatch(patchId: string): void {
         decidePatch(patchId);
       },
+      upsertSearchAttributes,
       now: values.now,
       random: values.random,
       uuid: values.uuid,
@@ -984,6 +1025,7 @@ async function decide<TInput, TResult>(
       outcome: "continued_as_new",
       input: continuation.input,
       commands: [
+        ...commands.filter((command) => command.type === "upsert_search_attributes"),
         continuation.signals.length === 0
           ? { type: "continue_as_new", input: continuation.input }
           : { type: "continue_as_new", input: continuation.input, signals: continuation.signals },

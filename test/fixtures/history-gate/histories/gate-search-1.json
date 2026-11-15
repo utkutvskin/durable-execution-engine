@@ -1,0 +1,74 @@
+{
+  "format": "dee.history",
+  "formatVersion": 1,
+  "runId": "310783bc-811e-40bd-a26d-ed3189c8fca9",
+  "workflowType": "gate-search",
+  "exportedAt": "2026-11-15T09:27:49.015Z",
+  "events": [
+    {
+      "sequenceNumber": 1,
+      "createdAt": "2026-11-15T09:27:48.523Z",
+      "version": 1,
+      "event": {
+        "type": "run_started",
+        "workflowType": "gate-search",
+        "input": {
+          "round": 0
+        },
+        "searchAttributes": {
+          "priority": 2,
+          "customerId": "c-1"
+        },
+        "memo": {
+          "note": "recorded for the history gate"
+        }
+      }
+    },
+    {
+      "sequenceNumber": 2,
+      "createdAt": "2026-11-15T09:27:48.551Z",
+      "version": 1,
+      "event": {
+        "type": "search_attributes_upserted",
+        "searchAttributes": {
+          "round": 0,
+          "stage": "working"
+        }
+      }
+    },
+    {
+      "sequenceNumber": 3,
+      "createdAt": "2026-11-15T09:27:48.551Z",
+      "version": 1,
+      "event": {
+        "type": "step_scheduled",
+        "stepId": "step-1",
+        "stepType": "gate.count",
+        "input": {
+          "round": 0
+        }
+      }
+    },
+    {
+      "sequenceNumber": 4,
+      "createdAt": "2026-11-15T09:27:48.591Z",
+      "version": 1,
+      "event": {
+        "type": "step_completed",
+        "stepId": "step-1",
+        "result": 0
+      }
+    },
+    {
+      "sequenceNumber": 5,
+      "createdAt": "2026-11-15T09:27:48.612Z",
+      "version": 1,
+      "event": {
+        "type": "run_continued_as_new",
+        "input": {
+          "round": 1
+        }
+      }
+    }
+  ]
+}

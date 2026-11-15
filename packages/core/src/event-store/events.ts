@@ -31,6 +31,8 @@ export const runStartedEventSchema = z.object({
   type: z.literal("run_started"),
   workflowType: z.string().min(1),
   input: z.unknown(),
+  searchAttributes: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
+  memo: z.unknown().optional(),
 });
 
 /**
@@ -315,6 +317,17 @@ export const eventReceivedEventSchema = z.object({
 });
 
 /**
+ * A `ctx.upsertSearchAttributes()` call reached the frontier of the run:
+ * each value in `searchAttributes` replaced the run's attribute of that
+ * name, and a `null` removed it. Replays match the nth call against the nth
+ * of these events.
+ */
+export const searchAttributesUpsertedEventSchema = z.object({
+  type: z.literal("search_attributes_upserted"),
+  searchAttributes: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+});
+
+/**
  * Every event kind that can be appended to a run's event log, discriminated
  * on `type`. This is the closed set `EventStore.append` validates against:
  * a payload that does not match one of these shapes is rejected before it
@@ -346,6 +359,7 @@ export const workflowEventSchema = z.discriminatedUnion("type", [
   updateCompletedEventSchema,
   eventWaitStartedEventSchema,
   eventReceivedEventSchema,
+  searchAttributesUpsertedEventSchema,
 ]);
 
 /**

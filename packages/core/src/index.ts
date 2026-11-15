@@ -53,6 +53,7 @@ export {
   runStartedEventSchema,
   runTerminatedEventSchema,
   runTimedOutEventSchema,
+  searchAttributesUpsertedEventSchema,
   stepCompletedEventSchema,
   stepFailedEventSchema,
   stepScheduledEventSchema,
@@ -290,6 +291,33 @@ export type {
   TriggeredRunInput,
 } from "./events/external-events.ts";
 export { EventWaitTimeoutError } from "./workflow/errors.ts";
+export {
+  BUILT_IN_VISIBILITY_FIELDS,
+  InvalidSearchAttributesError,
+  MAX_MEMO_BYTES,
+  MAX_SEARCH_ATTRIBUTES,
+  MAX_SEARCH_ATTRIBUTE_NAME_LENGTH,
+  MAX_SEARCH_ATTRIBUTE_STRING_LENGTH,
+  mergeSearchAttributes,
+  validateMemo,
+  validateSearchAttributes,
+  validateSearchAttributeUpsert,
+} from "./visibility/search-attributes.ts";
+export type {
+  SearchAttributes,
+  SearchAttributeUpsert,
+  SearchAttributeValue,
+} from "./visibility/search-attributes.ts";
+export {
+  MAX_QUERY_COMPARISONS,
+  MAX_QUERY_DEPTH,
+  MAX_QUERY_LENGTH,
+  VisibilityQueryError,
+  compileVisibilityQuery,
+  isBuiltInVisibilityField,
+} from "./visibility/visibility-query.ts";
+export type { CompiledVisibilityQuery } from "./visibility/visibility-query.ts";
+export type { UpsertSearchAttributesCommand } from "./workflow/commands.ts";
 export type { WaitForEventOptions } from "./workflow/context.ts";
 export type { CarriedSignal, WaitForEventCommand } from "./workflow/commands.ts";
 export { RunAlreadyClosedError, createRunControl } from "./cancellation/run-control.ts";

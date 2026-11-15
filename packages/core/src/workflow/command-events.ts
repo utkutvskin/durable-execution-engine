@@ -50,6 +50,11 @@ export function commandToEvent(command: WorkflowCommand): WorkflowEvent {
             result: null,
             error: command.error,
           };
+    case "upsert_search_attributes":
+      return {
+        type: "search_attributes_upserted",
+        searchAttributes: { ...command.searchAttributes },
+      };
     case "complete_run":
       return { type: "run_completed", result: command.result };
     case "fail_run":

@@ -75,6 +75,15 @@ export interface CompleteUpdateCommand {
 }
 
 /**
+ * The workflow upserted its search attributes: values replace, `null`
+ * removes.
+ */
+export interface UpsertSearchAttributesCommand {
+  readonly type: "upsert_search_attributes";
+  readonly searchAttributes: Readonly<Record<string, string | number | boolean | null>>;
+}
+
+/**
  * The run finished successfully with the given result.
  */
 export interface CompleteRunCommand {
@@ -136,7 +145,8 @@ export interface WaitForEventCommand {
 /**
  * Every command kind a workflow decision can produce, discriminated on
  * `type`. A decision produces zero or more `ScheduleStepCommand`,
- * `StartTimerCommand`, `StartChildCommand`, `RecordPatchCommand`, `RecordTimeCommand`, `CompleteUpdateCommand` and `WaitForEventCommand` entries, followed by at most one of
+ * `StartTimerCommand`, `StartChildCommand`, `RecordPatchCommand`, `RecordTimeCommand`, `CompleteUpdateCommand`, `WaitForEventCommand` and
+ * `UpsertSearchAttributesCommand` entries, followed by at most one of
  * `CompleteRunCommand`, `FailRunCommand`, `CancelRunCommand` or
  * `ContinueAsNewCommand`.
  */
@@ -149,6 +159,7 @@ export type WorkflowCommand =
   | RecordCompensationFailureCommand
   | CompleteUpdateCommand
   | WaitForEventCommand
+  | UpsertSearchAttributesCommand
   | CompleteRunCommand
   | FailRunCommand
   | CancelRunCommand

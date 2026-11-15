@@ -1,3 +1,4 @@
+import type { SearchAttributes } from "../visibility/search-attributes.ts";
 import { isDeepStrictEqual } from "node:util";
 import type { PoolClient } from "pg";
 import { jsonCodec, type Codec } from "../event-store/codec.ts";
@@ -79,6 +80,10 @@ export interface StartWorkflowInput extends EmbeddedOptions {
   readonly idempotencyKey?: string | undefined;
   readonly runTimeoutMs?: number | undefined;
   readonly executionTimeoutMs?: number | undefined;
+  /** The search attributes the run starts with (see `validateSearchAttributes`). */
+  readonly searchAttributes?: SearchAttributes | undefined;
+  /** A JSON value shown with the run and never indexed. */
+  readonly memo?: unknown;
 }
 
 /**
@@ -228,7 +233,8 @@ async function findByKey(
  * worker cannot see the task until then. The caller owns `begin`, `commit`
  * and `rollback`. Rejects with `NoOpenTransactionError` outside a
  * transaction, `IdempotencyKeyConflictError` for a key reused with another
- * request, and `RangeError` for an empty workflow type or a bad timeout.
+ * request, `InvalidSearchAttributesError` for bad search attributes or memo,
+ * and `RangeError` for an empty workflow type or a bad timeout.
  */
 export async function startWorkflow(
   client: PoolClient,
@@ -252,6 +258,8 @@ export async function startWorkflow(
       queueName,
       runTimeoutMs: input.runTimeoutMs,
       executionTimeoutMs: input.executionTimeoutMs,
+      searchAttributes: input.searchAttributes,
+      memo: input.memo,
     });
     if (created === undefined) {
       return findByKey(client, namespaceId, input, input.idempotencyKey ?? "");

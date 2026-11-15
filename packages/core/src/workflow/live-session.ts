@@ -268,6 +268,9 @@ export function createLiveSession<TInput, TResult>(
     deprecatePatch: () => {
       flags.unsupported = true;
     },
+    upsertSearchAttributes: () => {
+      flags.unsupported = true;
+    },
     now: values.now,
     random: values.random,
     uuid: values.uuid,
