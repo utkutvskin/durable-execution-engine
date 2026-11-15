@@ -20,12 +20,12 @@ npx wf help
 | `wf run query <runId> <name>`                  | Answers a query from the run's current state: `--argument <json>`               |
 | `wf run cancel <runId>`                        | Requests a graceful cancellation: `--reason <text>`                             |
 | `wf run describe <runId>`                      | Shows a run: `--history` adds its events, `--json` prints json                  |
-| `wf run list`                                  | Lists runs: `--status`, `--type`, `--limit`, `--cursor`                         |
+| `wf run list`                                  | Lists runs: `--status`, `--type`, `--query`, `--limit`, `--cursor`              |
 | `wf history export <runId>`                    | Prints the run's whole history as a history export: `--out <file>`              |
 | `wf replay --module <path> <file...>`          | Replays history exports against your code, exits 1 on non-determinism           |
 | `wf example <payment-saga\|etl-pipeline\|all>` | Runs a bundled example end to end (see `docs/EXAMPLES.md`)                      |
 
-`wf run update` prints the handler's result as JSON and exits 0. It exits 1 when the handler threw (the error goes to stderr), when the wait ended before the handler ran, and when the validator rejected the argument, which writes nothing. `--json` prints the whole answer, `--wait-ms` takes 0 to 60000. See `docs/API.md` for the semantics. `--limit` must be a whole number from 1 to 200 (usage error otherwise). `--wait` polls the run and, when the API answers 429, sleeps for the `Retry-After` it gave (never past the wait timeout) instead of failing. Run ids are percent encoded in URLs, `wf run describe --history` reads every history page, and an API answer that is not JSON (a proxy's error page) is reported as one line with its status and a short preview, with no stack trace.
+`wf run update` prints the handler's result as JSON and exits 0. It exits 1 when the handler threw (the error goes to stderr), when the wait ended before the handler ran, and when the validator rejected the argument, which writes nothing. `--json` prints the whole answer, `--wait-ms` takes 0 to 60000. See `docs/API.md` for the semantics. `wf run list --query "status = 'FAILED' and customerId = 'c-1'"` filters with the visibility query grammar of `docs/API.md` and prints each run's search attributes after its start time; a query that does not parse exits 1 with the API's message, which names the position. `--limit` must be a whole number from 1 to 200 (usage error otherwise). `--wait` polls the run and, when the API answers 429, sleeps for the `Retry-After` it gave (never past the wait timeout) instead of failing. Run ids are percent encoded in URLs, `wf run describe --history` reads every history page, and an API answer that is not JSON (a proxy's error page) is reported as one line with its status and a short preview, with no stack trace.
 
 ## History export and replay
 

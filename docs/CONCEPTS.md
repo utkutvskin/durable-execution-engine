@@ -100,6 +100,10 @@ History grows with every event, and replay cost grows with history. `ctx.continu
 
 Running workflows keep running while you deploy new code, so new code must replay old histories. Changing the order, type or input of existing calls breaks replay. Gate such a change with `ctx.patched("my-change-id")`: it returns `false` for histories recorded before the change and `true` for new runs, and records a marker so the answer is stable. Once no old run is open, remove the gate with `ctx.deprecatePatch`. A build refuses a history that is newer than its code with a `VersionMismatchError` rather than guess. `docs/VERSIONING.md` is the full guide, and recorded histories in `test/fixtures/histories` show how to pin old behavior in a test.
 
+## Search attributes and visibility
+
+A run can carry search attributes, typed values (strings, numbers, booleans) set when it starts and changed by the workflow with `ctx.upsertSearchAttributes`, and a memo, a JSON value shown with the run and never searched. An upsert is a `search_attributes_upserted` event like any other decision: the engine writes it to the run row when the decision is stored, a replay matches the nth upsert with the nth recorded one (a different upsert is non-determinism), and continue-as-new hands the current attributes and the memo to the next run, whose `run_started` event holds them. Operators find runs with a small query language (`status = 'FAILED' and customerId = 'c-1'`) over the run fields and the attributes; the engine compiles it into parameterized SQL over an indexed `jsonb` column, never into SQL text, and refuses a query it cannot parse with the position of the problem.
+
 ## Namespaces
 
 A namespace is a tenant. An API key belongs to exactly one namespace and every query filters on it; another namespace's run answers 404 like a run that does not exist. Quotas (request rate, concurrent runs, pending tasks) are per namespace.

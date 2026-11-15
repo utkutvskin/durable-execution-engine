@@ -67,7 +67,7 @@ The key is shown once; only its sha256 hash is stored.
 | GET    | `/v1/runs/{runId}/stream`                 | not in OpenAPI       | 200     |
 | GET    | `/openapi.json`                           | public               | 200     |
 
-Errors are `{ "error": { "code", "message", "details"? } }`. 400 is a validation failure or a malformed body or cursor, a rejected or unknown update or an unknown query, 409 a closed run, a compacted history, a reused idempotency key with a different request or a workflow key of another type, 413 a body over 1 MiB, and 501 an update or query to an API that does not have the workflow's code.
+Errors are `{ "error": { "code", "message", "details"? } }`. 400 is a validation failure or a malformed body or cursor, a visibility query that does not parse (`invalid_query`, see below), invalid search attributes, a rejected or unknown update or an unknown query, 409 a closed run, a compacted history, a reused idempotency key with a different request or a workflow key of another type, 413 a body over 1 MiB, and 501 an update or query to an API that does not have the workflow's code.
 
 ## Updates and queries
 
@@ -145,7 +145,38 @@ Send `Idempotency-Key: <1 to 255 characters>` with `POST /v1/runs`. The first ca
 
 `POST /v1/runs` also accepts `runTimeoutMs` and `executionTimeoutMs` (positive numbers, milliseconds). A run that outlives its run timeout, or whose continue-as-new chain outlives the execution timeout, ends `TIMED_OUT`; a zero or negative value answers 400.
 
-`GET /v1/runs?status=&workflowType=&startedAfter=&startedBefore=&limit=&cursor=` returns runs newest first, at most `limit` (1 to 200, default 50). Pass the returned `nextCursor` to get the next page; the last page has none. `startedAfter` (inclusive) and `startedBefore` (exclusive) are ISO 8601 timestamps.
+`GET /v1/runs?status=&workflowType=&startedAfter=&startedBefore=&query=&limit=&cursor=` returns runs newest first, at most `limit` (1 to 200, default 50). Pass the returned `nextCursor` to get the next page; the last page has none. `startedAfter` (inclusive) and `startedBefore` (exclusive) are ISO 8601 timestamps. Every run in the list carries its `searchAttributes` and `memo`.
+
+## Search attributes, memo and visibility queries
+
+`POST /v1/runs` accepts `searchAttributes`, an object of at most 32 typed values (strings of at most 256 characters, finite numbers, booleans) under identifier names (letters, digits and `_`, at most 64 characters, not `runId`, `status`, `workflowType`, `queueName`, `startedAt`, `closedAt`, `and`, `or`, `not`, `true` or `false`), and `memo`, any JSON value of at most 16 KiB that is shown with the run and never indexed. A workflow changes its attributes with `ctx.upsertSearchAttributes({ stage: "shipped", flagged: null })`: a value replaces, `null` removes. Bad attributes or a bad memo answer 400 `invalid_search_attributes` and write nothing. Both carry over when the run continues as new.
+
+`query` filters the list with a small grammar, combined with the other filters by `and`:
+
+```
+status = 'FAILED' and customerId = 'c-1' and startedAt > '2026-11-01T00:00:00Z'
+(region = 'eu' or vip = true) and not amount < 100
+```
+
+| Field                                          | Literal                        | Operators                        |
+| ---------------------------------------------- | ------------------------------ | -------------------------------- |
+| `status`, `workflowType`, `queueName`, `runId` | `'string'` (`runId` a uuid)    | `=`, `!=` (or `<>`)              |
+| `startedAt`, `closedAt`                        | `'ISO-8601 time'` or `'date'`  | `=`, `!=`, `<`, `<=`, `>`, `>=`  |
+| any other name: a search attribute             | `'string'`, number, true/false | all six; booleans only `=`, `!=` |
+
+`and` binds tighter than `or`, parentheses group, `not` negates, keywords are case insensitive and a quote inside a string is written twice (`'it''s'`). An ordering on an attribute only matches values of the literal's type (`amount > 10` skips a run whose `amount` is the string `"50"`); `!=` matches runs that hold the attribute with another value. A query of at most 2000 characters, 32 comparisons and 16 levels of nesting is accepted. The query is compiled into parameterized SQL: every literal and attribute name is a bound parameter, so the text of a query never reaches the SQL. A query that does not parse answers:
+
+```json
+{
+  "error": {
+    "code": "invalid_query",
+    "message": "expected a field name but found the end of the query at position 22",
+    "details": { "position": 22 }
+  }
+}
+```
+
+`position` is 1-based, the first character of the offending token, or the length of the query plus one for an unexpected end. Equality on an attribute is served by a GIN index and status with start time by a btree index; see `docs/BENCHMARKS.md` for plans over 100,000 runs.
 
 ## Rate limits and quotas
 

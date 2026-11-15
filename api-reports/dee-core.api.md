@@ -67,6 +67,9 @@ export function awaitUpdateOutcome(pool: Pool, codec: Codec, runId: string, rece
 }, waitMs: number, wait?: UpdateWaitOptions): Promise<UpdateOutcome>;
 
 // @public
+export const BUILT_IN_VISIBILITY_FIELDS: readonly string[];
+
+// @public
 export class CancelledError extends Error {
     constructor();
 }
@@ -225,6 +228,17 @@ export interface CompactionResult {
 
 // @public
 export type CompensationHandler = (ctx: WorkflowContext) => Promise<void>;
+
+// @public
+export interface CompiledVisibilityQuery {
+    // (undocumented)
+    readonly sql: string;
+    // (undocumented)
+    readonly values: readonly unknown[];
+}
+
+// @public
+export function compileVisibilityQuery(query: string, firstParameter?: number): CompiledVisibilityQuery;
 
 // @public
 export interface CompleteRunCommand {
@@ -1048,6 +1062,11 @@ export class InvalidScheduleError extends Error {
 }
 
 // @public
+export class InvalidSearchAttributesError extends Error {
+    constructor(message: string);
+}
+
+// @public
 export class InvalidSleepDurationError extends RangeError {
     constructor(durationMs: number);
     // (undocumented)
@@ -1106,6 +1125,9 @@ export interface InvariantViolation {
     // (undocumented)
     readonly taskId: string | null;
 }
+
+// @public
+export function isBuiltInVisibilityField(field: string): boolean;
 
 // @public
 export function isNonRetryable(error: SerializedError, policy: RetryPolicy): boolean;
@@ -1258,10 +1280,34 @@ export function maskSensitiveFields(value: unknown, sensitiveFields: readonly st
 export const MAX_EVENT_BUFFER_MS: number;
 
 // @public
+export const MAX_MEMO_BYTES: number;
+
+// @public
+export const MAX_QUERY_COMPARISONS = 32;
+
+// @public
+export const MAX_QUERY_DEPTH = 16;
+
+// @public
+export const MAX_QUERY_LENGTH = 2000;
+
+// @public
 export const MAX_RECOVERY_BACKOFF_MS = 3600000;
 
 // @public
+export const MAX_SEARCH_ATTRIBUTE_NAME_LENGTH = 64;
+
+// @public
+export const MAX_SEARCH_ATTRIBUTE_STRING_LENGTH = 256;
+
+// @public
+export const MAX_SEARCH_ATTRIBUTES = 32;
+
+// @public
 export const MAX_UPDATE_WAIT_MS = 60000;
+
+// @public
+export function mergeSearchAttributes(current: SearchAttributes, upsert: SearchAttributeUpsert): SearchAttributes;
 
 // @public
 export interface MetricDefinition {
@@ -1979,6 +2025,8 @@ export const runStartedEventSchema: z.ZodObject<{
     type: z.ZodLiteral<"run_started">;
     workflowType: z.ZodString;
     input: z.ZodUnknown;
+    searchAttributes: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean]>>>;
+    memo: z.ZodOptional<z.ZodUnknown>;
 }, z.core.$strip>;
 
 // @public
@@ -2155,6 +2203,21 @@ export interface ScheduleTrigger {
     // (undocumented)
     readonly scheduleId: string;
 }
+
+// @public
+export type SearchAttributes = Readonly<Record<string, SearchAttributeValue>>;
+
+// @public
+export const searchAttributesUpsertedEventSchema: z.ZodObject<{
+    type: z.ZodLiteral<"search_attributes_upserted">;
+    searchAttributes: z.ZodRecord<z.ZodString, z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>>;
+}, z.core.$strip>;
+
+// @public
+export type SearchAttributeUpsert = Readonly<Record<string, SearchAttributeValue | null>>;
+
+// @public
+export type SearchAttributeValue = string | number | boolean;
 
 // @public
 export interface SelectResult<TValue = unknown> {
@@ -2345,12 +2408,14 @@ export interface StartWorkflowInput extends EmbeddedOptions {
     readonly idempotencyKey?: string | undefined;
     // (undocumented)
     readonly input?: unknown;
+    readonly memo?: unknown;
     // (undocumented)
     readonly namespace?: string | undefined;
     // (undocumented)
     readonly queueName?: string | undefined;
     // (undocumented)
     readonly runTimeoutMs?: number | undefined;
+    readonly searchAttributes?: SearchAttributes | undefined;
     // (undocumented)
     readonly workflowType: string;
 }
@@ -2896,6 +2961,23 @@ export interface UpdateWaitOptions {
 }
 
 // @public
+export interface UpsertSearchAttributesCommand {
+    // (undocumented)
+    readonly searchAttributes: Readonly<Record<string, string | number | boolean | null>>;
+    // (undocumented)
+    readonly type: "upsert_search_attributes";
+}
+
+// @public
+export function validateMemo(value: unknown): unknown;
+
+// @public
+export function validateSearchAttributes(value: unknown): SearchAttributes;
+
+// @public
+export function validateSearchAttributeUpsert(value: unknown): SearchAttributeUpsert;
+
+// @public
 export function validateTimeoutMs(name: string, value: number | undefined): number | undefined;
 
 // @public
@@ -2907,6 +2989,13 @@ export class VersionMismatchError extends Error {
     readonly patchIds: readonly string[];
     // (undocumented)
     readonly recordedBy: readonly string[];
+}
+
+// @public
+export class VisibilityQueryError extends Error {
+    constructor(message: string, position: number);
+    // (undocumented)
+    readonly position: number;
 }
 
 // @public
@@ -2950,7 +3039,7 @@ export function withTransaction<T>(pool: Pool, work: (client: PoolClient) => Pro
 // Warning: (ae-forgotten-export) The symbol "ContinueAsNewCommand" needs to be exported by the entry point index.d.ts
 //
 // @public
-export type WorkflowCommand = ScheduleStepCommand | StartTimerCommand | StartChildCommand | RecordPatchCommand | RecordTimeCommand | RecordCompensationFailureCommand | CompleteUpdateCommand | WaitForEventCommand | CompleteRunCommand | FailRunCommand | CancelRunCommand | ContinueAsNewCommand;
+export type WorkflowCommand = ScheduleStepCommand | StartTimerCommand | StartChildCommand | RecordPatchCommand | RecordTimeCommand | RecordCompensationFailureCommand | CompleteUpdateCommand | WaitForEventCommand | UpsertSearchAttributesCommand | CompleteRunCommand | FailRunCommand | CancelRunCommand | ContinueAsNewCommand;
 
 // @public
 export interface WorkflowContext {
@@ -2974,6 +3063,7 @@ export interface WorkflowContext {
     startChild<TResult = unknown>(workflowType: string, input: unknown, options?: ChildOptions): ChildHandle<TResult>;
     // (undocumented)
     step<TResult>(stepType: string, input: unknown): Promise<TResult>;
+    upsertSearchAttributes(attributes: SearchAttributeUpsert): void;
     // (undocumented)
     uuid(): string;
     waitForEvent<TPayload = unknown>(eventName: string, options: WaitForEventOptions): Promise<TPayload>;
@@ -2999,6 +3089,8 @@ export const workflowEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     type: z.ZodLiteral<"run_started">;
     workflowType: z.ZodString;
     input: z.ZodUnknown;
+    searchAttributes: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean]>>>;
+    memo: z.ZodOptional<z.ZodUnknown>;
 }, z.core.$strip>, z.ZodObject<{
     type: z.ZodLiteral<"run_completed">;
     result: z.ZodUnknown;
@@ -3115,6 +3207,9 @@ export const workflowEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
     eventName: z.ZodString;
     key: z.ZodString;
     payload: z.ZodUnknown;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"search_attributes_upserted">;
+    searchAttributes: z.ZodRecord<z.ZodString, z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>>;
 }, z.core.$strip>], "type">;
 
 // @public
@@ -3215,25 +3310,25 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/demo/demo-types.d.ts:39:5 - (ae-undocumented) Missing documentation for "log".
 // dist/demo/demo-types.d.ts:46:5 - (ae-undocumented) Missing documentation for "ok".
 // dist/demo/demo-types.d.ts:47:5 - (ae-undocumented) Missing documentation for "problem".
-// dist/embedded/transactional.d.ts:27:5 - (ae-undocumented) Missing documentation for "idempotencyKey".
-// dist/embedded/transactional.d.ts:28:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/embedded/transactional.d.ts:40:5 - (ae-undocumented) Missing documentation for "schema".
-// dist/embedded/transactional.d.ts:41:5 - (ae-undocumented) Missing documentation for "codec".
-// dist/embedded/transactional.d.ts:50:5 - (ae-undocumented) Missing documentation for "workflowType".
-// dist/embedded/transactional.d.ts:51:5 - (ae-undocumented) Missing documentation for "input".
-// dist/embedded/transactional.d.ts:52:5 - (ae-undocumented) Missing documentation for "namespace".
-// dist/embedded/transactional.d.ts:53:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/embedded/transactional.d.ts:54:5 - (ae-undocumented) Missing documentation for "idempotencyKey".
-// dist/embedded/transactional.d.ts:55:5 - (ae-undocumented) Missing documentation for "runTimeoutMs".
-// dist/embedded/transactional.d.ts:56:5 - (ae-undocumented) Missing documentation for "executionTimeoutMs".
-// dist/embedded/transactional.d.ts:63:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/embedded/transactional.d.ts:64:5 - (ae-undocumented) Missing documentation for "created".
-// dist/embedded/transactional.d.ts:71:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/embedded/transactional.d.ts:72:5 - (ae-undocumented) Missing documentation for "signalName".
-// dist/embedded/transactional.d.ts:73:5 - (ae-undocumented) Missing documentation for "payload".
-// dist/embedded/transactional.d.ts:74:5 - (ae-undocumented) Missing documentation for "signalId".
-// dist/embedded/transactional.d.ts:80:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/embedded/transactional.d.ts:81:5 - (ae-undocumented) Missing documentation for "reason".
+// dist/embedded/transactional.d.ts:28:5 - (ae-undocumented) Missing documentation for "idempotencyKey".
+// dist/embedded/transactional.d.ts:29:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/embedded/transactional.d.ts:41:5 - (ae-undocumented) Missing documentation for "schema".
+// dist/embedded/transactional.d.ts:42:5 - (ae-undocumented) Missing documentation for "codec".
+// dist/embedded/transactional.d.ts:51:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/embedded/transactional.d.ts:52:5 - (ae-undocumented) Missing documentation for "input".
+// dist/embedded/transactional.d.ts:53:5 - (ae-undocumented) Missing documentation for "namespace".
+// dist/embedded/transactional.d.ts:54:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/embedded/transactional.d.ts:55:5 - (ae-undocumented) Missing documentation for "idempotencyKey".
+// dist/embedded/transactional.d.ts:56:5 - (ae-undocumented) Missing documentation for "runTimeoutMs".
+// dist/embedded/transactional.d.ts:57:5 - (ae-undocumented) Missing documentation for "executionTimeoutMs".
+// dist/embedded/transactional.d.ts:68:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/embedded/transactional.d.ts:69:5 - (ae-undocumented) Missing documentation for "created".
+// dist/embedded/transactional.d.ts:76:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/embedded/transactional.d.ts:77:5 - (ae-undocumented) Missing documentation for "signalName".
+// dist/embedded/transactional.d.ts:78:5 - (ae-undocumented) Missing documentation for "payload".
+// dist/embedded/transactional.d.ts:79:5 - (ae-undocumented) Missing documentation for "signalId".
+// dist/embedded/transactional.d.ts:85:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/embedded/transactional.d.ts:86:5 - (ae-undocumented) Missing documentation for "reason".
 // dist/event-store/codec.d.ts:9:5 - (ae-undocumented) Missing documentation for "encode".
 // dist/event-store/codec.d.ts:10:5 - (ae-undocumented) Missing documentation for "decode".
 // dist/event-store/errors.d.ts:8:5 - (ae-undocumented) Missing documentation for "runId".
@@ -3249,7 +3344,7 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/event-store/event-version.d.ts:23:5 - (ae-undocumented) Missing documentation for "version".
 // dist/event-store/event-version.d.ts:32:5 - (ae-undocumented) Missing documentation for "knownTypes".
 // dist/event-store/event-version.d.ts:33:5 - (ae-undocumented) Missing documentation for "parse".
-// dist/event-store/events.d.ts:219:5 - (ae-forgotten-export) The symbol "RecordedError" needs to be exported by the entry point index.d.ts
+// dist/event-store/events.d.ts:221:5 - (ae-forgotten-export) The symbol "RecordedError" needs to be exported by the entry point index.d.ts
 // dist/events/external-events.d.ts:21:5 - (ae-undocumented) Missing documentation for "eventName".
 // dist/events/external-events.d.ts:22:5 - (ae-undocumented) Missing documentation for "key".
 // dist/events/external-events.d.ts:23:5 - (ae-undocumented) Missing documentation for "payload".
@@ -3671,6 +3766,9 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/timers/timer-scheduler.d.ts:50:5 - (ae-undocumented) Missing documentation for "codec".
 // dist/timers/timer-scheduler.d.ts:51:5 - (ae-undocumented) Missing documentation for "batchSize".
 // dist/timers/timer-scheduler.d.ts:52:5 - (ae-undocumented) Missing documentation for "tracing".
+// dist/visibility/visibility-query.d.ts:19:5 - (ae-undocumented) Missing documentation for "position".
+// dist/visibility/visibility-query.d.ts:30:5 - (ae-undocumented) Missing documentation for "sql".
+// dist/visibility/visibility-query.d.ts:31:5 - (ae-undocumented) Missing documentation for "values".
 // dist/workflow/commands.d.ts:6:5 - (ae-undocumented) Missing documentation for "type".
 // dist/workflow/commands.d.ts:7:5 - (ae-undocumented) Missing documentation for "stepId".
 // dist/workflow/commands.d.ts:8:5 - (ae-undocumented) Missing documentation for "stepType".
@@ -3690,33 +3788,35 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/workflow/commands.d.ts:65:5 - (ae-undocumented) Missing documentation for "updateId".
 // dist/workflow/commands.d.ts:66:5 - (ae-undocumented) Missing documentation for "result".
 // dist/workflow/commands.d.ts:67:5 - (ae-undocumented) Missing documentation for "error".
-// dist/workflow/commands.d.ts:73:5 - (ae-undocumented) Missing documentation for "type".
-// dist/workflow/commands.d.ts:74:5 - (ae-undocumented) Missing documentation for "result".
-// dist/workflow/commands.d.ts:80:5 - (ae-undocumented) Missing documentation for "type".
-// dist/workflow/commands.d.ts:81:5 - (ae-undocumented) Missing documentation for "error".
-// dist/workflow/commands.d.ts:106:5 - (ae-undocumented) Missing documentation for "signalName".
-// dist/workflow/commands.d.ts:107:5 - (ae-undocumented) Missing documentation for "payload".
-// dist/workflow/commands.d.ts:108:5 - (ae-undocumented) Missing documentation for "signalId".
-// dist/workflow/commands.d.ts:116:5 - (ae-undocumented) Missing documentation for "type".
-// dist/workflow/commands.d.ts:117:5 - (ae-undocumented) Missing documentation for "waitId".
-// dist/workflow/commands.d.ts:118:5 - (ae-undocumented) Missing documentation for "eventName".
-// dist/workflow/commands.d.ts:119:5 - (ae-undocumented) Missing documentation for "key".
-// dist/workflow/commands.d.ts:120:5 - (ae-undocumented) Missing documentation for "expiresAt".
-// dist/workflow/context.d.ts:8:5 - (ae-undocumented) Missing documentation for "index".
-// dist/workflow/context.d.ts:9:5 - (ae-undocumented) Missing documentation for "value".
-// dist/workflow/context.d.ts:28:5 - (ae-undocumented) Missing documentation for "parentClosePolicy".
-// dist/workflow/context.d.ts:29:5 - (ae-undocumented) Missing documentation for "runTimeoutMs".
-// dist/workflow/context.d.ts:30:5 - (ae-undocumented) Missing documentation for "executionTimeoutMs".
-// dist/workflow/context.d.ts:37:5 - (ae-undocumented) Missing documentation for "childId".
-// dist/workflow/context.d.ts:38:5 - (ae-undocumented) Missing documentation for "result".
-// dist/workflow/context.d.ts:45:5 - (ae-undocumented) Missing documentation for "concurrency".
-// dist/workflow/context.d.ts:54:5 - (ae-undocumented) Missing documentation for "match".
-// dist/workflow/context.d.ts:55:5 - (ae-undocumented) Missing documentation for "timeoutMs".
-// dist/workflow/context.d.ts:70:5 - (ae-undocumented) Missing documentation for "step".
-// dist/workflow/context.d.ts:71:5 - (ae-undocumented) Missing documentation for "sleep".
-// dist/workflow/context.d.ts:172:5 - (ae-undocumented) Missing documentation for "now".
-// dist/workflow/context.d.ts:173:5 - (ae-undocumented) Missing documentation for "random".
-// dist/workflow/context.d.ts:174:5 - (ae-undocumented) Missing documentation for "uuid".
+// dist/workflow/commands.d.ts:74:5 - (ae-undocumented) Missing documentation for "type".
+// dist/workflow/commands.d.ts:75:5 - (ae-undocumented) Missing documentation for "searchAttributes".
+// dist/workflow/commands.d.ts:81:5 - (ae-undocumented) Missing documentation for "type".
+// dist/workflow/commands.d.ts:82:5 - (ae-undocumented) Missing documentation for "result".
+// dist/workflow/commands.d.ts:88:5 - (ae-undocumented) Missing documentation for "type".
+// dist/workflow/commands.d.ts:89:5 - (ae-undocumented) Missing documentation for "error".
+// dist/workflow/commands.d.ts:114:5 - (ae-undocumented) Missing documentation for "signalName".
+// dist/workflow/commands.d.ts:115:5 - (ae-undocumented) Missing documentation for "payload".
+// dist/workflow/commands.d.ts:116:5 - (ae-undocumented) Missing documentation for "signalId".
+// dist/workflow/commands.d.ts:124:5 - (ae-undocumented) Missing documentation for "type".
+// dist/workflow/commands.d.ts:125:5 - (ae-undocumented) Missing documentation for "waitId".
+// dist/workflow/commands.d.ts:126:5 - (ae-undocumented) Missing documentation for "eventName".
+// dist/workflow/commands.d.ts:127:5 - (ae-undocumented) Missing documentation for "key".
+// dist/workflow/commands.d.ts:128:5 - (ae-undocumented) Missing documentation for "expiresAt".
+// dist/workflow/context.d.ts:9:5 - (ae-undocumented) Missing documentation for "index".
+// dist/workflow/context.d.ts:10:5 - (ae-undocumented) Missing documentation for "value".
+// dist/workflow/context.d.ts:29:5 - (ae-undocumented) Missing documentation for "parentClosePolicy".
+// dist/workflow/context.d.ts:30:5 - (ae-undocumented) Missing documentation for "runTimeoutMs".
+// dist/workflow/context.d.ts:31:5 - (ae-undocumented) Missing documentation for "executionTimeoutMs".
+// dist/workflow/context.d.ts:38:5 - (ae-undocumented) Missing documentation for "childId".
+// dist/workflow/context.d.ts:39:5 - (ae-undocumented) Missing documentation for "result".
+// dist/workflow/context.d.ts:46:5 - (ae-undocumented) Missing documentation for "concurrency".
+// dist/workflow/context.d.ts:55:5 - (ae-undocumented) Missing documentation for "match".
+// dist/workflow/context.d.ts:56:5 - (ae-undocumented) Missing documentation for "timeoutMs".
+// dist/workflow/context.d.ts:71:5 - (ae-undocumented) Missing documentation for "step".
+// dist/workflow/context.d.ts:72:5 - (ae-undocumented) Missing documentation for "sleep".
+// dist/workflow/context.d.ts:183:5 - (ae-undocumented) Missing documentation for "now".
+// dist/workflow/context.d.ts:184:5 - (ae-undocumented) Missing documentation for "random".
+// dist/workflow/context.d.ts:185:5 - (ae-undocumented) Missing documentation for "uuid".
 // dist/workflow/decision-loop.d.ts:14:5 - (ae-undocumented) Missing documentation for "clock".
 // dist/workflow/decision-loop.d.ts:29:5 - (ae-undocumented) Missing documentation for "maxChildren".
 // dist/workflow/decision-loop.d.ts:30:5 - (ae-undocumented) Missing documentation for "historyWarningThreshold".
