@@ -1,5 +1,7 @@
 import { z } from "zod";
 import {
+  InvalidSearchAttributesError,
+  VisibilityQueryError,
   MAX_EVENT_BUFFER_MS,
   MAX_UPDATE_WAIT_MS,
   RunAlreadyClosedError,
@@ -87,6 +89,8 @@ const runStatusSchema = z.enum([
   "CONTINUED_AS_NEW",
 ]);
 
+const searchAttributeValueSchema = z.union([z.string(), z.number(), z.boolean()]);
+
 const runSummarySchema = z
   .object({
     runId: z.uuid(),
@@ -94,6 +98,10 @@ const runSummarySchema = z
     status: runStatusSchema,
     startedAt: z.iso.datetime(),
     closedAt: z.iso.datetime().nullable(),
+    searchAttributes: z.record(z.string(), searchAttributeValueSchema).meta({
+      description: "The run's search attributes, as visibility queries see them.",
+    }),
+    memo: z.unknown().meta({ description: "The memo the run was started with, or null." }),
   })
   .meta({ id: "RunSummary" });
 
@@ -113,6 +121,12 @@ const startRequestSchema = z
     input: z.unknown().optional(),
     runTimeoutMs: z.number().positive().optional(),
     executionTimeoutMs: z.number().positive().optional(),
+    searchAttributes: z.record(z.string(), searchAttributeValueSchema).optional().meta({
+      description: "Typed values the run can be found by: strings, numbers and booleans.",
+    }),
+    memo: z.unknown().optional().meta({
+      description: "A JSON value shown with the run and never indexed.",
+    }),
   })
   .meta({ id: "StartRunRequest" });
 
@@ -125,6 +139,10 @@ const listQuerySchema = z.object({
   workflowType: z.string().min(1).optional(),
   startedAfter: z.iso.datetime().optional(),
   startedBefore: z.iso.datetime().optional(),
+  query: z.string().optional().meta({
+    description:
+      "A visibility query, for example status = 'FAILED' and customerId = 'c-1'. A query that does not parse answers 400 invalid_query with its position.",
+  }),
   limit: z.coerce.number().int().min(1).max(200).default(50),
   cursor: z.string().min(1).optional(),
 });
@@ -456,6 +474,10 @@ export function createRoutes(service: RunService): readonly Route[] {
           ...(request.parsedBody.executionTimeoutMs === undefined
             ? {}
             : { executionTimeoutMs: request.parsedBody.executionTimeoutMs }),
+          ...(request.parsedBody.searchAttributes === undefined
+            ? {}
+            : { searchAttributes: request.parsedBody.searchAttributes }),
+          ...(request.parsedBody.memo === undefined ? {} : { memo: request.parsedBody.memo }),
           ...(key === undefined ? {} : { idempotencyKey: key }),
           ...(request.headers["traceparent"] === undefined
             ? {}
@@ -824,6 +846,24 @@ export function toErrorResult(error: unknown): ErrorResult {
           })),
         },
       },
+    };
+  }
+  if (error instanceof VisibilityQueryError) {
+    return {
+      status: 400,
+      body: {
+        error: {
+          code: "invalid_query",
+          message: error.message,
+          details: { position: error.position },
+        },
+      },
+    };
+  }
+  if (error instanceof InvalidSearchAttributesError) {
+    return {
+      status: 400,
+      body: { error: { code: "invalid_search_attributes", message: error.message } },
     };
   }
   if (error instanceof DeadLetterNotFoundError) {

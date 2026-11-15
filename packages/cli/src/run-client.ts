@@ -9,6 +9,8 @@ export interface RunSnapshot {
   readonly status: string;
   readonly startedAt: string;
   readonly closedAt: string | null;
+  readonly searchAttributes?: Readonly<Record<string, string | number | boolean>>;
+  readonly memo?: unknown;
   readonly input?: unknown;
   readonly result?: unknown;
   readonly error?: { readonly name: string; readonly message: string } | null;
@@ -28,6 +30,8 @@ export interface RunListPage {
 export interface ListFilter {
   readonly status?: string;
   readonly workflowType?: string;
+  /** A visibility query such as `status = 'FAILED' and customerId = 'c-1'`. */
+  readonly query?: string;
   readonly limit?: number;
   readonly cursor?: string;
 }

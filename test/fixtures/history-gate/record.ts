@@ -100,6 +100,12 @@ async function main(): Promise<void> {
       payload: { amount: 12 },
     });
     await start("gate-event", { orderId: "order-9" });
+    await service.startRun(namespaceId, {
+      workflowType: "gate-search",
+      input: { round: 0 },
+      searchAttributes: { customerId: "c-1", priority: 2 },
+      memo: { note: "recorded for the history gate" },
+    });
 
     await waitFor(order, "time_recorded");
     await service.signalRun(namespaceId, order, "approve", { by: "ada" });

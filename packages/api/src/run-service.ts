@@ -23,6 +23,10 @@ import {
   type WorkflowEvent,
   createEventService,
   rollbackQuietly,
+  compileVisibilityQuery,
+  validateMemo,
+  validateSearchAttributes,
+  type SearchAttributes,
   type CreateEventTriggerInput,
   type EventTrigger,
   type SendEventInput,
@@ -137,6 +141,8 @@ export interface RunSummary {
   readonly status: string;
   readonly startedAt: string;
   readonly closedAt: string | null;
+  readonly searchAttributes: SearchAttributes;
+  readonly memo: unknown;
 }
 
 /**
@@ -160,6 +166,8 @@ export interface StartRunInput {
   readonly traceparent?: string;
   readonly runTimeoutMs?: number;
   readonly executionTimeoutMs?: number;
+  readonly searchAttributes?: SearchAttributes;
+  readonly memo?: unknown;
 }
 
 /**
@@ -179,6 +187,8 @@ export interface ListRunsInput {
   readonly workflowType?: string | undefined;
   readonly startedAfter?: string | undefined;
   readonly startedBefore?: string | undefined;
+  /** A visibility query (see `compileVisibilityQuery`), combined with the other filters. */
+  readonly query?: string | undefined;
   readonly limit: number;
   readonly cursor?: string | undefined;
 }
@@ -258,7 +268,8 @@ export interface RunService {
 
   /**
    * Lists the namespace's runs, newest first. Rejects with
-   * `InvalidCursorError`.
+   * `InvalidCursorError`, or `VisibilityQueryError` for a query that does not
+   * parse.
    */
   listRuns(namespaceId: string, input: ListRunsInput): Promise<RunPage>;
 
@@ -417,6 +428,8 @@ interface RunRow {
   closed_at: Date | null;
   last_sequence_number: string;
   idempotency_key: string | null;
+  search_attributes: SearchAttributes;
+  memo: unknown;
 }
 
 interface CursorRow extends RunRow {
@@ -425,7 +438,7 @@ interface CursorRow extends RunRow {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RUN_COLUMNS = `id, workflow_type, status, input, result, error, started_at, closed_at,
-  last_sequence_number, idempotency_key`;
+  last_sequence_number, idempotency_key, search_attributes, memo`;
 
 function toSummary(row: RunRow): RunSummary {
   return {
@@ -434,6 +447,8 @@ function toSummary(row: RunRow): RunSummary {
     status: row.status,
     startedAt: row.started_at.toISOString(),
     closedAt: row.closed_at === null ? null : row.closed_at.toISOString(),
+    searchAttributes: row.search_attributes,
+    memo: row.memo,
   };
 }
 
@@ -562,6 +577,9 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
   }
 
   async function insertRun(namespaceId: string, input: StartRunInput): Promise<string | undefined> {
+    const searchAttributes =
+      input.searchAttributes === undefined ? {} : validateSearchAttributes(input.searchAttributes);
+    const memo = input.memo === undefined ? undefined : validateMemo(input.memo);
     const client = await pool.connect();
     let broken = false;
     const span = tracing.startSpan("workflow.start", {
@@ -573,8 +591,9 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
       await client.query("begin");
       const inserted = await client.query<{ id: string }>(
         `insert into workflow_runs
-           (namespace_id, workflow_type, input, idempotency_key, traceparent, queue_name)
-         values ($1, $2, $3::jsonb, $4, $5, $6)
+           (namespace_id, workflow_type, input, idempotency_key, traceparent, queue_name,
+            search_attributes, memo)
+         values ($1, $2, $3::jsonb, $4, $5, $6, $7::jsonb, $8::jsonb)
          on conflict (namespace_id, idempotency_key) where idempotency_key is not null
          do nothing
          returning id`,
@@ -585,6 +604,8 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
           input.idempotencyKey ?? null,
           span.traceparent ?? null,
           options.queueName,
+          JSON.stringify(searchAttributes),
+          memo === undefined ? null : JSON.stringify(memo),
         ],
       );
       const runId = inserted.rows[0]?.id;
@@ -603,6 +624,8 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
           type: "run_started",
           workflowType: input.workflowType,
           input: input.input ?? null,
+          ...(Object.keys(searchAttributes).length === 0 ? {} : { searchAttributes }),
+          ...(memo === undefined ? {} : { memo }),
         },
       ]);
       await client.query(
@@ -669,6 +692,11 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
       if (input.startedBefore !== undefined) {
         values.push(input.startedBefore);
         conditions.push(`started_at < $${String(values.length)}::timestamptz`);
+      }
+      if (input.query !== undefined && input.query.trim().length > 0) {
+        const compiled = compileVisibilityQuery(input.query, values.length + 1);
+        values.push(...compiled.values);
+        conditions.push(compiled.sql);
       }
       if (input.cursor !== undefined) {
         const { startedCursor, runId } = decodeCursor(input.cursor);

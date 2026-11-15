@@ -29,7 +29,7 @@ commands:
   run query <id> <name>   answer a query from the run's current state (--argument json)
   run cancel <id>         request cancellation (--reason text)
   run describe <id>       show a run (--history for its events)
-  run list                list runs (--status s, --type t, --limit n)
+  run list                list runs (--status s, --type t, --query q, --limit n)
   history export <id>     print the run's whole history as a history export (--out file)
   replay <file...>        replay history exports against --module code, exit 1 on non-determinism
   example <name|all>      run a bundled example end to end (payment-saga, etl-pipeline)

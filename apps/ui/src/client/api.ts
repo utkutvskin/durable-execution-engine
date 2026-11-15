@@ -26,6 +26,8 @@ export interface RunSummary {
   readonly status: string;
   readonly startedAt: string;
   readonly closedAt: string | null;
+  readonly searchAttributes?: Readonly<Record<string, string | number | boolean>>;
+  readonly memo?: unknown;
 }
 
 /**

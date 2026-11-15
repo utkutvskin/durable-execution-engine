@@ -468,6 +468,33 @@ describe.skipIf(BROWSER.mode === "skip")("run explorer in a browser", () => {
     await page.locator("[data-testid=run-count]", { hasText: "0 runs" }).waitFor();
   }, 60_000);
 
+  it("searches runs by their search attributes and names the position of a bad query", async () => {
+    const searcher = await api.apiKeys.issue("searching");
+    const startWith = async (searchAttributes: Record<string, unknown>): Promise<string> => {
+      const response = await fetch(`${baseUrl}/v1/runs`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${searcher.key}`, "content-type": "application/json" },
+        body: JSON.stringify({ workflowType: "paged", input: {}, searchAttributes }),
+      });
+      return ((await response.json()) as { run: { runId: string } }).run.runId;
+    };
+    const wanted = await startWith({ customerId: "c-1", amount: 50 });
+    await startWith({ customerId: "c-1", amount: 5 });
+    await startWith({ customerId: "c-2", amount: 50 });
+    await signIn(searcher.key);
+    await page.locator("[data-testid=run-count]", { hasText: "3 runs" }).waitFor();
+
+    await page.getByTestId("filter-query").fill("customerId = 'c-1' and amount > 10");
+    await page.getByTestId("apply-filters").click();
+    await page.locator("[data-testid=run-count]", { hasText: "1 runs" }).waitFor();
+    expect(await page.getByTestId("run-row").getAttribute("data-run-id")).toBe(wanted);
+    expect(await page.getByTestId("run-attributes").textContent()).toBe("amount=50 customerId=c-1");
+
+    await page.getByTestId("filter-query").fill("customerId = 'c-1' and");
+    await page.getByTestId("apply-filters").click();
+    await page.locator("[data-testid=banner]", { hasText: "at position 23" }).waitFor();
+  }, 60_000);
+
   it("requeues a dead letter from the ui", async () => {
     const runId = await startRun();
     const id = await createDeadLetterQueue(database.pool).add({

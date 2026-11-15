@@ -131,6 +131,23 @@ describe("wf against a real database", () => {
       await main(["run", "list", "--type", "payment-saga"], listed.io);
       expect(listed.out[0]).toContain("COMPLETED");
 
+      const queried = captureIo(directory);
+      expect(
+        await main(
+          [
+            "run",
+            "list",
+            "--query",
+            "workflowType = 'payment-saga' and status = 'COMPLETED' and startedAt > '2026-01-01'",
+          ],
+          queried.io,
+        ),
+      ).toBe(0);
+      expect(queried.out[0]).toContain("COMPLETED");
+      const refused = captureIo(directory);
+      expect(await main(["run", "list", "--query", "status = 'COMPLETED' or"], refused.io)).toBe(1);
+      expect(refused.err.join("\n")).toContain("at position 24");
+
       const runId = (JSON.parse(client.out[0] ?? "{}") as { runId: string }).runId;
       const exported = captureIo(directory);
       expect(await main(["history", "export", runId, "--out", "saga.json"], exported.io)).toBe(0);

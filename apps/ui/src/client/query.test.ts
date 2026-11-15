@@ -26,6 +26,13 @@ describe("buildListQuery", () => {
     expect(query.get("startedBefore")).toBe("2026-03-02T00:00:00.000Z");
   });
 
+  it("sends a trimmed visibility query and leaves out an empty one", () => {
+    expect(buildListQuery({ ...none, query: "  customerId = 'c-1'  " }, 5).get("query")).toBe(
+      "customerId = 'c-1'",
+    );
+    expect(buildListQuery({ ...none, query: "   " }, 5).has("query")).toBe(false);
+  });
+
   it("drops dates that are malformed or impossible", () => {
     const query = buildListQuery({ ...none, from: "03/01/2026", to: "2026-13-45" }, 5);
     expect(query.has("startedAfter")).toBe(false);

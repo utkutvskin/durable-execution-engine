@@ -43,6 +43,15 @@ function text(value: unknown): string {
   return "";
 }
 
+function upsertText(value: unknown): string {
+  if (typeof value !== "object" || value === null) {
+    return "";
+  }
+  return Object.entries(value as Record<string, unknown>)
+    .map(([name, attribute]) => (attribute === null ? `-${name}` : `${name}=${text(attribute)}`))
+    .join(" ");
+}
+
 function errorText(value: unknown): string {
   if (typeof value === "object" && value !== null) {
     const { name, message } = value as { name?: unknown; message?: unknown };
@@ -121,6 +130,11 @@ const PRESENTATIONS: Readonly<Record<string, Presentation>> = {
     label: "waiting for event",
     tone: "neutral",
     summary: (e) => `${text(e["eventName"])} key ${text(e["key"])} (${text(e["waitId"])})`,
+  },
+  search_attributes_upserted: {
+    label: "search attributes upserted",
+    tone: "neutral",
+    summary: (e) => upsertText(e["searchAttributes"]),
   },
   event_received: {
     label: "event received",

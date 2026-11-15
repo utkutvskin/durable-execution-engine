@@ -7,6 +7,8 @@ export interface ListFilters {
   readonly workflowType: string;
   readonly from: string;
   readonly to: string;
+  /** A visibility query such as `customerId = 'c-1'`, empty when unset. */
+  readonly query?: string;
 }
 
 const DAY_MS = 86_400_000;
@@ -45,6 +47,10 @@ export function buildListQuery(
   const to = startOfDay(filters.to);
   if (to !== undefined) {
     query.set("startedBefore", new Date(to + DAY_MS).toISOString());
+  }
+  const search = filters.query?.trim() ?? "";
+  if (search !== "") {
+    query.set("query", search);
   }
   query.set("limit", String(limit));
   if (cursor !== undefined) {

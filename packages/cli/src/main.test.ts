@@ -235,6 +235,29 @@ describe("wf command line", () => {
     expect(listed.out.at(-1)).toBe("more runs follow, pass --cursor next-page");
   });
 
+  it("passes --query to the api and prints each run's search attributes", async () => {
+    const calls: string[] = [];
+    const listed = captureIo();
+    const client = fakeClient(calls);
+    const withAttributes: RunClient = {
+      ...client,
+      listRuns: (filter) => {
+        calls.push(`list ${JSON.stringify(filter)}`);
+        return Promise.resolve({
+          runs: [{ ...snapshot, searchAttributes: { customerId: "c-1", amount: 50 } }],
+        });
+      },
+    };
+    expect(
+      await main(["run", "list", "--query", "customerId = 'c-1' and amount > 10"], listed.io, {
+        client: withAttributes,
+      }),
+    ).toBe(0);
+    expect(calls).toEqual(['list {"query":"customerId = \'c-1\' and amount > 10"}']);
+    expect(listed.out[0]).toContain(snapshot.runId);
+    expect(listed.out[0]).toMatch(/\{"customerId":"c-1","amount":50\}$/);
+  });
+
   it("prints machine readable output with --json", async () => {
     const { io, out } = captureIo();
     await main(["run", "describe", snapshot.runId, "--json"], io, { client: fakeClient([]) });

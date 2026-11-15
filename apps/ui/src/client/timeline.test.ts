@@ -117,6 +117,18 @@ describe("buildTimeline", () => {
     ]);
   });
 
+  it("lists an upsert's new values and the attributes it removed", () => {
+    const items = buildTimeline([
+      entry(1, "2026-03-01T10:00:00.000Z", {
+        type: "search_attributes_upserted",
+        searchAttributes: { stage: "done", amount: 50, vip: true, customerId: null },
+      }),
+    ]);
+    expect(items.map((item) => [item.label, item.summary, item.tone])).toEqual([
+      ["search attributes upserted", "stage=done amount=50 vip=true -customerId", "neutral"],
+    ]);
+  });
+
   it("falls back to the type name for an event it does not know", () => {
     const [item] = buildTimeline([
       entry(1, "2026-03-01T10:00:00.000Z", { type: "future_event_kind" }),

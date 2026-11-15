@@ -16,6 +16,20 @@ const STATUSES = [
 ];
 
 /**
+ * Renders search attributes as `name=value` pairs in name order, or a dash
+ * when there are none.
+ */
+export function formatAttributes(
+  attributes: Readonly<Record<string, string | number | boolean>> | undefined,
+): string {
+  const entries = Object.entries(attributes ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) {
+    return "-";
+  }
+  return entries.map(([name, value]) => `${name}=${String(value)}`).join(" ");
+}
+
+/**
  * Mounts the run list into `container`: filters, a table, load more paging
  * and a periodic refresh of what is loaded. Returns a function that stops
  * the refresh.
@@ -26,7 +40,7 @@ export function mountRunsView(
   namespaceName: string,
   onError: (error: unknown) => void,
 ): () => void {
-  let filters: ListFilters = { status: "", workflowType: "", from: "", to: "" };
+  let filters: ListFilters = { status: "", workflowType: "", from: "", to: "", query: "" };
   let runs: readonly RunSummary[] = [];
   let nextCursor: string | undefined;
   let stopped = false;
@@ -42,6 +56,12 @@ export function mountRunsView(
     type: "text",
     name: "workflowType",
     placeholder: "workflow type",
+  });
+  const search = h("input", {
+    testId: "filter-query",
+    type: "search",
+    name: "query",
+    placeholder: "status = 'FAILED' and customerId = 'c-1'",
   });
   const from = h("input", { testId: "filter-from", type: "date", name: "from" });
   const to = h("input", { testId: "filter-to", type: "date", name: "to" });
@@ -59,6 +79,7 @@ export function mountRunsView(
       workflowType: workflowType.value,
       from: from.value,
       to: to.value,
+      query: search.value,
     };
   }
 
@@ -76,6 +97,7 @@ export function mountRunsView(
           h("td", {}, run.workflowType),
           h("td", {}, namespaceName),
           h("td", {}, formatTimestamp(run.startedAt)),
+          h("td", { testId: "run-attributes" }, formatAttributes(run.searchAttributes)),
           h(
             "td",
             {},
@@ -132,6 +154,7 @@ export function mountRunsView(
       workflowType,
       h("label", {}, "from ", from),
       h("label", {}, "to ", to),
+      h("label", { className: "filter-query" }, "search ", search),
       h("button", { type: "submit", testId: "apply-filters" }, "apply"),
     ),
     summary,
@@ -144,9 +167,14 @@ export function mountRunsView(
         h(
           "tr",
           {},
-          ...["status", "workflow type", "namespace", "started (utc)", "run"].map((title) =>
-            h("th", {}, title),
-          ),
+          ...[
+            "status",
+            "workflow type",
+            "namespace",
+            "started (utc)",
+            "search attributes",
+            "run",
+          ].map((title) => h("th", {}, title)),
         ),
       ),
       body,

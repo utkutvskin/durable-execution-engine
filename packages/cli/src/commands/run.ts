@@ -150,8 +150,10 @@ async function listRuns(parsed: ParsedCommand, io: CliIo, client: RunClient): Pr
   const workflowType = stringFlag(parsed, "type");
   const limit = parseLimit(stringFlag(parsed, "limit"));
   const cursor = stringFlag(parsed, "cursor");
+  const query = stringFlag(parsed, "query");
   const page = await client.listRuns({
     ...(cursor === undefined ? {} : { cursor }),
+    ...(query === undefined ? {} : { query }),
     ...(status === undefined ? {} : { status }),
     ...(workflowType === undefined ? {} : { workflowType }),
     ...(limit === undefined ? {} : { limit }),
@@ -165,8 +167,12 @@ async function listRuns(parsed: ParsedCommand, io: CliIo, client: RunClient): Pr
     return 0;
   }
   for (const run of page.runs) {
+    const attributes =
+      run.searchAttributes === undefined || Object.keys(run.searchAttributes).length === 0
+        ? ""
+        : `  ${JSON.stringify(run.searchAttributes)}`;
     io.stdout(
-      `${pad(run.runId, 38)}${pad(run.status, 14)}${pad(run.workflowType, 24)}${run.startedAt}`,
+      `${pad(run.runId, 38)}${pad(run.status, 14)}${pad(run.workflowType, 24)}${run.startedAt}${attributes}`,
     );
   }
   if (page.nextCursor !== undefined) {
@@ -199,6 +205,7 @@ export async function runCommand(
     type: { type: "string" },
     limit: { type: "string" },
     cursor: { type: "string" },
+    query: { type: "string" },
     "idempotency-key": { type: "string" },
     wait: { type: "boolean" },
     history: { type: "boolean" },

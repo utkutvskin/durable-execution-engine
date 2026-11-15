@@ -71,6 +71,7 @@ describe("generated openapi document", () => {
       "workflowType",
       "startedAfter",
       "startedBefore",
+      "query",
       "limit",
       "cursor",
     ]);
