@@ -20,6 +20,7 @@
     "test:watch": "vitest",
     "bench:sticky": "node --conditions=development ./packages/worker/src/bench/run-sticky-bench.ts",
     "bench:explain": "node --conditions=development ./packages/worker/src/bench/run-explain.ts",
+    "bench:visibility": "node --conditions=development ./packages/worker/src/bench/run-visibility-bench.ts",
     "bench": "node --conditions=development ./packages/worker/src/bench/run-bench.ts",
     "migrate:up": "pnpm --filter @dee/core run migrate:up",
     "migrate:down": "pnpm --filter @dee/core run migrate:down",

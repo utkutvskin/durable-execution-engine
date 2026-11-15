@@ -96,6 +96,56 @@ The worker takes every free slot on each poll, so its dequeue batch size is its 
 
 With routing on, an engine claims a run after every decision that leaves it open and the other engines skip that run's workflow tasks; the decisions were still shared between the engines (110, 95 and 95). With routing off, a run's tasks land on any engine and a hit needs the same engine twice in a row. The test `sticky-bench.integration.test.ts` asserts a hit rate above 80 percent with routing on and below 85 percent with routing off. The figures come from one run on the machine of the other tables; the "off" figure varies from run to run.
 
+## Visibility queries over 100,000 runs
+
+```sh
+DATABASE_URL=postgres://dee:dee@localhost:5432/dee pnpm run bench:visibility
+```
+
+seeds 100,000 runs of one namespace (`BENCH_VISIBILITY_RUNS`), one started per second going back from now, each with the search attributes `customerId` (997 customers), `amount` (0 to 999), `region` and `vip` (one run in 50); one run in 20 failed and one in 20 is open. It sends the statement `GET /v1/runs?query=...` sends (the namespace condition, the compiled query, the newest first page of 50 plus one) and prints its `EXPLAIN (ANALYZE)` plan and the median and slowest wall time of 20 executions (`BENCH_VISIBILITY_ROUNDS`), measured from the Node process, on the machine of the other tables. Migration `0024_search_attributes` adds the GIN index `workflow_runs_search_attributes_idx (search_attributes jsonb_path_ops)` and `workflow_runs_namespace_status_started_idx (namespace_id, status, started_at desc, id desc)`; `workflow_runs_namespace_started_idx` came with migration 0012.
+
+| Query                                                                   | Rows | Execution (ms) | Median wall (ms) | Slowest wall (ms) | Plan                                                  |
+| ----------------------------------------------------------------------- | ---: | -------------: | ---------------: | ----------------: | ----------------------------------------------------- |
+| `status = 'FAILED' and customerId = 'c-1' and startedAt > '<12 h ago>'` |    2 |           4.78 |             4.18 |              8.47 | BitmapAnd of the status index and the GIN index, Sort |
+| `customerId = 'c-17'`                                                   |   51 |           4.31 |             5.70 |              6.35 | GIN Bitmap Index Scan, Sort                           |
+| `customerId = 'nobody'`                                                 |    0 |           4.75 |             4.74 |              5.25 | GIN Bitmap Index Scan                                 |
+| `status = 'FAILED' and amount > 900`                                    |   51 |           1.38 |             1.76 |              2.34 | Index Scan on the status index, filter                |
+| `vip = true or customerId = 'c-3'`                                      |   51 |           2.39 |             3.04 |              3.40 | Index Scan on the namespace index, filter             |
+| `amount > 998`                                                          |   51 |          62.16 |            35.62 |             66.01 | Index Scan on the namespace index, filter             |
+
+Every query answers in under 100 ms, the example of the backlog in under 10 ms. The plan of that example:
+
+```
+Limit (actual time=4.816..4.818 rows=2 loops=1)
+  ->  Sort (actual time=4.815..4.816 rows=2 loops=1)
+        Sort Key: started_at DESC, id DESC
+        Sort Method: quicksort  Memory: 25kB
+        ->  Bitmap Heap Scan on workflow_runs (actual time=4.805..4.809 rows=2 loops=1)
+              Recheck Cond: ((namespace_id = '80aab532-...'::uuid) AND (status = 'FAILED'::text) AND (started_at > '2026-11-14 21:34:35.483+00'::timestamp with time zone) AND (search_attributes @> '{"customerId": "c-1"}'::jsonb))
+              Heap Blocks: exact=2
+              ->  BitmapAnd (actual time=4.792..4.793 rows=0 loops=1)
+                    ->  Bitmap Index Scan on workflow_runs_namespace_status_started_idx (actual time=0.364..0.364 rows=2159 loops=1)
+                          Index Cond: ((namespace_id = '80aab532-...'::uuid) AND (status = 'FAILED'::text) AND (started_at > '2026-11-14 21:34:35.483+00'::timestamp with time zone))
+                    ->  Bitmap Index Scan on workflow_runs_search_attributes_idx (actual time=4.367..4.367 rows=101 loops=1)
+                          Index Cond: (search_attributes @> '{"customerId": "c-1"}'::jsonb)
+Planning Time: 0.153 ms
+Execution Time: 4.844 ms
+```
+
+and of the slowest, a range on an attribute no index covers:
+
+```
+Limit (actual time=0.576..33.265 rows=51 loops=1)
+  ->  Index Scan using workflow_runs_namespace_started_idx on workflow_runs (actual time=0.576..33.254 rows=51 loops=1)
+        Index Cond: (namespace_id = '80aab532-...'::uuid)
+        Filter: (CASE WHEN (jsonb_typeof((search_attributes -> 'amount'::text)) = 'number'::text) THEN ((search_attributes ->> 'amount'::text))::numeric ELSE NULL::numeric END > '998'::numeric)
+        Rows Removed by Filter: 50806
+Planning Time: 0.140 ms
+Execution Time: 33.291 ms
+```
+
+Equality on an attribute (`@>`) is served by the GIN index; an ordering on an attribute is not indexed and is evaluated while walking the namespace or status index newest first, so its cost grows with how many runs it has to skip before it fills a page: `amount > 998` matches one run in 1,000 and reads about 51,000. A query that matches nothing with only such a filter reads the whole namespace; that is the case to watch, and typed expression indexes per attribute are the fix (`docs/DEFERRED.md`). The test `visibility-queries.integration.test.ts` (20,000 runs) fails when any of these queries reads `workflow_runs` sequentially, when attribute equality stops using the GIN index or the range stops using the status index.
+
 ## What to try next
 
 - `recordStepResult` reads the current sequence twice (once itself, once inside `appendEventsOnClient`). A variant that appends at the tail in one call saves one statement per step, about 5% of the statements of a run.
