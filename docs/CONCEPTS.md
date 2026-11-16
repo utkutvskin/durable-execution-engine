@@ -20,6 +20,8 @@ export const buildGreeting = defineStep<HelloInput, string>("hello.build-greetin
 
 The workflow never performs a side effect itself. It asks for a step by name through `ctx.step` and the engine runs the registered handler somewhere, possibly on another machine and possibly more than once. Workflows and steps are registered by name, so the name is part of your contract with every run already in flight.
 
+A step, a child workflow, a signal and a query can also be named by its **definition** instead of its string: `ctx.step(buildGreeting, { name })`, `ctx.executeChild(ship, input)`, `ctx.waitForSignal(approved)` with `approved = defineSignal<Approval>("approved")`, and `ctx.setQueryHandler(status, handler)` with `status = defineQuery<undefined, string>("status")`. The compiler then checks the input and types the result, and a wrong input type does not compile. Updates are typed by `defineUpdate` already. The definition still records the step, child or signal by its name, so both forms write the same history and can replay each other's runs.
+
 ## The event log
 
 Everything that happens to a run is appended to its history as an event: `run_started`, `step_scheduled`, `step_completed`, `timer_started`, `signal_received`, `run_completed` and so on. The history is append-only and ordered by a sequence number. The status of a run is derived from it; nothing else is authoritative.
@@ -47,7 +49,9 @@ A step runs with a retry policy: `maxAttempts`, `initialIntervalMs`, `backoffCoe
 - A `NonRetryableError` is tried once and fails the step at once. The workflow sees a rejected `ctx.step` it can catch.
 - A step that uses all its attempts moves to the **dead letter queue** for the operator, and the workflow sees the failure at once: `ctx.step()` rejects with a `StepFailedError` (`stepId`, `stepType`, and the step's last error as `cause`) that the workflow can catch to compensate; uncaught, it fails the run. The failure is final: a requeued dead letter is acknowledged without running the step again, because the step already has its result. A step that fails with a `NonRetryableError` rejects with the original error instead.
 - A failure keeps the error's `name`, `message`, the serializable own properties as `details` and the `cause` chain, so a custom error class arrives in the workflow with its type and details (`error.name`, `error.details`, `error.cause`). A compensation that throws is recorded as a `compensation_failed` event and the other compensations still run.
-- A step that exceeds its `timeoutMs` fails that attempt with a `StepTimeoutError`.
+- A step that exceeds its `timeoutMs` (also called `startToCloseTimeoutMs`) fails that attempt with a `StepTimeoutError`.
+- `scheduleToCloseTimeoutMs` bounds the whole step, every attempt and every backoff, from the moment it was scheduled. When it passes, during an attempt, before one starts or because the next retry would start after it, the step fails without another retry and `ctx.step()` rejects with a `StepScheduleToCloseTimeoutError` (`timeoutMs`, and the last attempt's error as `cause` when a retry was cut off). The error is rebuilt with its class on replay, so `instanceof` works in the workflow.
+- A long step reports progress with `context.heartbeat(details)`. With `heartbeatTimeoutMs` set, an attempt that goes that long without a heartbeat is aborted and fails with a retryable `StepHeartbeatTimeoutError`. The last details are stored in `step_heartbeats`, and the next attempt receives them as `context.heartbeatDetails`, so it can resume where the stopped attempt was instead of starting over. `context.attempt` says which attempt is running.
 - A task whose lease is lost three times is **quarantined** instead of redelivered forever, so one poison task cannot block a queue.
 
 Attempt numbers come from a bookkeeping table, not from how often the queue delivered the task, so a worker crash does not use up a retry.
