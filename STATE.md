@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 48: step heartbeats, step timeouts and typed definitions
+
+- **Status:** DONE
+- **Completed day:** 48
+- **Files added or changed:** new `packages/core/migrations/0025_step_heartbeats.{up,down}.sql`, new `packages/core/src/retry/heartbeats.ts` (+ new `step-heartbeat.test.ts`), `retry/timeout.ts` (`runWithDeadlines`, `StepHeartbeatTimeoutError`) (+ test), `retry/step-task-processor.ts`, `retry/dead-letters.ts`, `queue/step-task-enqueue.ts` (`scheduledAt` on the payload), `workflow/step-registry.ts` (`StepContext.heartbeat`, `heartbeatDetails`, `attempt`, `detachedStepContext`), `workflow/define-step.ts` (+ test), `workflow/errors.ts` (`StepScheduleToCloseTimeoutError`), new `workflow/define-signal.ts` (`defineSignal`, `defineQuery`), new `workflow/typed-definitions.test.ts`, `workflow/context.ts`, `decision-loop.ts`, `live-session.ts`, `run-workflow.ts`, `step-failure.test.ts`, `idempotency/recorder.test.ts`, `index.ts`, `db/migrator.test.ts`, `migrator-schema.test.ts`, `schema.test.ts`, `api-reports/dee-core.api.md`, `docs/CONCEPTS.md`, `DECISIONS.md` (ADR-0058), `DEFERRED.md`, `README.md`
+- **Technical decisions:** ADR-0058 in `docs/DECISIONS.md`. No new dependency. One migration, `0025_step_heartbeats`.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm run verify` is green locally (169 test files, 1431 tests, 23 more than the green baseline of 1408). **Done, each with a test:** a step that stops heartbeating is retried after the heartbeat timeout on a fake clock (one fake clock drives both the processor's clock and its timers) and the retried attempt gets the last details as `context.heartbeatDetails` and resumes from them (`step-heartbeat.test.ts`; I checked it goes red when the details are not passed on); a step past its schedule-to-close timeout fails with a typed `StepScheduleToCloseTimeoutError`: during an attempt, before a delivery runs, and when the next retry would start too late (processor tests), and on replay `ctx.step()` rejects with that class, `instanceof` and `timeoutMs` included, in the decision loop and the live session (`step-failure.test.ts`); a wrong input type is rejected at compile time (`typed-definitions.test.ts`: `@ts-expect-error` lines that the core typecheck fails on when they stop being errors, plus `expectTypeOf` on the results). Typed and string calls give the same decisions at every history prefix. **Things to know:** the schedule-to-close deadline counts from `scheduledAt` in the step task payload (the decision's clock); older tasks have none, and a requeued dead letter gets a fresh one. A heartbeat does not renew the lease and is not an event. The client side (`signalRun`, `queryRun`, `updateRun`, HTTP) still takes names. All in `docs/DEFERRED.md`. Commits `5ba72df` to `54da277` fail one test, `recorder.test.ts` (it expected the old step task payload); `222085c` fixes it, and I did not rebase local commits to fold it in. I wrote the code before its tests; apart from the mutation check above, none of the new tests was seen red first. Day 49 (priorities, separate pools and namespace fairness) is next.
+
+---
+
 ## Day 47: search attributes, memo and visibility queries
 
 - **Status:** DONE
