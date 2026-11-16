@@ -242,7 +242,12 @@ describe("result recorder", () => {
       expect(await stepTasks()).toEqual([
         {
           queue_name: "default",
-          payload: { stepId: "step-1", stepType: "charge", input: { amount: 5 } },
+          payload: {
+            stepId: "step-1",
+            stepType: "charge",
+            input: { amount: 5 },
+            scheduledAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) as unknown,
+          },
         },
       ]);
     });
