@@ -78,10 +78,10 @@ describe("migrations into a named schema", () => {
   it("reverts inside the named schema", async () => {
     await migrateUp(app.pool, defaultMigrationsDir, { schema: engineSchema });
     const reverted = await migrateDown(app.pool, defaultMigrationsDir, 1, { schema: engineSchema });
-    expect(reverted).toEqual(["0024_search_attributes"]);
+    expect(reverted).toEqual(["0025_step_heartbeats"]);
     expect(
       await pendingMigrations(app.pool, defaultMigrationsDir, { schema: engineSchema }),
-    ).toEqual(["0024_search_attributes"]);
+    ).toEqual(["0025_step_heartbeats"]);
     await migrateUp(app.pool, defaultMigrationsDir, { schema: engineSchema });
   });
 

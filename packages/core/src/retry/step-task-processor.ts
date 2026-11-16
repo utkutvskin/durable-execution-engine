@@ -4,34 +4,47 @@ import { noopTracing, type TraceSpan, type Tracing } from "../observability/trac
 import type { ResultRecorder } from "../idempotency/recorder.ts";
 import type { LeasedTask, TaskQueue } from "../queue/task-queue.ts";
 import type { StepDefinition } from "../workflow/define-step.ts";
-import { serializeError } from "../workflow/error-serialization.ts";
+import { serializeError, type SerializedError } from "../workflow/error-serialization.ts";
 import {
   systemClock,
   systemRandomSource,
   type ClockSource,
   type RandomSource,
 } from "../workflow/sources.ts";
+import { StepScheduleToCloseTimeoutError } from "../workflow/errors.ts";
+import type { StepContext } from "../workflow/step-registry.ts";
 import type { AttemptLog } from "./attempt-log.ts";
 import type { DeadLetterQueue } from "./dead-letters.ts";
+import { createHeartbeatStore, type HeartbeatStore } from "./heartbeats.ts";
 import {
   DEFAULT_RETRY_POLICY,
   NonRetryableError,
   decideRetry,
   type RetryPolicy,
 } from "./retry-policy.ts";
-import { runWithTimeout, type TimeoutTimers } from "./timeout.ts";
+import {
+  StepHeartbeatTimeoutError,
+  StepTimeoutError,
+  runWithDeadlines,
+  type Deadline,
+  type TimeoutTimers,
+} from "./timeout.ts";
 
 const stepTaskPayloadSchema = z.object({
   stepId: z.string().min(1),
   stepType: z.string().min(1),
   input: z.unknown(),
   attemptOffset: z.number().int().nonnegative().default(0),
+  scheduledAt: z.iso.datetime().optional(),
 });
 
 /**
  * The payload of a `STEP_TASK`: which step of the run to execute, with what
  * input. `attemptOffset` is the number of attempts already used before the
  * task's current retry budget began (non-zero after a dead letter requeue).
+ * `scheduledAt` is when the step was scheduled (or requeued), which its
+ * schedule-to-close timeout counts from; a task without it has no
+ * schedule-to-close deadline.
  */
 export type StepTaskPayload = z.input<typeof stepTaskPayloadSchema>;
 
@@ -56,6 +69,7 @@ export type StepTaskOutcome =
  * its type; `clock`, `random` and `timers` default to the real ones. With
  * `tracing`, each executed attempt emits a `step` span under the run's stored
  * `traceparent`; a delivery whose result is already recorded emits none.
+ * `heartbeats` defaults to a `HeartbeatStore` over `pool`.
  */
 export interface StepTaskProcessorOptions {
   readonly pool: Pool;
@@ -68,6 +82,7 @@ export interface StepTaskProcessorOptions {
   readonly random?: RandomSource;
   readonly timers?: TimeoutTimers;
   readonly tracing?: Tracing;
+  readonly heartbeats?: HeartbeatStore;
 }
 
 /**
@@ -77,6 +92,16 @@ export interface StepTaskProcessorOptions {
 export interface StepTaskProcessor {
   /**
    * Handles one delivery of a step task.
+   *
+   * The step's timeouts apply to every attempt: `timeoutMs` (start to
+   * close) and `heartbeatTimeoutMs` fail the attempt with a retryable
+   * `StepTimeoutError` or `StepHeartbeatTimeoutError`. When the
+   * schedule-to-close deadline passes, during an attempt, before one starts,
+   * or because the next retry would start after it, the step ends with
+   * `step_failed` carrying a `StepScheduleToCloseTimeoutError`. The handler
+   * receives the details of the step's last heartbeat; heartbeats still
+   * being stored when an attempt fails are written before the failure is
+   * recorded, so the next attempt sees them.
    *
    * A success is recorded as `step_completed` and the task acked. A failure
    * is written to the event log as `step_attempt_failed`; then, by the
@@ -160,6 +185,7 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
   const random = options.random ?? systemRandomSource;
   const timers = options.timers ?? systemTimers;
   const tracing = options.tracing ?? noopTracing;
+  const heartbeats = options.heartbeats ?? createHeartbeatStore(options.pool);
 
   async function readTraceparent(runId: string): Promise<string | null> {
     const result = await options.pool.query<{ traceparent: string | null }>(
@@ -177,27 +203,98 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
     return result.rowCount !== 0;
   }
 
+  function attemptDeadlines(
+    definition: StepDefinition,
+    scheduleDeadline: Date | undefined,
+  ): { fixed: Deadline[]; heartbeat?: Deadline } {
+    const fixed: Deadline[] = [];
+    const { timeoutMs, heartbeatTimeoutMs, scheduleToCloseTimeoutMs } = definition;
+    if (timeoutMs !== undefined) {
+      fixed.push({ delayMs: timeoutMs, error: () => new StepTimeoutError(timeoutMs) });
+    }
+    if (scheduleDeadline !== undefined && scheduleToCloseTimeoutMs !== undefined) {
+      fixed.push({
+        delayMs: Math.max(0, scheduleDeadline.getTime() - clock.now().getTime()),
+        error: () => new StepScheduleToCloseTimeoutError(scheduleToCloseTimeoutMs),
+      });
+    }
+    return heartbeatTimeoutMs === undefined
+      ? { fixed }
+      : {
+          fixed,
+          heartbeat: {
+            delayMs: heartbeatTimeoutMs,
+            error: () => new StepHeartbeatTimeoutError(heartbeatTimeoutMs),
+          },
+        };
+  }
+
+  function heartbeatWriter(
+    runId: string,
+    stepId: string,
+    attempt: number,
+  ): { send(details: unknown): void; flush(): Promise<void>; close(): void } {
+    let closed = false;
+    let queued: { readonly details: unknown } | undefined;
+    let inFlight: Promise<void> | undefined;
+    const drain = async (): Promise<void> => {
+      while (queued !== undefined) {
+        const { details } = queued;
+        queued = undefined;
+        await heartbeats
+          .record({ runId, stepId, attempt, details, recordedAt: clock.now() })
+          .catch(() => undefined);
+      }
+      inFlight = undefined;
+    };
+    return {
+      send(details: unknown): void {
+        if (closed) {
+          return;
+        }
+        queued = { details };
+        inFlight ??= drain();
+      },
+      async flush(): Promise<void> {
+        await inFlight;
+      },
+      close(): void {
+        closed = true;
+      },
+    };
+  }
+
   async function executeTraced(
     definition: StepDefinition | undefined,
-    stepType: string,
-    input: unknown,
+    payload: { readonly stepType: string; readonly input: unknown },
+    context: Omit<StepContext, "signal" | "heartbeat">,
+    writer: { send(details: unknown): void },
+    scheduleDeadline: Date | undefined,
     span: TraceSpan,
     leaseSignal: AbortSignal | undefined,
   ): Promise<unknown> {
     const abortion = rejectOnAbort(leaseSignal);
     try {
       if (definition === undefined) {
-        throw new NonRetryableError(`no step registered for type "${stepType}"`);
+        throw new NonRetryableError(`no step registered for type "${payload.stepType}"`);
       }
-      const run = runWithTimeout(
-        (timeoutSignal) =>
-          definition.handler(input, {
+      const run = runWithDeadlines(
+        (deadlineSignal, restartHeartbeat) =>
+          definition.handler(payload.input, {
+            ...context,
             signal:
               leaseSignal === undefined
-                ? timeoutSignal
-                : AbortSignal.any([timeoutSignal, leaseSignal]),
+                ? deadlineSignal
+                : AbortSignal.any([deadlineSignal, leaseSignal]),
+            heartbeat: (details?: unknown): void => {
+              if (deadlineSignal.aborted || isAborted(leaseSignal)) {
+                return;
+              }
+              restartHeartbeat();
+              writer.send(details);
+            },
           }),
-        definition.timeoutMs,
+        attemptDeadlines(definition, scheduleDeadline),
         timers,
       );
       return await Promise.race([run, abortion.promise]);
@@ -208,6 +305,17 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
       abortion.dispose();
       span.end();
     }
+  }
+
+  function scheduleDeadlineOf(
+    definition: StepDefinition | undefined,
+    scheduledAt: string | undefined,
+  ): Date | undefined {
+    const timeoutMs = definition?.scheduleToCloseTimeoutMs;
+    if (timeoutMs === undefined || scheduledAt === undefined) {
+      return undefined;
+    }
+    return new Date(new Date(scheduledAt).getTime() + timeoutMs);
   }
 
   return {
@@ -227,6 +335,31 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
       const attempt = await options.attempts.nextAttempt(runId, stepId);
       const definition = options.lookup(payload.stepType);
       const policy: RetryPolicy = definition?.retry ?? DEFAULT_RETRY_POLICY;
+      const scheduleDeadline = scheduleDeadlineOf(definition, payload.scheduledAt);
+      const scheduleTimeoutMs = definition?.scheduleToCloseTimeoutMs;
+
+      const failStep = async (error: SerializedError): Promise<StepTaskOutcome> => {
+        await options.attempts.recordFailure({ runId, stepId, attempt, error, retryAt: null });
+        const recorded = await options.recorder.recordStepResult({
+          runId,
+          stepId,
+          attemptKey: `attempt-${String(attempt)}`,
+          outcome: { status: "failed", error },
+        });
+        await options.queue.ack(task.id, task.leaseToken);
+        return recorded.recorded ? { status: "failed", attempt } : { status: "already_recorded" };
+      };
+
+      if (
+        scheduleDeadline !== undefined &&
+        scheduleTimeoutMs !== undefined &&
+        clock.now().getTime() >= scheduleDeadline.getTime()
+      ) {
+        return failStep(serializeError(new StepScheduleToCloseTimeoutError(scheduleTimeoutMs)));
+      }
+
+      const previous = await heartbeats.read(runId, stepId);
+      const writer = heartbeatWriter(runId, stepId, attempt);
       const span = tracing.startSpan(`step ${payload.stepType}`, {
         parent: await readTraceparent(runId),
         attributes: {
@@ -241,20 +374,38 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
       try {
         result = await executeTraced(
           definition,
-          payload.stepType,
-          payload.input,
+          payload,
+          { attempt, heartbeatDetails: previous?.details ?? undefined },
+          writer,
+          scheduleDeadline,
           span,
           context.signal,
         );
       } catch (thrown) {
+        writer.close();
+        await writer.flush();
         if (isAborted(context.signal)) {
           return { status: "lease_lost" };
         }
         const error = serializeError(thrown);
+        if (thrown instanceof StepScheduleToCloseTimeoutError) {
+          return failStep(error);
+        }
         const decision = decideRetry(policy, attempt - payload.attemptOffset, error, random);
 
         if (decision.retry) {
           const retryAt = new Date(clock.now().getTime() + decision.delayMs);
+          if (
+            scheduleDeadline !== undefined &&
+            scheduleTimeoutMs !== undefined &&
+            retryAt.getTime() >= scheduleDeadline.getTime()
+          ) {
+            return failStep(
+              serializeError(
+                new StepScheduleToCloseTimeoutError(scheduleTimeoutMs, { cause: thrown }),
+              ),
+            );
+          }
           await options.attempts.recordFailure({ runId, stepId, attempt, error, retryAt });
           const nacked = await options.queue.nack(task.id, task.leaseToken, decision.delayMs);
           return nacked
@@ -262,17 +413,10 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
             : { status: "lease_lost" };
         }
 
-        await options.attempts.recordFailure({ runId, stepId, attempt, error, retryAt: null });
         if (decision.reason === "NON_RETRYABLE") {
-          const recorded = await options.recorder.recordStepResult({
-            runId,
-            stepId,
-            attemptKey: `attempt-${String(attempt)}`,
-            outcome: { status: "failed", error },
-          });
-          await options.queue.ack(task.id, task.leaseToken);
-          return recorded.recorded ? { status: "failed", attempt } : { status: "already_recorded" };
+          return failStep(error);
         }
+        await options.attempts.recordFailure({ runId, stepId, attempt, error, retryAt: null });
         const deadLetterId = await options.deadLetters.addAndAck(
           {
             namespaceId: task.namespaceId,
@@ -302,6 +446,8 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
         }
         return { status: "dead_lettered", attempt, deadLetterId };
       }
+      writer.close();
+      await writer.flush();
       const recorded = await options.recorder.recordStepResult({
         runId,
         stepId,

@@ -333,6 +333,9 @@ export function createGzipCodec(codec: Codec): Codec;
 export function createHealthChecks(pool: Pool, options?: HealthChecksOptions): HealthChecks;
 
 // @public
+export function createHeartbeatStore(pool: Pool): HeartbeatStore;
+
+// @public
 export function createHistoryCompactor(pool: Pool, options: HistoryCompactorOptions): HistoryCompactor;
 
 // @public
@@ -558,6 +561,22 @@ export interface DeadLetterQueue {
 export type DeadLetterReason = "MAX_ATTEMPTS_EXHAUSTED";
 
 // @public
+export interface Deadline {
+    // (undocumented)
+    readonly delayMs: number;
+    // (undocumented)
+    error(): Error;
+}
+
+// @public
+export interface Deadlines {
+    // (undocumented)
+    readonly fixed: readonly Deadline[];
+    // (undocumented)
+    readonly heartbeat?: Deadline;
+}
+
+// @public
 export function decideRetry(policy: RetryPolicy, failedAttempt: number, error: SerializedError, random: RandomSource): RetryDecision;
 
 // @public
@@ -639,11 +658,17 @@ export interface DefineStepOptions<TInput, TResult> {
     // (undocumented)
     readonly handler: StepHandler<TInput, TResult>;
     // (undocumented)
+    readonly heartbeatTimeoutMs?: number;
+    // (undocumented)
     readonly input?: z.ZodType<TInput>;
     // (undocumented)
     readonly output?: z.ZodType<TResult>;
     // (undocumented)
     readonly retry?: Partial<RetryPolicy>;
+    // (undocumented)
+    readonly scheduleToCloseTimeoutMs?: number;
+    // (undocumented)
+    readonly startToCloseTimeoutMs?: number;
     // (undocumented)
     readonly timeoutMs?: number;
 }
@@ -732,6 +757,9 @@ export interface DequeueOptions {
 
 // @public
 export function deserializeError(serialized: SerializedError): Error;
+
+// @public
+export function detachedStepContext(signal?: AbortSignal): StepContext;
 
 // @public
 export interface EmbeddedOptions {
@@ -943,6 +971,12 @@ export interface HealthChecks {
 export interface HealthChecksOptions {
     // (undocumented)
     readonly timeoutMs?: number;
+}
+
+// @public
+export interface HeartbeatStore {
+    read(runId: string, stepId: string): Promise<StepHeartbeat | undefined>;
+    record(input: RecordHeartbeatInput): Promise<void>;
 }
 
 // @public
@@ -1631,6 +1665,20 @@ export interface RecordedWorkflowTaskResult {
 }
 
 // @public
+export interface RecordHeartbeatInput {
+    // (undocumented)
+    readonly attempt: number;
+    // (undocumented)
+    readonly details: unknown;
+    // (undocumented)
+    readonly recordedAt: Date;
+    // (undocumented)
+    readonly runId: string;
+    // (undocumented)
+    readonly stepId: string;
+}
+
+// @public
 export interface RecordStepResultInput {
     // (undocumented)
     readonly attemptKey: string;
@@ -2058,6 +2106,9 @@ export interface RunWaitingMark {
 }
 
 // @public
+export function runWithDeadlines<T>(operation: (signal: AbortSignal, heartbeat: () => void) => T | Promise<T>, deadlines: Deadlines, timers: TimeoutTimers): Promise<T>;
+
+// @public
 export function runWithTimeout<T>(operation: (signal: AbortSignal) => T | Promise<T>, timeoutMs: number | undefined, timers: TimeoutTimers): Promise<T>;
 
 // @public
@@ -2437,6 +2488,9 @@ export const stepCompletedEventSchema: z.ZodObject<{
 
 // @public
 export interface StepContext {
+    readonly attempt: number;
+    heartbeat(details?: unknown): void;
+    readonly heartbeatDetails: unknown;
     // (undocumented)
     readonly signal: AbortSignal;
 }
@@ -2446,7 +2500,11 @@ export interface StepDefinition<TInput = unknown, TResult = unknown> {
     // (undocumented)
     readonly handler: (input: TInput, context?: StepContext) => TResult | Promise<TResult>;
     // (undocumented)
+    readonly heartbeatTimeoutMs?: number;
+    // (undocumented)
     readonly retry?: RetryPolicy;
+    // (undocumented)
+    readonly scheduleToCloseTimeoutMs?: number;
     // (undocumented)
     readonly stepType: string;
     // (undocumented)
@@ -2474,6 +2532,23 @@ export const stepFailedEventSchema: z.ZodObject<{
 export type StepHandler<TInput = unknown, TResult = unknown> = (input: TInput, context: StepContext) => TResult | Promise<TResult>;
 
 // @public
+export interface StepHeartbeat {
+    // (undocumented)
+    readonly attempt: number;
+    // (undocumented)
+    readonly details: unknown;
+    // (undocumented)
+    readonly recordedAt: Date;
+}
+
+// @public
+export class StepHeartbeatTimeoutError extends Error {
+    constructor(heartbeatTimeoutMs: number);
+    // (undocumented)
+    readonly heartbeatTimeoutMs: number;
+}
+
+// @public
 export type StepOutcome = {
     readonly status: "completed";
     readonly result: unknown;
@@ -2498,6 +2573,13 @@ export const stepScheduledEventSchema: z.ZodObject<{
     stepType: z.ZodString;
     input: z.ZodUnknown;
 }, z.core.$strip>;
+
+// @public
+export class StepScheduleToCloseTimeoutError extends Error {
+    constructor(timeoutMs: number, options?: ErrorOptions);
+    // (undocumented)
+    readonly timeoutMs: number;
+}
 
 // @public
 export interface StepTaskEnqueueInput {
@@ -2558,6 +2640,8 @@ export interface StepTaskProcessorOptions {
     readonly clock?: ClockSource;
     // (undocumented)
     readonly deadLetters: DeadLetterQueue;
+    // (undocumented)
+    readonly heartbeats?: HeartbeatStore;
     // (undocumented)
     readonly lookup: (stepType: string) => StepDefinition | undefined;
     // (undocumented)
@@ -3606,25 +3690,39 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/retry/dead-letters.d.ts:59:5 - (ae-undocumented) Missing documentation for "limit".
 // dist/retry/dead-letters.d.ts:82:5 - (ae-undocumented) Missing documentation for "list".
 // dist/retry/dead-letters.d.ts:83:5 - (ae-undocumented) Missing documentation for "get".
+// dist/retry/heartbeats.d.ts:7:5 - (ae-undocumented) Missing documentation for "attempt".
+// dist/retry/heartbeats.d.ts:8:5 - (ae-undocumented) Missing documentation for "details".
+// dist/retry/heartbeats.d.ts:9:5 - (ae-undocumented) Missing documentation for "recordedAt".
+// dist/retry/heartbeats.d.ts:15:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/retry/heartbeats.d.ts:16:5 - (ae-undocumented) Missing documentation for "stepId".
+// dist/retry/heartbeats.d.ts:17:5 - (ae-undocumented) Missing documentation for "attempt".
+// dist/retry/heartbeats.d.ts:18:5 - (ae-undocumented) Missing documentation for "details".
+// dist/retry/heartbeats.d.ts:19:5 - (ae-undocumented) Missing documentation for "recordedAt".
 // dist/retry/retry-policy.d.ts:12:5 - (ae-undocumented) Missing documentation for "initialIntervalMs".
 // dist/retry/retry-policy.d.ts:13:5 - (ae-undocumented) Missing documentation for "backoffCoefficient".
 // dist/retry/retry-policy.d.ts:14:5 - (ae-undocumented) Missing documentation for "maxIntervalMs".
 // dist/retry/retry-policy.d.ts:15:5 - (ae-undocumented) Missing documentation for "maxAttempts".
 // dist/retry/retry-policy.d.ts:16:5 - (ae-undocumented) Missing documentation for "jitter".
 // dist/retry/retry-policy.d.ts:17:5 - (ae-undocumented) Missing documentation for "nonRetryableErrorNames".
-// dist/retry/step-task-processor.d.ts:53:5 - (ae-undocumented) Missing documentation for "pool".
-// dist/retry/step-task-processor.d.ts:54:5 - (ae-undocumented) Missing documentation for "queue".
-// dist/retry/step-task-processor.d.ts:55:5 - (ae-undocumented) Missing documentation for "recorder".
-// dist/retry/step-task-processor.d.ts:56:5 - (ae-undocumented) Missing documentation for "attempts".
-// dist/retry/step-task-processor.d.ts:57:5 - (ae-undocumented) Missing documentation for "deadLetters".
-// dist/retry/step-task-processor.d.ts:58:5 - (ae-undocumented) Missing documentation for "lookup".
-// dist/retry/step-task-processor.d.ts:59:5 - (ae-undocumented) Missing documentation for "clock".
-// dist/retry/step-task-processor.d.ts:60:5 - (ae-undocumented) Missing documentation for "random".
-// dist/retry/step-task-processor.d.ts:61:5 - (ae-undocumented) Missing documentation for "timers".
-// dist/retry/step-task-processor.d.ts:62:5 - (ae-undocumented) Missing documentation for "tracing".
+// dist/retry/step-task-processor.d.ts:59:5 - (ae-undocumented) Missing documentation for "pool".
+// dist/retry/step-task-processor.d.ts:60:5 - (ae-undocumented) Missing documentation for "queue".
+// dist/retry/step-task-processor.d.ts:61:5 - (ae-undocumented) Missing documentation for "recorder".
+// dist/retry/step-task-processor.d.ts:62:5 - (ae-undocumented) Missing documentation for "attempts".
+// dist/retry/step-task-processor.d.ts:63:5 - (ae-undocumented) Missing documentation for "deadLetters".
+// dist/retry/step-task-processor.d.ts:64:5 - (ae-undocumented) Missing documentation for "lookup".
+// dist/retry/step-task-processor.d.ts:65:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/retry/step-task-processor.d.ts:66:5 - (ae-undocumented) Missing documentation for "random".
+// dist/retry/step-task-processor.d.ts:67:5 - (ae-undocumented) Missing documentation for "timers".
+// dist/retry/step-task-processor.d.ts:68:5 - (ae-undocumented) Missing documentation for "tracing".
+// dist/retry/step-task-processor.d.ts:69:5 - (ae-undocumented) Missing documentation for "heartbeats".
 // dist/retry/timeout.d.ts:8:5 - (ae-undocumented) Missing documentation for "setTimeout".
 // dist/retry/timeout.d.ts:9:5 - (ae-undocumented) Missing documentation for "clearTimeout".
 // dist/retry/timeout.d.ts:16:5 - (ae-undocumented) Missing documentation for "timeoutMs".
+// dist/retry/timeout.d.ts:32:5 - (ae-undocumented) Missing documentation for "heartbeatTimeoutMs".
+// dist/retry/timeout.d.ts:40:5 - (ae-undocumented) Missing documentation for "delayMs".
+// dist/retry/timeout.d.ts:41:5 - (ae-undocumented) Missing documentation for "error".
+// dist/retry/timeout.d.ts:49:5 - (ae-undocumented) Missing documentation for "fixed".
+// dist/retry/timeout.d.ts:50:5 - (ae-undocumented) Missing documentation for "heartbeat".
 // dist/run/errors.d.ts:9:5 - (ae-undocumented) Missing documentation for "from".
 // dist/run/errors.d.ts:10:5 - (ae-undocumented) Missing documentation for "attempted".
 // dist/run/projection.d.ts:7:5 - (ae-undocumented) Missing documentation for "state".
@@ -3831,15 +3929,20 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/workflow/decision-loop.d.ts:134:5 - (ae-undocumented) Missing documentation for "unconsultedPatches".
 // dist/workflow/decision-loop.d.ts:135:5 - (ae-undocumented) Missing documentation for "unissuedCommand".
 // dist/workflow/decision-loop.d.ts:136:5 - (ae-undocumented) Missing documentation for "cancellation".
-// dist/workflow/define-step.d.ts:12:5 - (ae-undocumented) Missing documentation for "stepType".
-// dist/workflow/define-step.d.ts:13:5 - (ae-undocumented) Missing documentation for "handler".
-// dist/workflow/define-step.d.ts:14:5 - (ae-undocumented) Missing documentation for "timeoutMs".
-// dist/workflow/define-step.d.ts:15:5 - (ae-undocumented) Missing documentation for "retry".
-// dist/workflow/define-step.d.ts:22:5 - (ae-undocumented) Missing documentation for "handler".
-// dist/workflow/define-step.d.ts:23:5 - (ae-undocumented) Missing documentation for "input".
-// dist/workflow/define-step.d.ts:24:5 - (ae-undocumented) Missing documentation for "output".
-// dist/workflow/define-step.d.ts:25:5 - (ae-undocumented) Missing documentation for "timeoutMs".
-// dist/workflow/define-step.d.ts:26:5 - (ae-undocumented) Missing documentation for "retry".
+// dist/workflow/define-step.d.ts:19:5 - (ae-undocumented) Missing documentation for "stepType".
+// dist/workflow/define-step.d.ts:20:5 - (ae-undocumented) Missing documentation for "handler".
+// dist/workflow/define-step.d.ts:21:5 - (ae-undocumented) Missing documentation for "timeoutMs".
+// dist/workflow/define-step.d.ts:22:5 - (ae-undocumented) Missing documentation for "scheduleToCloseTimeoutMs".
+// dist/workflow/define-step.d.ts:23:5 - (ae-undocumented) Missing documentation for "heartbeatTimeoutMs".
+// dist/workflow/define-step.d.ts:24:5 - (ae-undocumented) Missing documentation for "retry".
+// dist/workflow/define-step.d.ts:32:5 - (ae-undocumented) Missing documentation for "handler".
+// dist/workflow/define-step.d.ts:33:5 - (ae-undocumented) Missing documentation for "input".
+// dist/workflow/define-step.d.ts:34:5 - (ae-undocumented) Missing documentation for "output".
+// dist/workflow/define-step.d.ts:35:5 - (ae-undocumented) Missing documentation for "timeoutMs".
+// dist/workflow/define-step.d.ts:36:5 - (ae-undocumented) Missing documentation for "startToCloseTimeoutMs".
+// dist/workflow/define-step.d.ts:37:5 - (ae-undocumented) Missing documentation for "scheduleToCloseTimeoutMs".
+// dist/workflow/define-step.d.ts:38:5 - (ae-undocumented) Missing documentation for "heartbeatTimeoutMs".
+// dist/workflow/define-step.d.ts:39:5 - (ae-undocumented) Missing documentation for "retry".
 // dist/workflow/define-update.d.ts:19:5 - (ae-undocumented) Missing documentation for "updateName".
 // dist/workflow/define-update.d.ts:20:5 - (ae-undocumented) Missing documentation for "validate".
 // dist/workflow/define-update.d.ts:21:5 - (ae-undocumented) Missing documentation for "handler".
@@ -3866,6 +3969,7 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/workflow/errors.d.ts:96:5 - (ae-undocumented) Missing documentation for "eventName".
 // dist/workflow/errors.d.ts:97:5 - (ae-undocumented) Missing documentation for "key".
 // dist/workflow/errors.d.ts:98:5 - (ae-undocumented) Missing documentation for "timeoutMs".
+// dist/workflow/errors.d.ts:108:5 - (ae-undocumented) Missing documentation for "timeoutMs".
 // dist/workflow/query.d.ts:9:5 - (ae-undocumented) Missing documentation for "queryName".
 // dist/workflow/run-workflow.d.ts:12:5 - (ae-undocumented) Missing documentation for "clock".
 // dist/workflow/run-workflow.d.ts:13:5 - (ae-undocumented) Missing documentation for "random".
@@ -3876,9 +3980,9 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/workflow/sources.d.ts:7:5 - (ae-undocumented) Missing documentation for "now".
 // dist/workflow/sources.d.ts:15:5 - (ae-undocumented) Missing documentation for "random".
 // dist/workflow/sources.d.ts:16:5 - (ae-undocumented) Missing documentation for "uuid".
-// dist/workflow/step-registry.d.ts:8:5 - (ae-undocumented) Missing documentation for "signal".
-// dist/workflow/step-registry.d.ts:22:5 - (ae-undocumented) Missing documentation for "register".
-// dist/workflow/step-registry.d.ts:23:5 - (ae-undocumented) Missing documentation for "get".
+// dist/workflow/step-registry.d.ts:9:5 - (ae-undocumented) Missing documentation for "signal".
+// dist/workflow/step-registry.d.ts:47:5 - (ae-undocumented) Missing documentation for "register".
+// dist/workflow/step-registry.d.ts:48:5 - (ae-undocumented) Missing documentation for "get".
 // dist/workflow/workflow-registry.d.ts:7:5 - (ae-undocumented) Missing documentation for "workflowType".
 // dist/workflow/workflow-registry.d.ts:8:5 - (ae-undocumented) Missing documentation for "handler".
 // dist/workflow/workflow-registry.d.ts:17:5 - (ae-undocumented) Missing documentation for "register".

@@ -17,7 +17,9 @@ export interface StepTaskEnqueueInput {
 /**
  * Inserts the `STEP_TASK` of a scheduled step on `client`, inside the
  * caller's transaction, unless the run already has a step task for that
- * step. Resolves `true` when a task was created.
+ * step. `now` is written into the payload as `scheduledAt`, the instant the
+ * step's schedule-to-close timeout counts from. Resolves `true` when a task
+ * was created.
  */
 export async function enqueueStepTaskOnClient(
   client: PoolClient,
@@ -34,7 +36,12 @@ export async function enqueueStepTaskOnClient(
       input.namespaceId,
       input.runId,
       input.queueName,
-      JSON.stringify({ stepId: input.stepId, stepType: input.stepType, input: input.input }),
+      JSON.stringify({
+        stepId: input.stepId,
+        stepType: input.stepType,
+        input: input.input,
+        scheduledAt: input.now.toISOString(),
+      }),
       input.now,
       input.stepId,
     ],

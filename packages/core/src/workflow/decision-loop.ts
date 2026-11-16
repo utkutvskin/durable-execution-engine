@@ -20,6 +20,7 @@ import {
   EventWaitTimeoutError,
   NonDeterminismError,
   StepFailedError,
+  StepScheduleToCloseTimeoutError,
   VersionMismatchError,
   sleepDurationError,
 } from "./errors.ts";
@@ -130,7 +131,29 @@ export function toError(reason: unknown): Error {
  * Rebuilds the `Error` a recorded `step_failed` or `child_failed` event stands for.
  */
 export function reconstructError(error: RecordedError): Error {
-  return deserializeError(error);
+  const reconstructed = deserializeError(error);
+  return reconstructed.name === "StepScheduleToCloseTimeoutError"
+    ? reviveScheduleToCloseTimeout(reconstructed)
+    : reconstructed;
+}
+
+function reviveScheduleToCloseTimeout(error: Error): StepScheduleToCloseTimeoutError {
+  const details: unknown = (error as Error & { readonly details?: unknown }).details;
+  const timeoutMs =
+    typeof details === "object" &&
+    details !== null &&
+    typeof (details as { readonly timeoutMs?: unknown }).timeoutMs === "number"
+      ? (details as { readonly timeoutMs: number }).timeoutMs
+      : Number.NaN;
+  const revived = new StepScheduleToCloseTimeoutError(
+    timeoutMs,
+    error.cause === undefined ? undefined : { cause: error.cause },
+  );
+  revived.message = error.message;
+  if (error.stack !== undefined) {
+    revived.stack = error.stack;
+  }
+  return revived;
 }
 
 /**

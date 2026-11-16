@@ -4,7 +4,11 @@ import { commandToEvent } from "./command-events.ts";
 import { runDecisionLoop } from "./decision-loop.ts";
 import { defineWorkflow } from "./define-workflow.ts";
 import { serializeError } from "./error-serialization.ts";
-import { InvalidSleepDurationError, StepFailedError } from "./errors.ts";
+import {
+  InvalidSleepDurationError,
+  StepFailedError,
+  StepScheduleToCloseTimeoutError,
+} from "./errors.ts";
 import { createLiveSession } from "./live-session.ts";
 import { runWorkflowInMemory } from "./run-workflow.ts";
 import { createStepRegistry } from "./step-registry.ts";
@@ -373,5 +377,53 @@ describe("ctx.sleep with an invalid duration", () => {
     );
 
     expect(decision.commands.map((command) => command.type)).toEqual(["start_timer"]);
+  });
+});
+
+describe("a step past its schedule-to-close timeout", () => {
+  const scheduleTimeout: WorkflowEvent = {
+    type: "step_failed",
+    stepId: "step-1",
+    error: {
+      name: "StepScheduleToCloseTimeoutError",
+      message: "step did not close within 10000 ms of being scheduled",
+      details: { timeoutMs: 10_000 },
+      cause: { name: "Error", message: "upstream busy" },
+    },
+  };
+  const caller = defineWorkflow("caller", async (ctx) => {
+    try {
+      await ctx.step("import", {});
+      return "imported";
+    } catch (error) {
+      if (error instanceof StepScheduleToCloseTimeoutError) {
+        return { timedOutAfter: error.timeoutMs, cause: (error.cause as Error).message };
+      }
+      return "other";
+    }
+  });
+  const history: WorkflowEvent[] = [
+    { type: "run_started", workflowType: "caller", input: {} },
+    { type: "step_scheduled", stepId: "step-1", stepType: "import", input: {} },
+    scheduleTimeout,
+  ];
+
+  it("rejects ctx.step() with a typed StepScheduleToCloseTimeoutError on replay", async () => {
+    const decision = await runDecisionLoop(caller.handler, {}, history, sources);
+
+    expect(decision.outcome === "completed" && decision.result).toEqual({
+      timedOutAfter: 10_000,
+      cause: "upstream busy",
+    });
+  });
+
+  it("rejects with the same typed error in the live session", async () => {
+    const session = createLiveSession(caller.handler, {}, sources);
+    const advance = await session.advance(history);
+
+    expect(advance.status === "decided" && advance.decision.outcome).toBe("completed");
+    expect(advance.status === "decided" && advance.decision.commands).toEqual([
+      { type: "complete_run", result: { timedOutAfter: 10_000, cause: "upstream busy" } },
+    ]);
   });
 });

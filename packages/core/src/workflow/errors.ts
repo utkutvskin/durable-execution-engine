@@ -162,3 +162,19 @@ export class EventWaitTimeoutError extends Error {
     this.timeoutMs = timeoutMs;
   }
 }
+
+/**
+ * What a step fails with when it is still not done `timeoutMs` after it was
+ * scheduled, counting every attempt and every backoff in between. It is not
+ * retried: the workflow's `ctx.step()` rejects with it, also on replay, where it is
+ * rebuilt from the recorded failure by its name.
+ */
+export class StepScheduleToCloseTimeoutError extends Error {
+  readonly timeoutMs: number;
+
+  constructor(timeoutMs: number, options?: ErrorOptions) {
+    super(`step did not close within ${String(timeoutMs)} ms of being scheduled`, options);
+    this.name = "StepScheduleToCloseTimeoutError";
+    this.timeoutMs = timeoutMs;
+  }
+}

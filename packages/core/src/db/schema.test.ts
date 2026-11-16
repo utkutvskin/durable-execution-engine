@@ -97,6 +97,7 @@ describe("initial schema", () => {
       "schedules",
       "signal_ids",
       "step_attempts",
+      "step_heartbeats",
       "step_results",
       "tasks",
       "timers",

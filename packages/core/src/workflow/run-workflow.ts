@@ -16,7 +16,7 @@ import {
   validateSearchAttributeUpsert,
   type SearchAttributeUpsert,
 } from "../visibility/search-attributes.ts";
-import type { StepRegistry } from "./step-registry.ts";
+import { detachedStepContext, type StepRegistry } from "./step-registry.ts";
 import type { WorkflowRegistry } from "./workflow-registry.ts";
 
 /**
@@ -163,7 +163,7 @@ function createInMemoryContext(
       if (handler === undefined) {
         throw new Error(`no step registered for type "${stepType}"`);
       }
-      return (await handler(input, { signal: new AbortController().signal })) as TResult;
+      return (await handler(input, detachedStepContext())) as TResult;
     },
     sleep(durationMs: number): Promise<void> {
       const invalid = sleepDurationError(durationMs);

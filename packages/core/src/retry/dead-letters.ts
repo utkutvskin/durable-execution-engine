@@ -98,8 +98,8 @@ export interface DeadLetterQueue {
 
   /**
    * Enqueues the dead letter's step task again on its original queue with a
-   * fresh retry budget, and marks the entry requeued, in one transaction.
-   * Returns the new task id, or `undefined` when the entry does not exist
+   * fresh retry budget and a fresh schedule-to-close timeout counted from
+   * the requeue, and marks the entry requeued, in one transaction. Returns the new task id, or `undefined` when the entry does not exist
    * or was already requeued.
    */
   requeue(id: string): Promise<string | undefined>;
@@ -135,9 +135,9 @@ function toDeadLetter(row: DeadLetterRow): DeadLetter {
   };
 }
 
-function withAttemptOffset(payload: unknown, attemptOffset: number): unknown {
+function requeuedPayload(payload: unknown, attemptOffset: number, scheduledAt: Date): unknown {
   const base = typeof payload === "object" && payload !== null ? payload : {};
-  return { ...base, attemptOffset };
+  return { ...base, attemptOffset, scheduledAt: scheduledAt.toISOString() };
 }
 
 class LeaseLostSignal extends Error {}
@@ -278,7 +278,7 @@ export function createDeadLetterQueue(
             row.namespace_id,
             row.run_id,
             row.queue_name,
-            JSON.stringify(withAttemptOffset(row.payload, row.attempts)),
+            JSON.stringify(requeuedPayload(row.payload, row.attempts, now)),
             now,
           ],
         );

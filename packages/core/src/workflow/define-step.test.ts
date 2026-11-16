@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { describe, expect, it } from "vitest";
 import { defineStep } from "./define-step.ts";
-import { createStepRegistry } from "./step-registry.ts";
+import { createStepRegistry, detachedStepContext } from "./step-registry.ts";
 
 describe("defineStep", () => {
   it("runs the handler unchanged when no schema is given", async () => {
@@ -61,6 +61,33 @@ describe("defineStep", () => {
     }).toThrow('step "charge-card" has a non-positive timeoutMs (-1)');
   });
 
+  it("carries the schedule-to-close and heartbeat timeouts and reads startToCloseTimeoutMs as timeoutMs", () => {
+    const definition = defineStep("import", {
+      handler: () => "ok",
+      startToCloseTimeoutMs: 30_000,
+      scheduleToCloseTimeoutMs: 120_000,
+      heartbeatTimeoutMs: 5_000,
+    });
+
+    expect(definition).toMatchObject({
+      timeoutMs: 30_000,
+      scheduleToCloseTimeoutMs: 120_000,
+      heartbeatTimeoutMs: 5_000,
+    });
+  });
+
+  it("rejects both timeoutMs and startToCloseTimeoutMs, and a non-positive heartbeat timeout", () => {
+    expect(() => {
+      defineStep("import", { handler: () => "ok", timeoutMs: 1, startToCloseTimeoutMs: 1 });
+    }).toThrow(/both timeoutMs and startToCloseTimeoutMs/);
+    expect(() => {
+      defineStep("import", { handler: () => "ok", heartbeatTimeoutMs: 0 });
+    }).toThrow('step "import" has a non-positive heartbeatTimeoutMs (0)');
+    expect(() => {
+      defineStep("import", { handler: () => "ok", scheduleToCloseTimeoutMs: -5 });
+    }).toThrow('step "import" has a non-positive scheduleToCloseTimeoutMs (-5)');
+  });
+
   it("registers its handler with a StepRegistry like any other step handler", async () => {
     const registry = createStepRegistry();
     const definition = defineStep<{ amount: number }, { charged: boolean }>("charge-card", {
@@ -72,9 +99,9 @@ describe("defineStep", () => {
     const handler = registry.get("charge-card");
 
     expect(handler).toBeDefined();
-    await expect(
-      handler?.({ amount: 42 }, { signal: new AbortController().signal }),
-    ).resolves.toEqual({ charged: true });
+    await expect(handler?.({ amount: 42 }, detachedStepContext())).resolves.toEqual({
+      charged: true,
+    });
   });
 
   it("carries a resolved retry policy onto the definition", () => {

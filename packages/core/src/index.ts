@@ -102,6 +102,7 @@ export {
   InvalidSleepDurationError,
   NonDeterminismError,
   StepFailedError,
+  StepScheduleToCloseTimeoutError,
   VersionMismatchError,
 } from "./workflow/errors.ts";
 export {
@@ -117,7 +118,7 @@ export { runRegisteredWorkflowInMemory, runWorkflowInMemory } from "./workflow/r
 export type { RunWorkflowOptions, RunWorkflowResult } from "./workflow/run-workflow.ts";
 export { systemClock, systemRandomSource } from "./workflow/sources.ts";
 export type { ClockSource, RandomSource } from "./workflow/sources.ts";
-export { createStepRegistry } from "./workflow/step-registry.ts";
+export { createStepRegistry, detachedStepContext } from "./workflow/step-registry.ts";
 export type { StepContext, StepHandler, StepRegistry } from "./workflow/step-registry.ts";
 export { createWorkflowRegistry } from "./workflow/workflow-registry.ts";
 export type { WorkflowDefinition, WorkflowRegistry } from "./workflow/workflow-registry.ts";
@@ -175,12 +176,21 @@ export {
 } from "./retry/retry-policy.ts";
 export type { GiveUpReason, RetryDecision, RetryPolicy } from "./retry/retry-policy.ts";
 export {
+  StepHeartbeatTimeoutError,
   StepTimeoutError,
   enforceWorkflowTimeout,
+  runWithDeadlines,
   runWithTimeout,
   workflowDeadline,
 } from "./retry/timeout.ts";
-export type { TimeoutTimers, WorkflowTimeoutOutcome } from "./retry/timeout.ts";
+export type {
+  Deadline,
+  Deadlines,
+  TimeoutTimers,
+  WorkflowTimeoutOutcome,
+} from "./retry/timeout.ts";
+export { createHeartbeatStore } from "./retry/heartbeats.ts";
+export type { HeartbeatStore, RecordHeartbeatInput, StepHeartbeat } from "./retry/heartbeats.ts";
 export { createAttemptLog } from "./retry/attempt-log.ts";
 export type { AttemptLog, RecordAttemptFailureInput } from "./retry/attempt-log.ts";
 export { createDeadLetterQueue } from "./retry/dead-letters.ts";

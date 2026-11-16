@@ -3,8 +3,10 @@ import type { EventStore, StoredEvent } from "../event-store/event-store.ts";
 import type { WorkflowEvent } from "../event-store/events.ts";
 import type { ClockSource } from "../workflow/sources.ts";
 import {
+  StepHeartbeatTimeoutError,
   StepTimeoutError,
   enforceWorkflowTimeout,
+  runWithDeadlines,
   runWithTimeout,
   workflowDeadline,
   type TimeoutTimers,
@@ -160,5 +162,72 @@ describe("workflow timeout", () => {
     });
     expect(outcome).toBe("closed");
     expect(appended).toEqual([]);
+  });
+});
+
+describe("step deadlines", () => {
+  const heartbeatEvery = (ms: number) => ({
+    delayMs: ms,
+    error: () => new StepHeartbeatTimeoutError(ms),
+  });
+
+  it("restarts the heartbeat deadline on every heartbeat", async () => {
+    const timers = createVirtualTimers();
+    let beat: (() => void) | undefined;
+    const pending = runWithDeadlines(
+      (_signal, heartbeat) => {
+        beat = heartbeat;
+        return new Promise<string>(() => undefined);
+      },
+      { fixed: [], heartbeat: heartbeatEvery(1000) },
+      timers,
+    );
+    await Promise.resolve();
+    for (let index = 0; index < 5; index += 1) {
+      timers.advance(999);
+      beat?.();
+    }
+    timers.advance(999);
+    expect(timers.pending()).toBe(1);
+    timers.advance(1);
+    await expect(pending).rejects.toBeInstanceOf(StepHeartbeatTimeoutError);
+  });
+
+  it("fails with the earliest fixed deadline and aborts the signal with its error", async () => {
+    const timers = createVirtualTimers();
+    let seen: AbortSignal | undefined;
+    const pending = runWithDeadlines(
+      (signal) => {
+        seen = signal;
+        return new Promise<string>(() => undefined);
+      },
+      {
+        fixed: [
+          { delayMs: 5000, error: () => new StepTimeoutError(5000) },
+          { delayMs: 300, error: () => new Error("schedule deadline") },
+        ],
+      },
+      timers,
+    );
+    timers.advance(300);
+    await expect(pending).rejects.toThrow("schedule deadline");
+    expect(seen?.reason).toMatchObject({ message: "schedule deadline" });
+    expect(timers.pending()).toBe(0);
+  });
+
+  it("ignores a heartbeat after the operation settled and leaves no timer behind", async () => {
+    const timers = createVirtualTimers();
+    let beat: (() => void) | undefined;
+    const result = await runWithDeadlines(
+      (_signal, heartbeat) => {
+        beat = heartbeat;
+        return "done";
+      },
+      { fixed: [], heartbeat: heartbeatEvery(1000) },
+      timers,
+    );
+    beat?.();
+    expect(result).toBe("done");
+    expect(timers.pending()).toBe(0);
   });
 });
