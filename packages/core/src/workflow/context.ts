@@ -1,5 +1,8 @@
 import type { ParentClosePolicy } from "../event-store/events.ts";
+import type { QueryDefinition, SignalDefinition } from "./define-signal.ts";
+import type { StepDefinition } from "./define-step.ts";
 import type { UpdateDefinition } from "./define-update.ts";
+import type { WorkflowDefinition } from "./workflow-registry.ts";
 import type { SearchAttributeUpsert } from "../visibility/search-attributes.ts";
 
 /**
@@ -75,17 +78,36 @@ export type ParallelTask<TResult = unknown> = () => Promise<TResult>;
  * timers, and reading time and randomness. Every member is backed by a
  * source a worker can substitute at replay time, so the same workflow body
  * makes the same decisions given the same history.
+ *
+ * Steps, child workflows, signals and queries can be named by their
+ * definition (`defineStep`, `defineWorkflow`, `defineSignal`,
+ * `defineQuery`) or by their name string. A definition makes the compiler
+ * check the input and the result; both forms record the same history.
  */
 export interface WorkflowContext {
-  step<TResult>(stepType: string, input: unknown): Promise<TResult>;
+  /**
+   * Runs the step `step` with `input` and resolves with its result. The
+   * compiler checks `input` against the definition's input type and types
+   * the result.
+   */
+  step<TInput, TResult>(
+    step: StepDefinition<TInput, TResult>,
+    input: NoInfer<TInput>,
+  ): Promise<TResult>;
+  /**
+   * Runs the step registered as `stepType` with `input`. Neither side is
+   * checked by the compiler.
+   */
+  step<TResult = unknown>(stepType: string, input: unknown): Promise<TResult>;
   sleep(durationMs: number): Promise<void>;
   /**
    * Resolves with the payload of the next signal named `signalName` that the
    * run has not consumed yet. The nth call for a name consumes the nth signal
    * of that name, in the order they were recorded, so a signal that arrived
-   * before the call is delivered at once.
+   * before the call is delivered at once. Given a `defineSignal`
+   * definition, the payload has the definition's type.
    */
-  waitForSignal<TPayload = unknown>(signalName: string): Promise<TPayload>;
+  waitForSignal<TPayload = unknown>(signal: SignalDefinition<TPayload> | string): Promise<TPayload>;
   /**
    * Resolves with the payload of the next external event named `eventName`
    * sent with the correlation key `options.match` (see `sendEvent`). An
@@ -119,7 +141,13 @@ export interface WorkflowContext {
   /**
    * Registers the function `queryRun` calls to read `queryName`. The latest
    * registration of a name wins. A handler must only read workflow state.
+   * Given a `defineQuery` definition, the compiler checks the handler's
+   * argument and result.
    */
+  setQueryHandler<TArgument, TResult>(
+    query: QueryDefinition<TArgument, TResult>,
+    handler: (argument: TArgument) => TResult,
+  ): void;
   setQueryHandler(queryName: string, handler: QueryHandler): void;
   /**
    * Registers the update `definition` (see `defineUpdate`). An update sent
@@ -141,8 +169,15 @@ export interface WorkflowContext {
    * Starts the child workflow `workflowType` and returns at once. The call
    * order assigns the child its id, so the same code starts the same
    * children on every replay. A run may start a bounded number of children
-   * and fails with `ChildLimitExceededError` past it.
+   * and fails with `ChildLimitExceededError` past it. Given a
+   * `defineWorkflow` definition, the compiler checks `input` and types the
+   * result.
    */
+  startChild<TInput, TResult>(
+    workflow: WorkflowDefinition<TInput, TResult>,
+    input: NoInfer<TInput>,
+    options?: ChildOptions,
+  ): ChildHandle<TResult>;
   startChild<TResult = unknown>(
     workflowType: string,
     input: unknown,
@@ -151,6 +186,11 @@ export interface WorkflowContext {
   /**
    * Starts a child workflow and waits for its result.
    */
+  executeChild<TInput, TResult>(
+    workflow: WorkflowDefinition<TInput, TResult>,
+    input: NoInfer<TInput>,
+    options?: ChildOptions,
+  ): Promise<TResult>;
   executeChild<TResult = unknown>(
     workflowType: string,
     input: unknown,

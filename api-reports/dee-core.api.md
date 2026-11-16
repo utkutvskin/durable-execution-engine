@@ -651,6 +651,12 @@ export const DEFAULT_UPDATE_WAIT_MS = 10000;
 export const defaultMigrationsDir: string;
 
 // @public
+export function defineQuery<TArgument = undefined, TResult = unknown>(queryName: string): QueryDefinition<TArgument, TResult>;
+
+// @public
+export function defineSignal<TPayload = unknown>(signalName: string): SignalDefinition<TPayload>;
+
+// @public
 export function defineStep<TInput = unknown, TResult = unknown>(stepType: string, options: DefineStepOptions<TInput, TResult>): StepDefinition<TInput, TResult>;
 
 // @public
@@ -1557,6 +1563,16 @@ export interface QuarantinedTask {
 }
 
 // @public
+export interface QueryDefinition<TArgument = undefined, TResult = unknown> {
+    // (undocumented)
+    readonly argumentType?: (argument: TArgument) => void;
+    // (undocumented)
+    readonly queryName: string;
+    // (undocumented)
+    readonly resultType?: TResult;
+}
+
+// @public
 export type QueryHandler = (argument: unknown) => unknown;
 
 // @public
@@ -2321,6 +2337,14 @@ export interface SerializedError {
 
 // @public
 export function serializeError(reason: unknown): SerializedError;
+
+// @public
+export interface SignalDefinition<TPayload = unknown> {
+    // (undocumented)
+    readonly payloadType?: TPayload;
+    // (undocumented)
+    readonly signalName: string;
+}
 
 // @public
 export interface SignalOptions {
@@ -3132,6 +3156,8 @@ export interface WorkflowContext {
     condition(predicate: () => boolean, timeoutMs?: number): Promise<boolean>;
     continueAsNew(input: unknown): Promise<never>;
     deprecatePatch(patchId: string): void;
+    executeChild<TInput, TResult>(workflow: WorkflowDefinition<TInput, TResult>, input: NoInfer<TInput>, options?: ChildOptions): Promise<TResult>;
+    // (undocumented)
     executeChild<TResult = unknown>(workflowType: string, input: unknown, options?: ChildOptions): Promise<TResult>;
     // (undocumented)
     now(): Date;
@@ -3140,18 +3166,22 @@ export interface WorkflowContext {
     // (undocumented)
     random(): number;
     select<TBranches extends readonly Promise<unknown>[]>(branches: TBranches): Promise<SelectResult<Awaited<TBranches[number]>>>;
+    setQueryHandler<TArgument, TResult>(query: QueryDefinition<TArgument, TResult>, handler: (argument: TArgument) => TResult): void;
+    // (undocumented)
     setQueryHandler(queryName: string, handler: QueryHandler): void;
     setUpdateHandler<TArgument, TResult>(definition: UpdateDefinition<TArgument, TResult>): void;
     // (undocumented)
     sleep(durationMs: number): Promise<void>;
-    startChild<TResult = unknown>(workflowType: string, input: unknown, options?: ChildOptions): ChildHandle<TResult>;
+    startChild<TInput, TResult>(workflow: WorkflowDefinition<TInput, TResult>, input: NoInfer<TInput>, options?: ChildOptions): ChildHandle<TResult>;
     // (undocumented)
-    step<TResult>(stepType: string, input: unknown): Promise<TResult>;
+    startChild<TResult = unknown>(workflowType: string, input: unknown, options?: ChildOptions): ChildHandle<TResult>;
+    step<TInput, TResult>(step: StepDefinition<TInput, TResult>, input: NoInfer<TInput>): Promise<TResult>;
+    step<TResult = unknown>(stepType: string, input: unknown): Promise<TResult>;
     upsertSearchAttributes(attributes: SearchAttributeUpsert): void;
     // (undocumented)
     uuid(): string;
     waitForEvent<TPayload = unknown>(eventName: string, options: WaitForEventOptions): Promise<TPayload>;
-    waitForSignal<TPayload = unknown>(signalName: string): Promise<TPayload>;
+    waitForSignal<TPayload = unknown>(signal: SignalDefinition<TPayload> | string): Promise<TPayload>;
 }
 
 // @public
@@ -3900,21 +3930,23 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/workflow/commands.d.ts:126:5 - (ae-undocumented) Missing documentation for "eventName".
 // dist/workflow/commands.d.ts:127:5 - (ae-undocumented) Missing documentation for "key".
 // dist/workflow/commands.d.ts:128:5 - (ae-undocumented) Missing documentation for "expiresAt".
-// dist/workflow/context.d.ts:9:5 - (ae-undocumented) Missing documentation for "index".
-// dist/workflow/context.d.ts:10:5 - (ae-undocumented) Missing documentation for "value".
-// dist/workflow/context.d.ts:29:5 - (ae-undocumented) Missing documentation for "parentClosePolicy".
-// dist/workflow/context.d.ts:30:5 - (ae-undocumented) Missing documentation for "runTimeoutMs".
-// dist/workflow/context.d.ts:31:5 - (ae-undocumented) Missing documentation for "executionTimeoutMs".
-// dist/workflow/context.d.ts:38:5 - (ae-undocumented) Missing documentation for "childId".
-// dist/workflow/context.d.ts:39:5 - (ae-undocumented) Missing documentation for "result".
-// dist/workflow/context.d.ts:46:5 - (ae-undocumented) Missing documentation for "concurrency".
-// dist/workflow/context.d.ts:55:5 - (ae-undocumented) Missing documentation for "match".
-// dist/workflow/context.d.ts:56:5 - (ae-undocumented) Missing documentation for "timeoutMs".
-// dist/workflow/context.d.ts:71:5 - (ae-undocumented) Missing documentation for "step".
-// dist/workflow/context.d.ts:72:5 - (ae-undocumented) Missing documentation for "sleep".
-// dist/workflow/context.d.ts:183:5 - (ae-undocumented) Missing documentation for "now".
-// dist/workflow/context.d.ts:184:5 - (ae-undocumented) Missing documentation for "random".
-// dist/workflow/context.d.ts:185:5 - (ae-undocumented) Missing documentation for "uuid".
+// dist/workflow/context.d.ts:12:5 - (ae-undocumented) Missing documentation for "index".
+// dist/workflow/context.d.ts:13:5 - (ae-undocumented) Missing documentation for "value".
+// dist/workflow/context.d.ts:32:5 - (ae-undocumented) Missing documentation for "parentClosePolicy".
+// dist/workflow/context.d.ts:33:5 - (ae-undocumented) Missing documentation for "runTimeoutMs".
+// dist/workflow/context.d.ts:34:5 - (ae-undocumented) Missing documentation for "executionTimeoutMs".
+// dist/workflow/context.d.ts:41:5 - (ae-undocumented) Missing documentation for "childId".
+// dist/workflow/context.d.ts:42:5 - (ae-undocumented) Missing documentation for "result".
+// dist/workflow/context.d.ts:49:5 - (ae-undocumented) Missing documentation for "concurrency".
+// dist/workflow/context.d.ts:58:5 - (ae-undocumented) Missing documentation for "match".
+// dist/workflow/context.d.ts:59:5 - (ae-undocumented) Missing documentation for "timeoutMs".
+// dist/workflow/context.d.ts:90:5 - (ae-undocumented) Missing documentation for "sleep".
+// dist/workflow/context.d.ts:131:5 - (ae-undocumented) Missing documentation for "setQueryHandler".
+// dist/workflow/context.d.ts:157:5 - (ae-undocumented) Missing documentation for "startChild".
+// dist/workflow/context.d.ts:162:5 - (ae-undocumented) Missing documentation for "executeChild".
+// dist/workflow/context.d.ts:209:5 - (ae-undocumented) Missing documentation for "now".
+// dist/workflow/context.d.ts:210:5 - (ae-undocumented) Missing documentation for "random".
+// dist/workflow/context.d.ts:211:5 - (ae-undocumented) Missing documentation for "uuid".
 // dist/workflow/decision-loop.d.ts:14:5 - (ae-undocumented) Missing documentation for "clock".
 // dist/workflow/decision-loop.d.ts:29:5 - (ae-undocumented) Missing documentation for "maxChildren".
 // dist/workflow/decision-loop.d.ts:30:5 - (ae-undocumented) Missing documentation for "historyWarningThreshold".
@@ -3929,6 +3961,11 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/workflow/decision-loop.d.ts:134:5 - (ae-undocumented) Missing documentation for "unconsultedPatches".
 // dist/workflow/decision-loop.d.ts:135:5 - (ae-undocumented) Missing documentation for "unissuedCommand".
 // dist/workflow/decision-loop.d.ts:136:5 - (ae-undocumented) Missing documentation for "cancellation".
+// dist/workflow/define-signal.d.ts:7:5 - (ae-undocumented) Missing documentation for "signalName".
+// dist/workflow/define-signal.d.ts:8:5 - (ae-undocumented) Missing documentation for "payloadType".
+// dist/workflow/define-signal.d.ts:17:5 - (ae-undocumented) Missing documentation for "queryName".
+// dist/workflow/define-signal.d.ts:18:5 - (ae-undocumented) Missing documentation for "argumentType".
+// dist/workflow/define-signal.d.ts:19:5 - (ae-undocumented) Missing documentation for "resultType".
 // dist/workflow/define-step.d.ts:19:5 - (ae-undocumented) Missing documentation for "stepType".
 // dist/workflow/define-step.d.ts:20:5 - (ae-undocumented) Missing documentation for "handler".
 // dist/workflow/define-step.d.ts:21:5 - (ae-undocumented) Missing documentation for "timeoutMs".

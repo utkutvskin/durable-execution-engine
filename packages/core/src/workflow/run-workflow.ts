@@ -8,6 +8,7 @@ import type {
   WorkflowContext,
   WorkflowHandler,
 } from "./context.ts";
+import { signalNameOf, stepTypeOf, workflowTypeOf } from "./define-signal.ts";
 import { toRecordedError } from "./error-serialization.ts";
 import { ChildLimitExceededError, sleepDurationError } from "./errors.ts";
 import { fulfilledValues, runParallel } from "./parallel.ts";
@@ -87,10 +88,11 @@ function createInMemoryContext(
   const maxChildren = options.maxChildren ?? DEFAULT_MAX_IN_MEMORY_CHILDREN;
 
   function startChild<TResult>(
-    workflowType: string,
+    workflow: string | { readonly workflowType: string },
     input: unknown,
     childOptions?: ChildOptions,
   ): ChildHandle<TResult> {
+    const workflowType = workflowTypeOf(workflow);
     childSequence += 1;
     if (childSequence > maxChildren) {
       throw new ChildLimitExceededError(maxChildren);
@@ -137,11 +139,11 @@ function createInMemoryContext(
   return {
     startChild,
     executeChild<TResult>(
-      workflowType: string,
+      workflow: string | { readonly workflowType: string },
       input: unknown,
       childOptions?: ChildOptions,
     ): Promise<TResult> {
-      return startChild<TResult>(workflowType, input, childOptions).result;
+      return startChild<TResult>(workflow, input, childOptions).result;
     },
     async all<TResult>(
       tasks: readonly ParallelTask<TResult>[],
@@ -155,7 +157,11 @@ function createInMemoryContext(
     ): Promise<PromiseSettledResult<TResult>[]> {
       return parallel(tasks, parallelOptions, "allSettled");
     },
-    async step<TResult>(stepType: string, input: unknown): Promise<TResult> {
+    async step<TResult>(
+      step: string | { readonly stepType: string },
+      input: unknown,
+    ): Promise<TResult> {
+      const stepType = stepTypeOf(step);
       stepSequence += 1;
       const stepId = `step-${String(stepSequence)}`;
       commands.push({ type: "schedule_step", stepId, stepType, input });
@@ -176,9 +182,9 @@ function createInMemoryContext(
       commands.push({ type: "start_timer", timerId, fireAt, durationMs });
       return Promise.resolve();
     },
-    waitForSignal<TPayload>(signalName: string): Promise<TPayload> {
+    waitForSignal<TPayload>(signal: string | { readonly signalName: string }): Promise<TPayload> {
       return Promise.reject(
-        new Error(`signal "${signalName}" cannot be awaited by the in-memory runner`),
+        new Error(`signal "${signalNameOf(signal)}" cannot be awaited by the in-memory runner`),
       );
     },
     waitForEvent<TPayload>(eventName: string): Promise<TPayload> {

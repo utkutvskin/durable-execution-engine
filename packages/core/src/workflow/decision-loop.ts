@@ -14,6 +14,7 @@ import type {
   WorkflowContext,
   WorkflowHandler,
 } from "./context.ts";
+import { queryNameOf, signalNameOf, stepTypeOf, workflowTypeOf } from "./define-signal.ts";
 import {
   CancelledError,
   ChildLimitExceededError,
@@ -478,10 +479,11 @@ function createReplayContext(
     const cancelled = rejectAfterCancel && cancelRequested;
 
     function startChild<TResult>(
-      workflowType: string,
+      workflow: string | { readonly workflowType: string },
       input: unknown,
       childOptions?: ChildOptions,
     ): ChildHandle<TResult> {
+      const workflowType = workflowTypeOf(workflow);
       childSequence += 1;
       if (childSequence > maxChildren) {
         throw new ChildLimitExceededError(maxChildren);
@@ -575,11 +577,11 @@ function createReplayContext(
     return {
       startChild,
       executeChild<TResult>(
-        workflowType: string,
+        workflow: string | { readonly workflowType: string },
         input: unknown,
         childOptions?: ChildOptions,
       ): Promise<TResult> {
-        return startChild<TResult>(workflowType, input, childOptions).result;
+        return startChild<TResult>(workflow, input, childOptions).result;
       },
       async all<TResult>(
         tasks: readonly ParallelTask<TResult>[],
@@ -593,7 +595,11 @@ function createReplayContext(
       ): Promise<PromiseSettledResult<TResult>[]> {
         return parallel(tasks, parallelOptions, "allSettled");
       },
-      step<TResult>(stepType: string, input: unknown): Promise<TResult> {
+      step<TResult>(
+        step: string | { readonly stepType: string },
+        input: unknown,
+      ): Promise<TResult> {
+        const stepType = stepTypeOf(step);
         stepSequence += 1;
         const stepId = `step-${String(stepSequence)}`;
 
@@ -737,7 +743,8 @@ function createReplayContext(
           );
         });
       },
-      waitForSignal<TPayload>(signalName: string): Promise<TPayload> {
+      waitForSignal<TPayload>(signal: string | { readonly signalName: string }): Promise<TPayload> {
+        const signalName = signalNameOf(signal);
         const consumed = signalSequences.get(signalName) ?? 0;
         signalSequences.set(signalName, consumed + 1);
 
@@ -784,8 +791,11 @@ function createReplayContext(
           (value) => ({ index: winner, value }) as SelectResult<Awaited<TBranches[number]>>,
         );
       },
-      setQueryHandler(queryName: string, handler: QueryHandler): void {
-        handlers.queries.set(queryName, handler);
+      setQueryHandler(
+        query: string | { readonly queryName: string },
+        handler: (argument: never) => unknown,
+      ): void {
+        handlers.queries.set(queryNameOf(query), handler as QueryHandler);
       },
       setUpdateHandler<TArgument, TResult>(definition: UpdateDefinition<TArgument, TResult>): void {
         handlers.updates.set(definition.updateName, definition as UpdateDefinition);

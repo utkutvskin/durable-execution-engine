@@ -92,6 +92,8 @@ export {
 } from "./run/projection.ts";
 export type { RunProjection } from "./run/projection.ts";
 export { rebuildProjection, refreshProjection } from "./run/projection-store.ts";
+export { defineQuery, defineSignal } from "./workflow/define-signal.ts";
+export type { QueryDefinition, SignalDefinition } from "./workflow/define-signal.ts";
 export { defineStep } from "./workflow/define-step.ts";
 export type { DefineStepOptions, StepDefinition } from "./workflow/define-step.ts";
 export { defineWorkflow } from "./workflow/define-workflow.ts";

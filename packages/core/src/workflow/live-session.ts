@@ -10,6 +10,7 @@ import {
   type DecisionLoopOptions,
   type DecisionResult,
 } from "./decision-loop.ts";
+import { queryNameOf, signalNameOf, stepTypeOf } from "./define-signal.ts";
 import { toRecordedError } from "./error-serialization.ts";
 import { StepFailedError, sleepDurationError } from "./errors.ts";
 import { createCommandMatcher, recordedCommandOf } from "./command-matcher.ts";
@@ -200,7 +201,11 @@ export function createLiveSession<TInput, TResult>(
     onCancel: () => {
       flags.unsupported = true;
     },
-    step<TResult>(stepType: string, stepInput: unknown): Promise<TResult> {
+    step<TResult>(
+      step: string | { readonly stepType: string },
+      stepInput: unknown,
+    ): Promise<TResult> {
+      const stepType = stepTypeOf(step);
       stepSequence += 1;
       const stepId = `step-${String(stepSequence)}`;
       const recorded = matcher.issue({ kind: "step", id: stepId, stepType, input: stepInput });
@@ -243,7 +248,8 @@ export function createLiveSession<TInput, TResult>(
         return true;
       });
     },
-    waitForSignal<TPayload>(signalName: string): Promise<TPayload> {
+    waitForSignal<TPayload>(signal: string | { readonly signalName: string }): Promise<TPayload> {
+      const signalName = signalNameOf(signal);
       const index = signalConsumption.get(signalName) ?? 0;
       signalConsumption.set(signalName, index + 1);
       return pendingPromise<TPayload>(`signal:${signalName}`, (resolve) => {
@@ -255,8 +261,11 @@ export function createLiveSession<TInput, TResult>(
         return true;
       });
     },
-    setQueryHandler(queryName: string, queryHandler: QueryHandler): void {
-      queryHandlers.set(queryName, queryHandler);
+    setQueryHandler(
+      query: string | { readonly queryName: string },
+      queryHandler: (argument: never) => unknown,
+    ): void {
+      queryHandlers.set(queryNameOf(query), queryHandler as QueryHandler);
     },
     setUpdateHandler: () => {
       flags.unsupported = true;
