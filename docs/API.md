@@ -151,6 +151,8 @@ Send `Idempotency-Key: <1 to 255 characters>` with `POST /v1/runs`. The first ca
 
 `POST /v1/runs` accepts `searchAttributes`, an object of at most 32 typed values (strings of at most 256 characters, finite numbers, booleans) under identifier names (letters, digits and `_`, at most 64 characters, not `runId`, `status`, `workflowType`, `queueName`, `startedAt`, `closedAt`, `and`, `or`, `not`, `true` or `false`), and `memo`, any JSON value of at most 16 KiB that is shown with the run and never indexed. A workflow changes its attributes with `ctx.upsertSearchAttributes({ stage: "shipped", flagged: null })`: a value replaces, `null` removes. Bad attributes or a bad memo answer 400 `invalid_search_attributes` and write nothing. Both carry over when the run continues as new.
 
+`POST /v1/runs` also accepts `priority`, an integer from -1000 to 1000 (default 0). Workers take the tasks of a higher-priority run first, and child runs and continue-as-new keep the priority. Any other value answers 400 `validation_failed` and writes nothing.
+
 `query` filters the list with a small grammar, combined with the other filters by `and`:
 
 ```

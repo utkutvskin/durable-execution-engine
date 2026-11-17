@@ -112,6 +112,12 @@ A run can carry search attributes, typed values (strings, numbers, booleans) set
 
 A namespace is a tenant. An API key belongs to exactly one namespace and every query filters on it; another namespace's run answers 404 like a run that does not exist. Quotas (request rate, concurrent runs, pending tasks) are per namespace.
 
+## Priorities, pools and fairness
+
+A run has a priority, an integer from -1000 to 1000 (default 0) set when it starts. Every task of the run carries it, a database trigger copies it from the run when the task is written, and child runs and the next run of a continue-as-new chain inherit it. A worker takes the highest priority first. Among tasks of equal priority it takes turns across namespaces: each namespace's oldest task comes before any namespace's second, and the namespace served least recently goes first, so a tenant with a deep backlog cannot hold back a tenant with a few tasks. The turn is a sequence number stamped on every lease, so it needs no shared counter that every worker would write.
+
+An engine runs two pools on one queue: one for decisions (`workflowConcurrency`) and one for steps (`stepConcurrency`). A step that takes an hour holds a step slot, never a decision slot, so the workflows it does not belong to keep moving.
+
 ## Guarantees and limits
 
 | The engine guarantees                                             | The engine does not guarantee                         |
