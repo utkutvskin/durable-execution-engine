@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 49: priorities, separate pools and namespace fairness
+
+- **Status:** DONE
+- **Completed day:** 49
+- **Files added or changed:** new `packages/core/migrations/0026_task_priorities.{up,down}.sql`, new `packages/core/src/run/priority.ts` (`validatePriority`, `InvalidPriorityError`, `PRIORITY_RANGE`, `DEFAULT_PRIORITY`) (+ new `priority-inheritance.test.ts`), `queue/task-queue.ts` (priority order, namespace turns, `taskTypes`, `LeasedTask.priority`) (+ new `task-priority.test.ts`), `run/insert-run.ts`, `children/child-runs.ts`, `continuation/continued-run.ts`, `embedded/transactional.ts`, `index.ts`, `db/migrator.test.ts`, `migrator-schema.test.ts`, `packages/api/src/routes.ts`, `run-service.ts`, `visibility.test.ts`, `packages/worker/src/worker.ts` (`taskTypes`) (+ test), `engine/runtime.ts` (`workflowConcurrency`, `stepConcurrency`), new `engine/flow-control.integration.test.ts`, `bench/hot-queries.ts`, `test-support.ts`, `api-reports/dee-core.api.md`, `dee-api.api.md`, `dee-worker.api.md`, `docs/API.md`, `CONCEPTS.md`, `DECISIONS.md` (ADR-0059), `DEFERRED.md`, `README.md`
+- **Technical decisions:** ADR-0059 in `docs/DECISIONS.md`. No new dependency. One migration, `0026_task_priorities` (run and task `priority`, a trigger that copies the run's priority onto each task, `task_lease_seq`, `tasks_fair_dequeue_idx`, `tasks_lane_turn_idx`).
+- **BLOCKER:** -
+- **Handoff note:** `pnpm run verify` is green locally (172 test files, 1447 tests, 16 more than the green baseline of 1431). **Done, each with a test:** with 10,000 low-priority runs queued, a priority 10 run started over the API is leased by the next poll after a slot frees (`flow-control.integration.test.ts`: at most two backlog tasks leased between the start and the urgent lease, and less than one poll interval between the previous ack and the urgent lease), and the lane scan reads `tasks_fair_dequeue_idx` with no sort and no sequential scan (`task-priority.test.ts`, also the `dequeue` entry of the hot query review); with one namespace holding 10,000 older tasks and another 10, the 10 finish within the first 20 leases at queue level and while at most 20 of the big namespace's runs completed at engine level; with two slow steps filling the step pool, a decision-only run completes and a third run records its decision while its step waits. **Mutation checks:** dropping the namespace turn from the order, dropping priority from it, and letting both pools take both task types each turn the matching tests red. **Things to know:** priority is an integer from -1000 to 1000 (default 0), higher first, set at start through `POST /v1/runs` and the embedded `startWorkflow`; a trigger gives every task its run's priority, so no task insert passes it; children and continue-as-new inherit it. Priority is strict (no aging). `startEngine` now runs two workers, so with the defaults it runs up to four decisions and four steps at once instead of four tasks. No cli flag, no `start_workflow` argument, no child override, no priority in the run description; all in `docs/DEFERRED.md`. The migrator tests list 0026. I wrote the code before its tests; apart from the mutation checks, none of the new tests was seen red first. Day 50 (concurrency keys) is next.
+
+---
+
 ## Day 48: step heartbeats, step timeouts and typed definitions
 
 - **Status:** DONE
