@@ -1,4 +1,4 @@
-import type { LeasedTask, TaskQueue } from "@dee/core";
+import type { LeasedTask, TaskQueue, TaskType } from "@dee/core";
 import type { WorkerIdentity } from "./identity.ts";
 import { LeaseLostError, ParkTaskError, ShutdownTimeoutError } from "./errors.ts";
 import { systemTimers, type Timers } from "./timers.ts";
@@ -74,6 +74,8 @@ export function nackDelayFor(attempts: number, backoff: NackBackoff): number {
  *   the worker that lost it.
  * - `stickyRouting`: with an `identity`, the poll skips workflow tasks of
  *   runs that another worker holds a live sticky claim on (default false).
+ * - `taskTypes`: the task types this worker takes (default both). Two
+ *   workers on one queue with disjoint types are two separate pools.
  * - `onError`: receives errors the worker survives, such as a failed poll.
  */
 export interface WorkerOptions {
@@ -93,6 +95,7 @@ export interface WorkerOptions {
   readonly timers?: Timers;
   readonly identity?: WorkerIdentity;
   readonly stickyRouting?: boolean;
+  readonly taskTypes?: readonly TaskType[];
   readonly pollBudget?: (free: number) => Promise<number>;
   readonly onTaskSettled?: (settled: SettledTask) => void;
   readonly clock?: { now(): Date };
@@ -162,6 +165,7 @@ interface ResolvedOptions {
   readonly timers: Timers;
   readonly identity: WorkerIdentity | undefined;
   readonly stickyRouting: boolean;
+  readonly taskTypes: readonly TaskType[] | undefined;
   readonly pollBudget: ((free: number) => Promise<number>) | undefined;
   readonly onTaskSettled: ((settled: SettledTask) => void) | undefined;
   readonly clock: { now(): Date };
@@ -236,6 +240,7 @@ function resolveOptions(options: WorkerOptions): ResolvedOptions {
     timers: options.timers ?? systemTimers,
     identity: options.identity,
     stickyRouting: options.stickyRouting ?? false,
+    taskTypes: options.taskTypes,
     pollBudget: options.pollBudget,
     onTaskSettled: options.onTaskSettled,
     clock: options.clock ?? { now: () => new Date() },
@@ -448,6 +453,7 @@ export function createWorker(options: WorkerOptions): Worker {
             queueName: config.queueName,
             visibilityTimeoutMs: config.visibilityTimeoutMs,
             limit: budget,
+            ...(config.taskTypes === undefined ? {} : { taskTypes: config.taskTypes }),
             ...(config.identity === undefined
               ? {}
               : { workerId: config.identity.id, workerVersion: config.identity.version }),

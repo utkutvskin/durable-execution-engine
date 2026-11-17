@@ -14,6 +14,7 @@ import {
   type RecoveryMetrics,
   type RetentionPolicy,
   type ScheduleManager,
+  type TaskType,
   type Tracing,
 } from "@dee/core";
 import { startCompactorLoop, type CompactorLoop } from "../compactor-loop.ts";
@@ -46,6 +47,11 @@ import {
  * `engine.metrics` renders the eight engine metrics: task latency is filled
  * from the worker and the reclaimed lease count from the janitor of this
  * engine.
+ *
+ * Workflow tasks and step tasks run in two separate pools, so steps that take
+ * long never hold up a decision: `workflowConcurrency` decisions and
+ * `stepConcurrency` steps run at once, each defaulting to `concurrency`
+ * (default 4).
  */
 export interface EngineOptions {
   readonly pool: Pool;
@@ -56,6 +62,8 @@ export interface EngineOptions {
   readonly maxCachedRuns?: number;
   readonly stickyTimeoutMs?: number;
   readonly concurrency?: number;
+  readonly workflowConcurrency?: number;
+  readonly stepConcurrency?: number;
   readonly pollIntervalMs?: number;
   readonly visibilityTimeoutMs?: number;
   readonly loopIntervalMs?: number;
@@ -92,7 +100,8 @@ export interface DecisionTotals {
 }
 
 /**
- * A running engine: one worker plus the timer, schedule and janitor loops.
+ * A running engine: a decision pool and a step pool on one queue, plus the
+ * timer, schedule and janitor loops.
  * `workerId` is the identity stamped on its leases and sticky claims.
  */
 export interface Engine {
@@ -164,25 +173,32 @@ export function startEngine(options: EngineOptions): Engine {
     queues: [queueName],
     ...(options.clock === undefined ? {} : { clock: options.clock }),
   });
-  const worker: Worker = createWorker({
-    queue,
-    queueName,
-    handler,
-    concurrency: options.concurrency ?? 4,
-    pollIntervalMs: options.pollIntervalMs ?? 50,
-    maxPollIntervalMs: 500,
-    visibilityTimeoutMs: options.visibilityTimeoutMs ?? 30_000,
-    shutdownTimeoutMs: options.shutdownTimeoutMs ?? 10_000,
-    nackBackoff: options.nackBackoff ?? { initialMs: 250, maxMs: 30_000 },
-    maxHandlerAttempts: options.maxHandlerAttempts ?? 8,
-    identity,
-    stickyRouting,
-    onTaskSettled: (settled) => {
-      metrics.observeTaskLatency(settled.task.queueName, settled.outcome, settled.latencySeconds);
-    },
-    ...(options.clock === undefined ? {} : { clock: options.clock }),
-    onError,
-  });
+  const concurrency = options.concurrency ?? 4;
+  const createPool = (taskType: TaskType, poolConcurrency: number): Worker =>
+    createWorker({
+      queue,
+      queueName,
+      handler,
+      taskTypes: [taskType],
+      concurrency: poolConcurrency,
+      pollIntervalMs: options.pollIntervalMs ?? 50,
+      maxPollIntervalMs: 500,
+      visibilityTimeoutMs: options.visibilityTimeoutMs ?? 30_000,
+      shutdownTimeoutMs: options.shutdownTimeoutMs ?? 10_000,
+      nackBackoff: options.nackBackoff ?? { initialMs: 250, maxMs: 30_000 },
+      maxHandlerAttempts: options.maxHandlerAttempts ?? 8,
+      identity,
+      stickyRouting,
+      onTaskSettled: (settled) => {
+        metrics.observeTaskLatency(settled.task.queueName, settled.outcome, settled.latencySeconds);
+      },
+      ...(options.clock === undefined ? {} : { clock: options.clock }),
+      onError,
+    });
+  const workers: readonly Worker[] = [
+    createPool("WORKFLOW_TASK", options.workflowConcurrency ?? concurrency),
+    createPool("STEP_TASK", options.stepConcurrency ?? concurrency),
+  ];
   const timerLoop: TimerLoop = startTimerLoop({
     scheduler: createTimerScheduler(options.pool, { queueName, ...clockOption }),
     intervalMs: loopIntervalMs,
@@ -213,7 +229,9 @@ export function startEngine(options: EngineOptions): Engine {
             : { batchSize: options.compaction.batchSize }),
           onError,
         });
-  worker.start();
+  workers.forEach((worker) => {
+    worker.start();
+  });
 
   return {
     queueName,
@@ -229,7 +247,11 @@ export function startEngine(options: EngineOptions): Engine {
         janitorLoop.stop(),
         compactorLoop?.stop(),
       ]);
-      const result = await worker.stop();
+      const results = await Promise.all(workers.map((worker) => worker.stop()));
+      const result: StopResult = {
+        completed: results.reduce((total, entry) => total + entry.completed, 0),
+        dropped: results.reduce((total, entry) => total + entry.dropped, 0),
+      };
       if (router !== undefined) {
         await router.releaseWorker(identity.id).catch(onError);
       }

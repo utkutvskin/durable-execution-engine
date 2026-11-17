@@ -29,6 +29,21 @@ describe("worker poll loop", () => {
     await worker.stop();
   });
 
+  it("asks the queue only for its own task types", async () => {
+    const { queue, worker } = setup({ taskTypes: ["STEP_TASK"] });
+    queue.add(1);
+    worker.start();
+    await waitFor(() => queue.acked.length === 1);
+    await worker.stop();
+    const unfiltered = setup();
+    unfiltered.queue.add(1);
+    unfiltered.worker.start();
+    await waitFor(() => unfiltered.queue.acked.length === 1);
+    await unfiltered.worker.stop();
+    expect(queue.dequeueTaskTypes[0]).toEqual(["STEP_TASK"]);
+    expect(unfiltered.queue.dequeueTaskTypes[0]).toBeUndefined();
+  });
+
   it("nacks a task whose handler throws and keeps polling", async () => {
     const errors: unknown[] = [];
     const { queue, worker } = setup({
