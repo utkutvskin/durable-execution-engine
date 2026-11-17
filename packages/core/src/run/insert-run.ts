@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import type { Codec } from "../event-store/codec.ts";
 import { appendEventsOnClient } from "../event-store/event-store.ts";
 import { applyRunTimeoutsOnClient } from "../timeouts/run-timeouts.ts";
+import { validatePriority } from "./priority.ts";
 import {
   validateMemo,
   validateSearchAttributes,
@@ -10,7 +11,8 @@ import {
 
 /**
  * What `insertRunOnClient` writes: a run of `workflowType` in the namespace
- * `namespaceId` whose first workflow task goes to `queueName`.
+ * `namespaceId` whose first workflow task goes to `queueName`. `priority`
+ * (default 0) orders every task of the run; see `validatePriority`.
  */
 export interface InsertRunInput {
   readonly namespaceId: string;
@@ -23,6 +25,7 @@ export interface InsertRunInput {
   readonly taskReason?: string | undefined;
   readonly searchAttributes?: SearchAttributes | undefined;
   readonly memo?: unknown;
+  readonly priority?: number | undefined;
 }
 
 /**
@@ -41,10 +44,12 @@ export async function insertRunOnClient(
   const searchAttributes =
     input.searchAttributes === undefined ? {} : validateSearchAttributes(input.searchAttributes);
   const memo = input.memo === undefined ? undefined : validateMemo(input.memo);
+  const priority = validatePriority(input.priority);
   const inserted = await client.query<{ id: string; started_at: Date }>(
     `insert into workflow_runs
-       (namespace_id, workflow_type, input, idempotency_key, queue_name, search_attributes, memo)
-     values ($1, $2, $3::jsonb, $4, $5, $6::jsonb, $7::jsonb)
+       (namespace_id, workflow_type, input, idempotency_key, queue_name, search_attributes, memo,
+        priority)
+     values ($1, $2, $3::jsonb, $4, $5, $6::jsonb, $7::jsonb, $8)
      on conflict (namespace_id, idempotency_key) where idempotency_key is not null
      do nothing
      returning id, started_at`,
@@ -56,6 +61,7 @@ export async function insertRunOnClient(
       input.queueName,
       JSON.stringify(searchAttributes),
       memo === undefined ? null : JSON.stringify(memo),
+      priority,
     ],
   );
   const created = inserted.rows[0];

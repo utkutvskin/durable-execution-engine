@@ -84,6 +84,8 @@ export interface StartWorkflowInput extends EmbeddedOptions {
   readonly searchAttributes?: SearchAttributes | undefined;
   /** A JSON value shown with the run and never indexed. */
   readonly memo?: unknown;
+  /** The run's priority, inherited by its tasks and children (see `validatePriority`). */
+  readonly priority?: number | undefined;
 }
 
 /**
@@ -260,6 +262,7 @@ export async function startWorkflow(
       executionTimeoutMs: input.executionTimeoutMs,
       searchAttributes: input.searchAttributes,
       memo: input.memo,
+      priority: input.priority,
     });
     if (created === undefined) {
       return findByKey(client, namespaceId, input, input.idempotencyKey ?? "");

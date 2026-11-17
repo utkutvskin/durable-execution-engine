@@ -170,6 +170,26 @@ describe("visibility queries over http", () => {
     expect(after.rows).toEqual(before.rows);
   });
 
+  it("starts a run with a priority its task inherits and refuses one out of range", async () => {
+    const started = await call("POST", "/v1/runs", { workflowType: "order", priority: 25 });
+    expect(started.status).toBe(201);
+    const runId = (started.body["run"] as { runId: string }).runId;
+    const stored = await database.pool.query<{ run: number; task: number }>(
+      `select r.priority as run, t.priority as task
+       from workflow_runs r join tasks t on t.run_id = r.id where r.id = $1`,
+      [runId],
+    );
+    expect(stored.rows).toEqual([{ run: 25, task: 25 }]);
+    const before = await database.pool.query("select count(*) from workflow_runs");
+    const tooHigh = await call("POST", "/v1/runs", { workflowType: "order", priority: 1001 });
+    const fractional = await call("POST", "/v1/runs", { workflowType: "order", priority: 1.5 });
+    expect(tooHigh.status).toBe(400);
+    expect(tooHigh.body["error"]).toMatchObject({ code: "validation_failed" });
+    expect(fractional.status).toBe(400);
+    const after = await database.pool.query("select count(*) from workflow_runs");
+    expect(after.rows).toEqual(before.rows);
+  });
+
   it("pages through query results with the cursor", async () => {
     for (let index = 0; index < 5; index += 1) {
       await start({ batch: "paged" });

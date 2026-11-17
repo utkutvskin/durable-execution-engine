@@ -7,7 +7,8 @@ import { applyRunTimeoutsOnClient } from "../timeouts/run-timeouts.ts";
 /**
  * Creates the run for a `child_started` event inside the caller's
  * transaction: the `workflow_runs` row linked to its parent, the child's
- * `run_started` event and its first workflow task. Starting the same
+ * `run_started` event and its first workflow task. The child inherits the
+ * parent's priority. Starting the same
  * `childId` of the same parent twice creates nothing and returns the run
  * that already exists. The caller must hold the parent's row lock.
  */
@@ -26,8 +27,9 @@ export async function createChildRunOnClient(
   const inserted = await client.query<{ id: string }>(
     `insert into workflow_runs
        (namespace_id, workflow_type, input, parent_run_id, parent_child_id, parent_close_policy,
-        traceparent, queue_name)
-     values ($1, $2, $3::jsonb, $4, $5, $6, $7, $8)
+        traceparent, queue_name, priority)
+     values ($1, $2, $3::jsonb, $4, $5, $6, $7, $8,
+             (select priority from workflow_runs where id = $4))
      on conflict (parent_run_id, parent_child_id) where parent_child_id is not null do nothing
      returning id`,
     [

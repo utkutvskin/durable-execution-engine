@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   InvalidSearchAttributesError,
+  PRIORITY_RANGE,
   VisibilityQueryError,
   MAX_EVENT_BUFFER_MS,
   MAX_UPDATE_WAIT_MS,
@@ -126,6 +127,9 @@ const startRequestSchema = z
     }),
     memo: z.unknown().optional().meta({
       description: "A JSON value shown with the run and never indexed.",
+    }),
+    priority: z.number().int().min(PRIORITY_RANGE.min).max(PRIORITY_RANGE.max).optional().meta({
+      description: "Orders the run's tasks, higher first (default 0). Its child runs inherit it.",
     }),
   })
   .meta({ id: "StartRunRequest" });
@@ -478,6 +482,9 @@ export function createRoutes(service: RunService): readonly Route[] {
             ? {}
             : { searchAttributes: request.parsedBody.searchAttributes }),
           ...(request.parsedBody.memo === undefined ? {} : { memo: request.parsedBody.memo }),
+          ...(request.parsedBody.priority === undefined
+            ? {}
+            : { priority: request.parsedBody.priority }),
           ...(key === undefined ? {} : { idempotencyKey: key }),
           ...(request.headers["traceparent"] === undefined
             ? {}

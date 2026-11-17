@@ -475,3 +475,9 @@ export type {
 } from "./embedded/transactional.ts";
 
 export type { DemoContext, DemoReport, DemoRunClient, DemoRunSnapshot } from "./demo/demo-types.ts";
+export {
+  DEFAULT_PRIORITY,
+  InvalidPriorityError,
+  PRIORITY_RANGE,
+  validatePriority,
+} from "./run/priority.ts";

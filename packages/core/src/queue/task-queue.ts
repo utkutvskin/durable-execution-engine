@@ -28,6 +28,7 @@ export interface LeasedTask {
   readonly attempts: number;
   readonly leaseToken: string;
   readonly visibleAt: Date;
+  readonly priority: number;
 }
 
 /**
@@ -52,6 +53,15 @@ export interface EnqueueInput {
  * set, workflow tasks of runs that another worker holds a live sticky claim on
  * (see `createStickyRouter`) are skipped; an expired claim no longer blocks.
  *
+ * `taskTypes` limits the call to tasks of those types (default both), which
+ * is how a worker keeps separate pools for decisions and steps.
+ *
+ * Tasks are taken in priority order, highest first (a task has its run's
+ * priority). Tasks of equal priority are spread across namespaces: each
+ * namespace's oldest task comes before any namespace's second, and among
+ * namespaces the one served least recently goes first, so a namespace with a
+ * deep backlog cannot hold back a namespace with a few tasks.
+ *
  * Taking a task whose lease expired counts as a reclaim. A task reclaimed
  * for the `poisonThreshold`th time is quarantined instead of delivered.
  */
@@ -62,6 +72,7 @@ export interface DequeueOptions {
   readonly workerId?: string;
   readonly workerVersion?: string;
   readonly stickyFor?: string;
+  readonly taskTypes?: readonly TaskType[];
 }
 
 /**
@@ -97,6 +108,7 @@ interface TaskRow {
   attempts: number;
   lease_token: string;
   visible_at: Date;
+  priority: number;
 }
 
 function toLeasedTask(row: TaskRow): LeasedTask {
@@ -110,6 +122,7 @@ function toLeasedTask(row: TaskRow): LeasedTask {
     attempts: row.attempts,
     leaseToken: row.lease_token,
     visibleAt: row.visible_at,
+    priority: row.priority,
   };
 }
 
@@ -123,6 +136,19 @@ function assertNonNegativeInteger(name: string, value: number): void {
   if (!Number.isInteger(value) || value < 0) {
     throw new RangeError(`${name} must be a non-negative integer, got ${String(value)}`);
   }
+}
+
+function resolveTaskTypes(taskTypes: readonly TaskType[] | undefined): TaskType[] {
+  if (taskTypes === undefined) {
+    return [...TASK_TYPES];
+  }
+  const unknown = taskTypes.filter((type) => !TASK_TYPES.includes(type));
+  if (taskTypes.length === 0 || unknown.length > 0) {
+    throw new RangeError(
+      `taskTypes must name at least one of ${TASK_TYPES.join(", ")}, got [${taskTypes.join(", ")}]`,
+    );
+  }
+  return [...new Set(taskTypes)];
 }
 
 const DATABASE_NOW = "now()";
@@ -180,21 +206,50 @@ export function createTaskQueue(
       const limit = dequeueOptions.limit ?? 1;
       assertPositiveInteger("visibilityTimeoutMs", dequeueOptions.visibilityTimeoutMs);
       assertPositiveInteger("limit", limit);
+      const taskTypes = resolveTaskTypes(dequeueOptions.taskTypes);
       const result = await pool.query<TaskRow>(
-        `with next as (
-           select id, state = 'LEASED' as reclaimed,
-                  state = 'LEASED' and reclaim_count + 1 >= $8 as poisoned
-           from tasks
-           where queue_name = $1 and state in ('PENDING', 'LEASED') and visible_at <= ${at("$2")}
-             and ($7::text is null or task_type <> 'WORKFLOW_TASK' or not exists (
-               select 1 from run_stickiness sticky
-               where sticky.run_id = tasks.run_id
-                 and sticky.worker_id <> $7
-                 and sticky.expires_at > ${at("$2")}
-             ))
-           order by visible_at, created_at, id
+        `with lanes as (
+           select n.id as namespace_id, kind.task_type,
+                  coalesce((
+                    select max(served.lease_seq) from tasks served
+                    where served.queue_name = $1 and served.namespace_id = n.id
+                      and served.task_type = kind.task_type and served.lease_seq is not null
+                  ), 0) as turn
+           from namespaces n cross join unnest($9::text[]) as kind (task_type)
+         ),
+         candidates as (
+           select lane_task.*, lanes.turn,
+                  row_number() over (
+                    partition by lane_task.namespace_id, lane_task.priority
+                    order by lane_task.visible_at, lane_task.created_at, lane_task.id
+                  ) as lane_rank
+           from lanes cross join lateral (
+             select id, namespace_id, priority, visible_at, created_at,
+                    state = 'LEASED' as reclaimed,
+                    state = 'LEASED' and reclaim_count + 1 >= $8 as poisoned
+             from tasks
+             where queue_name = $1 and namespace_id = lanes.namespace_id
+               and task_type = lanes.task_type
+               and state in ('PENDING', 'LEASED') and visible_at <= ${at("$2")}
+               and ($7::text is null or task_type <> 'WORKFLOW_TASK' or not exists (
+                 select 1 from run_stickiness sticky
+                 where sticky.run_id = tasks.run_id
+                   and sticky.worker_id <> $7
+                   and sticky.expires_at > ${at("$2")}
+               ))
+             order by priority desc, visible_at, created_at, id
+             limit $4
+             for update skip locked
+           ) lane_task
+         ),
+         next as (
+           select id, reclaimed, poisoned,
+                  row_number() over (
+                    order by priority desc, lane_rank, turn, visible_at, created_at, id
+                  ) as position
+           from candidates
+           order by position
            limit $4
-           for update skip locked
          ),
          parked as (
            update tasks
@@ -206,21 +261,27 @@ export function createTaskQueue(
            from next
            where tasks.id = next.id and next.poisoned
            returning tasks.id
+         ),
+         leased as (
+           update tasks
+           set state = 'LEASED',
+               lease_token = gen_random_uuid(),
+               lease_seq = nextval('task_lease_seq'),
+               attempts = tasks.attempts + 1,
+               reclaim_count = tasks.reclaim_count + case when next.reclaimed then 1 else 0 end,
+               leased_by = $5,
+               leased_by_version = $6,
+               leased_at = ${at("$2")},
+               visible_at = ${at("$2")} + $3 * interval '1 millisecond',
+               updated_at = ${at("$2")}
+           from next
+           where tasks.id = next.id and not next.poisoned
+           returning tasks.id, namespace_id, run_id, queue_name, task_type, payload,
+                     attempts, lease_token, visible_at, priority, next.position
          )
-         update tasks
-         set state = 'LEASED',
-             lease_token = gen_random_uuid(),
-             attempts = tasks.attempts + 1,
-             reclaim_count = tasks.reclaim_count + case when next.reclaimed then 1 else 0 end,
-             leased_by = $5,
-             leased_by_version = $6,
-             leased_at = ${at("$2")},
-             visible_at = ${at("$2")} + $3 * interval '1 millisecond',
-             updated_at = ${at("$2")}
-         from next
-         where tasks.id = next.id and not next.poisoned
-         returning tasks.id, namespace_id, run_id, queue_name, task_type, payload,
-                   attempts, lease_token, visible_at`,
+         select id, namespace_id, run_id, queue_name, task_type, payload,
+                attempts, lease_token, visible_at, priority
+         from leased order by position`,
         [
           dequeueOptions.queueName,
           instant(),
@@ -230,6 +291,7 @@ export function createTaskQueue(
           dequeueOptions.workerVersion ?? null,
           dequeueOptions.stickyFor ?? null,
           poisonThreshold,
+          taskTypes,
         ],
       );
       return result.rows.map(toLeasedTask);

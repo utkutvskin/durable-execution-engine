@@ -642,6 +642,9 @@ export const DEFAULT_MAX_PAYLOAD_BYTES = 1048576;
 export const DEFAULT_POISON_THRESHOLD = 3;
 
 // @public
+export const DEFAULT_PRIORITY = 0;
+
+// @public
 export const DEFAULT_RETRY_POLICY: RetryPolicy;
 
 // @public
@@ -753,6 +756,8 @@ export interface DequeueOptions {
     readonly queueName: string;
     // (undocumented)
     readonly stickyFor?: string;
+    // (undocumented)
+    readonly taskTypes?: readonly TaskType[];
     // (undocumented)
     readonly visibilityTimeoutMs: number;
     // (undocumented)
@@ -1097,6 +1102,13 @@ export class InvalidHistoryExportError extends Error {
 }
 
 // @public
+export class InvalidPriorityError extends RangeError {
+    constructor(priority: unknown);
+    // (undocumented)
+    readonly priority: unknown;
+}
+
+// @public
 export class InvalidScheduleError extends Error {
     constructor(message: string);
 }
@@ -1218,6 +1230,8 @@ export interface LeasedTask {
     readonly namespaceId: string;
     // (undocumented)
     readonly payload: unknown;
+    // (undocumented)
+    readonly priority: number;
     // (undocumented)
     readonly queueName: string;
     // (undocumented)
@@ -1541,6 +1555,12 @@ export function pendingMigrations(pool: Pool, migrationsDir?: string, options?: 
 export { Pool }
 
 export { PoolClient }
+
+// @public
+export const PRIORITY_RANGE: {
+    readonly min: -1000;
+    readonly max: 1000;
+};
 
 // @public
 export interface QuarantinedTask {
@@ -2486,6 +2506,7 @@ export interface StartWorkflowInput extends EmbeddedOptions {
     readonly memo?: unknown;
     // (undocumented)
     readonly namespace?: string | undefined;
+    readonly priority?: number | undefined;
     // (undocumented)
     readonly queueName?: string | undefined;
     // (undocumented)
@@ -3080,6 +3101,9 @@ export interface UpsertSearchAttributesCommand {
 export function validateMemo(value: unknown): unknown;
 
 // @public
+export function validatePriority(priority: number | undefined): number;
+
+// @public
 export function validateSearchAttributes(value: unknown): SearchAttributes;
 
 // @public
@@ -3435,14 +3459,14 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/embedded/transactional.d.ts:55:5 - (ae-undocumented) Missing documentation for "idempotencyKey".
 // dist/embedded/transactional.d.ts:56:5 - (ae-undocumented) Missing documentation for "runTimeoutMs".
 // dist/embedded/transactional.d.ts:57:5 - (ae-undocumented) Missing documentation for "executionTimeoutMs".
-// dist/embedded/transactional.d.ts:68:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/embedded/transactional.d.ts:69:5 - (ae-undocumented) Missing documentation for "created".
-// dist/embedded/transactional.d.ts:76:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/embedded/transactional.d.ts:77:5 - (ae-undocumented) Missing documentation for "signalName".
-// dist/embedded/transactional.d.ts:78:5 - (ae-undocumented) Missing documentation for "payload".
-// dist/embedded/transactional.d.ts:79:5 - (ae-undocumented) Missing documentation for "signalId".
-// dist/embedded/transactional.d.ts:85:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/embedded/transactional.d.ts:86:5 - (ae-undocumented) Missing documentation for "reason".
+// dist/embedded/transactional.d.ts:70:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/embedded/transactional.d.ts:71:5 - (ae-undocumented) Missing documentation for "created".
+// dist/embedded/transactional.d.ts:78:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/embedded/transactional.d.ts:79:5 - (ae-undocumented) Missing documentation for "signalName".
+// dist/embedded/transactional.d.ts:80:5 - (ae-undocumented) Missing documentation for "payload".
+// dist/embedded/transactional.d.ts:81:5 - (ae-undocumented) Missing documentation for "signalId".
+// dist/embedded/transactional.d.ts:87:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/embedded/transactional.d.ts:88:5 - (ae-undocumented) Missing documentation for "reason".
 // dist/event-store/codec.d.ts:9:5 - (ae-undocumented) Missing documentation for "encode".
 // dist/event-store/codec.d.ts:10:5 - (ae-undocumented) Missing documentation for "decode".
 // dist/event-store/errors.d.ts:8:5 - (ae-undocumented) Missing documentation for "runId".
@@ -3576,24 +3600,26 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/queue/task-queue.d.ts:24:5 - (ae-undocumented) Missing documentation for "attempts".
 // dist/queue/task-queue.d.ts:25:5 - (ae-undocumented) Missing documentation for "leaseToken".
 // dist/queue/task-queue.d.ts:26:5 - (ae-undocumented) Missing documentation for "visibleAt".
-// dist/queue/task-queue.d.ts:33:5 - (ae-undocumented) Missing documentation for "namespaceId".
-// dist/queue/task-queue.d.ts:34:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/queue/task-queue.d.ts:35:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/queue/task-queue.d.ts:36:5 - (ae-undocumented) Missing documentation for "taskType".
-// dist/queue/task-queue.d.ts:37:5 - (ae-undocumented) Missing documentation for "payload".
-// dist/queue/task-queue.d.ts:38:5 - (ae-undocumented) Missing documentation for "delayMs".
-// dist/queue/task-queue.d.ts:53:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/queue/task-queue.d.ts:54:5 - (ae-undocumented) Missing documentation for "visibilityTimeoutMs".
-// dist/queue/task-queue.d.ts:55:5 - (ae-undocumented) Missing documentation for "limit".
-// dist/queue/task-queue.d.ts:56:5 - (ae-undocumented) Missing documentation for "workerId".
-// dist/queue/task-queue.d.ts:57:5 - (ae-undocumented) Missing documentation for "workerVersion".
-// dist/queue/task-queue.d.ts:58:5 - (ae-undocumented) Missing documentation for "stickyFor".
-// dist/queue/task-queue.d.ts:67:5 - (ae-undocumented) Missing documentation for "enqueue".
-// dist/queue/task-queue.d.ts:68:5 - (ae-undocumented) Missing documentation for "dequeue".
-// dist/queue/task-queue.d.ts:69:5 - (ae-undocumented) Missing documentation for "ack".
-// dist/queue/task-queue.d.ts:70:5 - (ae-undocumented) Missing documentation for "nack".
-// dist/queue/task-queue.d.ts:71:5 - (ae-undocumented) Missing documentation for "quarantine".
-// dist/queue/task-queue.d.ts:72:5 - (ae-undocumented) Missing documentation for "extend".
+// dist/queue/task-queue.d.ts:27:5 - (ae-undocumented) Missing documentation for "priority".
+// dist/queue/task-queue.d.ts:34:5 - (ae-undocumented) Missing documentation for "namespaceId".
+// dist/queue/task-queue.d.ts:35:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/queue/task-queue.d.ts:36:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/queue/task-queue.d.ts:37:5 - (ae-undocumented) Missing documentation for "taskType".
+// dist/queue/task-queue.d.ts:38:5 - (ae-undocumented) Missing documentation for "payload".
+// dist/queue/task-queue.d.ts:39:5 - (ae-undocumented) Missing documentation for "delayMs".
+// dist/queue/task-queue.d.ts:63:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/queue/task-queue.d.ts:64:5 - (ae-undocumented) Missing documentation for "visibilityTimeoutMs".
+// dist/queue/task-queue.d.ts:65:5 - (ae-undocumented) Missing documentation for "limit".
+// dist/queue/task-queue.d.ts:66:5 - (ae-undocumented) Missing documentation for "workerId".
+// dist/queue/task-queue.d.ts:67:5 - (ae-undocumented) Missing documentation for "workerVersion".
+// dist/queue/task-queue.d.ts:68:5 - (ae-undocumented) Missing documentation for "stickyFor".
+// dist/queue/task-queue.d.ts:69:5 - (ae-undocumented) Missing documentation for "taskTypes".
+// dist/queue/task-queue.d.ts:78:5 - (ae-undocumented) Missing documentation for "enqueue".
+// dist/queue/task-queue.d.ts:79:5 - (ae-undocumented) Missing documentation for "dequeue".
+// dist/queue/task-queue.d.ts:80:5 - (ae-undocumented) Missing documentation for "ack".
+// dist/queue/task-queue.d.ts:81:5 - (ae-undocumented) Missing documentation for "nack".
+// dist/queue/task-queue.d.ts:82:5 - (ae-undocumented) Missing documentation for "quarantine".
+// dist/queue/task-queue.d.ts:83:5 - (ae-undocumented) Missing documentation for "extend".
 // dist/quota/quota-store.d.ts:6:5 - (ae-undocumented) Missing documentation for "maxConcurrentRuns".
 // dist/quota/quota-store.d.ts:7:5 - (ae-undocumented) Missing documentation for "maxPendingTasks".
 // dist/quota/quota-store.d.ts:8:5 - (ae-undocumented) Missing documentation for "ratePerSecond".
@@ -3755,6 +3781,7 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/retry/timeout.d.ts:50:5 - (ae-undocumented) Missing documentation for "heartbeat".
 // dist/run/errors.d.ts:9:5 - (ae-undocumented) Missing documentation for "from".
 // dist/run/errors.d.ts:10:5 - (ae-undocumented) Missing documentation for "attempted".
+// dist/run/priority.d.ts:17:5 - (ae-undocumented) Missing documentation for "priority".
 // dist/run/projection.d.ts:7:5 - (ae-undocumented) Missing documentation for "state".
 // dist/run/projection.d.ts:8:5 - (ae-undocumented) Missing documentation for "input".
 // dist/run/projection.d.ts:9:5 - (ae-undocumented) Missing documentation for "result".

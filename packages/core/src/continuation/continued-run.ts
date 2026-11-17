@@ -18,6 +18,7 @@ interface PredecessorRow {
   execution_deadline: Date | null;
   search_attributes: Record<string, string | number | boolean>;
   memo: unknown;
+  priority: number;
 }
 
 /**
@@ -41,7 +42,7 @@ export async function createContinuedRunOnClient(
   const predecessor = await client.query<PredecessorRow>(
     `select namespace_id, workflow_type, parent_run_id, parent_close_policy, schedule_id,
             first_run_id, chain_index, traceparent, queue_name, run_timeout_ms, execution_deadline,
-            search_attributes, memo
+            search_attributes, memo, priority
      from workflow_runs where id = $1`,
     [runId],
   );
@@ -53,8 +54,8 @@ export async function createContinuedRunOnClient(
     `insert into workflow_runs
        (namespace_id, workflow_type, input, parent_run_id, parent_close_policy, schedule_id,
         first_run_id, continued_from_run_id, chain_index, traceparent, queue_name,
-        search_attributes, memo)
-     values ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb)
+        search_attributes, memo, priority)
+     values ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14)
      returning id`,
     [
       row.namespace_id,
@@ -70,6 +71,7 @@ export async function createContinuedRunOnClient(
       row.queue_name,
       JSON.stringify(row.search_attributes),
       row.memo === null ? null : JSON.stringify(row.memo),
+      row.priority,
     ],
   );
   const nextRunId = inserted.rows[0]?.id;

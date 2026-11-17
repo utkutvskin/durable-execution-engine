@@ -87,11 +87,12 @@ export function hotQueries(
       name: "dequeue",
       table: "tasks",
       sql: `select id from tasks
-            where queue_name = $1 and state in ('PENDING', 'LEASED') and visible_at <= $2
-            order by visible_at, created_at, id
+            where queue_name = $1 and namespace_id = $3 and task_type = 'STEP_TASK'
+              and state in ('PENDING', 'LEASED') and visible_at <= $2
+            order by priority desc, visible_at, created_at, id
             limit 8
             for update skip locked`,
-      params: [queueName, now],
+      params: [queueName, now, namespaceId],
     },
     {
       name: "sequence check",

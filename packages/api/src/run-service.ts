@@ -25,6 +25,7 @@ import {
   rollbackQuietly,
   compileVisibilityQuery,
   validateMemo,
+  validatePriority,
   validateSearchAttributes,
   type SearchAttributes,
   type CreateEventTriggerInput,
@@ -168,6 +169,7 @@ export interface StartRunInput {
   readonly executionTimeoutMs?: number;
   readonly searchAttributes?: SearchAttributes;
   readonly memo?: unknown;
+  readonly priority?: number;
 }
 
 /**
@@ -580,6 +582,7 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     const searchAttributes =
       input.searchAttributes === undefined ? {} : validateSearchAttributes(input.searchAttributes);
     const memo = input.memo === undefined ? undefined : validateMemo(input.memo);
+    const priority = validatePriority(input.priority);
     const client = await pool.connect();
     let broken = false;
     const span = tracing.startSpan("workflow.start", {
@@ -592,8 +595,8 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
       const inserted = await client.query<{ id: string }>(
         `insert into workflow_runs
            (namespace_id, workflow_type, input, idempotency_key, traceparent, queue_name,
-            search_attributes, memo)
-         values ($1, $2, $3::jsonb, $4, $5, $6, $7::jsonb, $8::jsonb)
+            search_attributes, memo, priority)
+         values ($1, $2, $3::jsonb, $4, $5, $6, $7::jsonb, $8::jsonb, $9)
          on conflict (namespace_id, idempotency_key) where idempotency_key is not null
          do nothing
          returning id`,
@@ -606,6 +609,7 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
           options.queueName,
           JSON.stringify(searchAttributes),
           memo === undefined ? null : JSON.stringify(memo),
+          priority,
         ],
       );
       const runId = inserted.rows[0]?.id;

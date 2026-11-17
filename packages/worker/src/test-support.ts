@@ -1,4 +1,4 @@
-import type { DequeueOptions, EnqueueInput, LeasedTask, TaskQueue } from "@dee/core";
+import type { DequeueOptions, EnqueueInput, LeasedTask, TaskQueue, TaskType } from "@dee/core";
 import type { Timers } from "./timers.ts";
 
 export interface VirtualTime {
@@ -63,6 +63,7 @@ export interface MemoryQueue extends TaskQueue {
   readonly nackDelays: number[];
   readonly quarantined: { readonly id: string; readonly reason: string }[];
   readonly dequeueLimits: number[];
+  readonly dequeueTaskTypes: (readonly TaskType[] | undefined)[];
   extendResult: boolean;
   extendError: Error | undefined;
   dequeueError: Error | undefined;
@@ -79,6 +80,7 @@ export function createMemoryQueue(): MemoryQueue {
     nackDelays: [],
     quarantined: [],
     dequeueLimits: [],
+    dequeueTaskTypes: [],
     extendResult: true,
     extendError: undefined,
     dequeueError: undefined,
@@ -95,6 +97,7 @@ export function createMemoryQueue(): MemoryQueue {
           attempts,
           leaseToken: `lease-${String(sequence)}`,
           visibleAt: new Date(0),
+          priority: 0,
         });
       }
     },
@@ -103,6 +106,7 @@ export function createMemoryQueue(): MemoryQueue {
     },
     dequeue(options: DequeueOptions): Promise<LeasedTask[]> {
       queue.dequeueLimits.push(options.limit ?? 1);
+      queue.dequeueTaskTypes.push(options.taskTypes);
       if (queue.dequeueError !== undefined) {
         return Promise.reject(queue.dequeueError);
       }
