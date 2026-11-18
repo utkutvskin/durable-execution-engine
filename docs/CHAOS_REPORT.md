@@ -40,6 +40,7 @@ pnpm exec prettier --write docs/CHAOS_REPORT.md
 - `step-result-written-once`: A step has at most one terminal event and one stored result, and every stored result has its event.
 - `projection-consistent`: The run row equals the fold of the event log up to its own sequence number, never runs ahead of the log, and is terminal whenever the log is.
 - `timer-fired-once`: A timer has at most one fired event, a fired timer has its event, and no timer fires before it is due.
+- `concurrency-limit-held`: No more runs or steps hold a slot of a concurrency key at once than its limit, and every leased task of a keyed run or step holds its slot.
 
 The suite also reports these checks of its own:
 

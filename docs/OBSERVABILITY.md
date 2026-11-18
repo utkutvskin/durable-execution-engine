@@ -16,20 +16,22 @@ Use `/health` for the liveness probe and `/ready` for the readiness probe. With 
 
 ## Metrics
 
-All eight are registered by `createEngineMetrics(pool)`. The gauges and the two mirrored counters are read from Postgres on every scrape, so any process reports the whole fleet; only the latency histogram and the reclaim count are per process.
+All ten are registered by `createEngineMetrics(pool)`. The gauges and the two mirrored counters are read from Postgres on every scrape, so any process reports the whole fleet; only the latency histogram and the reclaim count are per process.
 
-| Metric                       | Type      | Meaning                                                                                   |
-| ---------------------------- | --------- | ----------------------------------------------------------------------------------------- |
-| `dee_queue_depth`            | gauge     | Visible `PENDING` tasks, by `queue`.                                                      |
-| `dee_task_latency_seconds`   | histogram | Seconds from a task becoming visible to the worker settling it, by `queue` and `outcome`. |
-| `dee_step_retries_total`     | counter   | Failed step attempts that were scheduled for another try.                                 |
-| `dee_timer_lag_seconds`      | gauge     | Age of the oldest overdue pending timer, `0` when none.                                   |
-| `dee_active_workers`         | gauge     | Distinct workers that hold a task lease.                                                  |
-| `dee_runs`                   | gauge     | Runs by `status`; every status is present, with `0` when empty.                           |
-| `dee_tasks_quarantined`      | gauge     | Poison tasks parked by the janitor, by `queue`.                                           |
-| `dee_leases_reclaimed_total` | counter   | Leases the janitor took back in this process (needs the `recovery` option).               |
+| Metric                         | Type      | Meaning                                                                                   |
+| ------------------------------ | --------- | ----------------------------------------------------------------------------------------- |
+| `dee_queue_depth`              | gauge     | Visible `PENDING` tasks, by `queue`.                                                      |
+| `dee_task_latency_seconds`     | histogram | Seconds from a task becoming visible to the worker settling it, by `queue` and `outcome`. |
+| `dee_step_retries_total`       | counter   | Failed step attempts that were scheduled for another try.                                 |
+| `dee_timer_lag_seconds`        | gauge     | Age of the oldest overdue pending timer, `0` when none.                                   |
+| `dee_active_workers`           | gauge     | Distinct workers that hold a task lease.                                                  |
+| `dee_runs`                     | gauge     | Runs by `status`; every status is present, with `0` when empty.                           |
+| `dee_tasks_quarantined`        | gauge     | Poison tasks parked by the janitor, by `queue`.                                           |
+| `dee_leases_reclaimed_total`   | counter   | Leases the janitor took back in this process (needs the `recovery` option).               |
+| `dee_concurrency_slots_held`   | gauge     | Concurrency slots held, by `namespace`, `scope` (`run` or `step`) and `key`.              |
+| `dee_concurrency_queued_tasks` | gauge     | Due tasks of a concurrency key that hold no slot yet, by `namespace`, `scope` and `key`.  |
 
-`startEngine` feeds the histogram and the reclaim count for you: it creates the `EngineMetrics` of the process, records every settled task in `dee_task_latency_seconds` and passes its janitor's counters in as `recovery`. Read them from `engine.metrics`. The queues of the engine always have a `dee_queue_depth` and a `dee_tasks_quarantined` series, `0` when nothing waits. `wf worker --health-port <port>` serves `/health`, `/ready` and `/metrics` from `engine.metrics`, so scrape every worker and the API: the latency histogram and the reclaim count are per worker process, and the API process has neither.
+`startEngine` feeds the histogram and the reclaim count for you: it creates the `EngineMetrics` of the process, records every settled task in `dee_task_latency_seconds` and passes its janitor's counters in as `recovery`. Read them from `engine.metrics`. The queues of the engine always have a `dee_queue_depth` and a `dee_tasks_quarantined` series, `0` when nothing waits. The two concurrency gauges only have a series for keys that hold a slot or have queued work, at most 100 keys (`concurrencyKeys`), the most queued first. `wf worker --health-port <port>` serves `/health`, `/ready` and `/metrics` from `engine.metrics`, so scrape every worker and the API: the latency histogram and the reclaim count are per worker process, and the API process has neither.
 
 If you build the worker yourself, feed the histogram from `onTaskSettled`:
 

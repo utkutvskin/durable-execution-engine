@@ -153,6 +153,8 @@ Send `Idempotency-Key: <1 to 255 characters>` with `POST /v1/runs`. The first ca
 
 `POST /v1/runs` also accepts `priority`, an integer from -1000 to 1000 (default 0). Workers take the tasks of a higher-priority run first, and child runs and continue-as-new keep the priority. Any other value answers 400 `validation_failed` and writes nothing.
 
+`GET /v1/runs/{runId}` adds `concurrency` for a run whose workflow has a concurrency key: `key`, `limit`, `holders` (runs holding a slot of the key), `holdsSlot` and `waitingForSlot` (the run has a due task that waits because every slot is held). Runs without a key have no such field.
+
 `query` filters the list with a small grammar, combined with the other filters by `and`:
 
 ```

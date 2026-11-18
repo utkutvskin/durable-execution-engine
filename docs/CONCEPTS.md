@@ -118,6 +118,26 @@ A run has a priority, an integer from -1000 to 1000 (default 0) set when it star
 
 An engine runs two pools on one queue: one for decisions (`workflowConcurrency`) and one for steps (`stepConcurrency`). A step that takes an hour holds a step slot, never a decision slot, so the workflows it does not belong to keep moving.
 
+## Concurrency keys
+
+A workflow or a step can limit how many of its runs or executions run at once for one business key, such as one per customer:
+
+```ts
+const checkout = defineWorkflow("checkout", handler, {
+  concurrency: { key: (order: Order) => order.customerId, limit: 1 },
+});
+const charge = defineStep("charge", {
+  handler,
+  concurrency: { key: (payment: Payment) => payment.account, limit: 2 },
+});
+```
+
+The key is evaluated from the input by the worker, since only the worker has the code. The first time a worker leases a task of a run whose workflow has a rule, or a step task whose step has one, it records the key and the limit on the run (and its open tasks) or on the task and gives the lease back at once, without running anything. From then on a database trigger copies the run's key onto every new task of the run, and the dequeue statement leases a keyed task only when it holds a slot: a row in `concurrency_slots`, whose primary key (namespace, pool, key, slot number below the limit) makes two holders of one slot impossible however many workers dequeue at once. Runs and steps are separate pools.
+
+A run holds its slot while it has an open task, pending or leased, and a trigger frees it when its last open task closes. A run that sleeps, waits for a signal, an event or a child has no open task, so it holds no slot, and when it wakes its task waits for one like any other. A step holds its slot while its lease is live: an ack or nack frees it, and a lease that expires because a worker died frees it too, so the next dequeue can give the slot to the redelivered task or to another. A run's slot is not tied to one lease: when a worker dies mid-decision the run keeps its slot and the redelivered task continues it.
+
+Every acquisition and release is written to `concurrency_slot_history` in the order of one sequence, and the invariant checker's `concurrency-limit-held` reads it to prove that no key ever had more holders than its limit. `dee_concurrency_slots_held` and `dee_concurrency_queued_tasks` report each key, and the run page shows a run that waits for a slot.
+
 ## Guarantees and limits
 
 | The engine guarantees                                             | The engine does not guarantee                         |
