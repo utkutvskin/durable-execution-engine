@@ -17,6 +17,10 @@ import { urlForSchema } from "./test-support.ts";
 const WF = fileURLToPath(new URL("../bin/wf.js", import.meta.url));
 const REPO = fileURLToPath(new URL("../../..", import.meta.url));
 const KEY = "dee_process-test-key-000001";
+const PER_KEY_METRICS: readonly string[] = [
+  "dee_concurrency_slots_held",
+  "dee_concurrency_queued_tasks",
+];
 
 interface Spawned {
   readonly child: ChildProcessWithoutNullStreams;
@@ -100,7 +104,7 @@ describe("separate wf processes", () => {
     expect(rows.rowCount).toBe(expected.length);
   }, 60_000);
 
-  it("completes the payment saga through wf serve and two wf worker processes with every metric present", async () => {
+  it("completes the payment saga through wf serve and two wf worker processes with every unkeyed metric present", async () => {
     const serve = spawnWf(["serve", "--port", "0", "--host", "127.0.0.1"], {
       ...env,
       WF_API_KEY: KEY,
@@ -165,13 +169,14 @@ describe("separate wf processes", () => {
 
       const sources = [api, ...opsUrls];
       const deadline = Date.now() + 20_000;
-      let missing: string[] = [...ENGINE_METRIC_NAMES];
+      const expected = ENGINE_METRIC_NAMES.filter((name) => !PER_KEY_METRICS.includes(name));
+      let missing: string[] = [...expected];
       let reclaimed = 0;
       while (Date.now() < deadline) {
         const samples = (
           await Promise.all(sources.map((source) => scrape(`${source}/metrics`)))
         ).flatMap((parsed) => parsed.samples);
-        missing = ENGINE_METRIC_NAMES.filter(
+        missing = expected.filter(
           (name) =>
             !samples.some((sample) => sample.name === name || sample.name === `${name}_count`),
         );

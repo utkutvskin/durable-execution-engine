@@ -1,9 +1,10 @@
 import type { Pool } from "pg";
+import { readConcurrencyBacklog } from "../queue/concurrency-keys.ts";
 import type { RecoveryMetrics } from "../recovery/metrics.ts";
 import { createMetricsRegistry, type MetricsRegistry } from "./metrics-registry.ts";
 
 /**
- * The names of the eight metrics `createEngineMetrics` registers.
+ * The names of the ten metrics `createEngineMetrics` registers.
  */
 export const ENGINE_METRIC_NAMES = [
   "dee_queue_depth",
@@ -14,6 +15,8 @@ export const ENGINE_METRIC_NAMES = [
   "dee_runs",
   "dee_tasks_quarantined",
   "dee_leases_reclaimed_total",
+  "dee_concurrency_slots_held",
+  "dee_concurrency_queued_tasks",
 ] as const;
 
 /**
@@ -33,13 +36,17 @@ export type TaskOutcome = "completed" | "failed";
  * lease count; `clock` supplies "now" for the timer lag. Every queue in
  * `queues` always has a `dee_queue_depth` and `dee_tasks_quarantined` series,
  * with the value 0 when nothing waits, so a dashboard sees an idle queue
- * instead of a missing one.
+ * instead of a missing one. `concurrencyKeys` (default 100) caps how many
+ * concurrency keys get a `dee_concurrency_slots_held` and
+ * `dee_concurrency_queued_tasks` series, the keys with the most queued tasks
+ * first, so a key per customer cannot flood the scrape.
  */
 export interface EngineMetricsOptions {
   readonly queues?: readonly string[];
   readonly registry?: MetricsRegistry;
   readonly recovery?: RecoveryMetrics;
   readonly clock?: { now(): Date };
+  readonly concurrencyKeys?: number;
 }
 
 /**
@@ -100,6 +107,14 @@ export function createEngineMetrics(pool: Pool, options: EngineMetricsOptions = 
   const quarantined = registry.gauge({
     name: "dee_tasks_quarantined",
     help: "Tasks parked as poison, by queue.",
+  });
+  const slotsHeld = registry.gauge({
+    name: "dee_concurrency_slots_held",
+    help: "Concurrency slots held, by namespace, pool (run or step) and key.",
+  });
+  const queuedByKey = registry.gauge({
+    name: "dee_concurrency_queued_tasks",
+    help: "Due tasks of a concurrency key that no slot was given to yet, by namespace, pool and key.",
   });
   const reclaimed = registry.counter({
     name: "dee_leases_reclaimed_total",
@@ -164,6 +179,18 @@ export function createEngineMetrics(pool: Pool, options: EngineMetricsOptions = 
     retries.set({}, Number(retried.rows[0]?.total ?? 0));
 
     reclaimed.set({}, options.recovery?.snapshot().leasesReclaimed ?? 0);
+
+    const backlog = await readConcurrencyBacklog(pool, {
+      limit: options.concurrencyKeys ?? 100,
+      clock: { now: () => now },
+    });
+    slotsHeld.clear();
+    queuedByKey.clear();
+    for (const entry of backlog) {
+      const labels = { namespace: entry.namespace, scope: entry.scope, key: entry.key };
+      slotsHeld.set(labels, entry.held);
+      queuedByKey.set(labels, entry.queued);
+    }
   });
 
   return {

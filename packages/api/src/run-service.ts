@@ -15,6 +15,7 @@ import {
   systemClock,
   systemRandomSource,
   type Pool,
+  type RunConcurrencyState,
   type RunControl,
   type RunInteractions,
   type UpdateCallOptions,
@@ -25,6 +26,7 @@ import {
   rollbackQuietly,
   compileVisibilityQuery,
   validateMemo,
+  readRunConcurrency,
   validatePriority,
   validateSearchAttributes,
   type SearchAttributes,
@@ -147,7 +149,10 @@ export interface RunSummary {
 }
 
 /**
- * Everything the projection of a run knows.
+ * Everything the projection of a run knows. `describeRun` adds
+ * `concurrency` for a run whose workflow has a concurrency key: the key, its
+ * limit, how many runs hold one of its slots, whether this run holds one and
+ * whether it has work waiting for one.
  */
 export interface RunDescription extends RunSummary {
   readonly input: unknown;
@@ -155,6 +160,7 @@ export interface RunDescription extends RunSummary {
   readonly error: { readonly name: string; readonly message: string } | null;
   readonly lastSequenceNumber: number;
   readonly idempotencyKey: string | null;
+  readonly concurrency?: RunConcurrencyState;
 }
 
 /**
@@ -675,7 +681,9 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     },
 
     async describeRun(namespaceId: string, runId: string): Promise<RunDescription> {
-      return toDescription(await readRun(namespaceId, runId));
+      const description = toDescription(await readRun(namespaceId, runId));
+      const concurrency = await readRunConcurrency(pool, runId);
+      return concurrency === undefined ? description : { ...description, concurrency };
     },
 
     async listRuns(namespaceId: string, input: ListRunsInput): Promise<RunPage> {

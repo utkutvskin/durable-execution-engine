@@ -281,6 +281,62 @@
           "legendFormat": "{{outcome}}"
         }
       ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Tasks queued for a concurrency slot",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, dee_concurrency_queued_tasks)",
+          "legendFormat": "{{scope}} {{key}}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Concurrency slots held",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(10, dee_concurrency_slots_held)",
+          "legendFormat": "{{scope}} {{key}}"
+        }
+      ]
     }
   ]
 }

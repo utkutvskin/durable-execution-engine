@@ -124,10 +124,14 @@ describe("engine production wiring against postgres", () => {
     expect(reclaimed?.value).toBeGreaterThanOrEqual(1);
   });
 
-  it("renders a series for seven of the eight engine metrics on an idle queue", async () => {
+  it("renders a series for every engine metric but latency and the per-key ones on an idle queue", async () => {
     const engine = boot();
     const parsed = parsePrometheusText(await engine.metrics.render());
-    const observedOnly = ["dee_task_latency_seconds"];
+    const observedOnly = [
+      "dee_task_latency_seconds",
+      "dee_concurrency_slots_held",
+      "dee_concurrency_queued_tasks",
+    ];
     for (const name of ENGINE_METRIC_NAMES.filter((entry) => !observedOnly.includes(entry))) {
       expect(
         parsed.samples.some((sample) => sample.name === name),

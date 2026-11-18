@@ -38,6 +38,20 @@ export interface RunDescription extends RunSummary {
   readonly result: unknown;
   readonly error: { readonly name: string; readonly message: string } | null;
   readonly lastSequenceNumber: number;
+  readonly concurrency?: RunConcurrency;
+}
+
+/**
+ * The concurrency key of a run whose workflow has one, as the api describes
+ * it: the key, its limit, how many runs hold a slot, whether this run holds
+ * one and whether it has work waiting for one.
+ */
+export interface RunConcurrency {
+  readonly key: string;
+  readonly limit: number;
+  readonly holders: number;
+  readonly holdsSlot: boolean;
+  readonly waitingForSlot: boolean;
 }
 
 /**

@@ -45,12 +45,12 @@ describe("engine metrics", () => {
     )?.value;
   }
 
-  it("exposes exactly the eight expected metrics in parseable prometheus format", async () => {
+  it("exposes exactly the ten expected metrics in parseable prometheus format", async () => {
     const metrics = createEngineMetrics(database.pool, { clock });
     metrics.observeTaskLatency("default", "completed", 0.2);
     const parsed = parsePrometheusText(await metrics.render());
     expect([...parsed.types.keys()].sort()).toEqual([...ENGINE_METRIC_NAMES].sort());
-    expect(ENGINE_METRIC_NAMES).toHaveLength(8);
+    expect(ENGINE_METRIC_NAMES).toHaveLength(10);
     for (const name of ENGINE_METRIC_NAMES) {
       expect(parsed.help.get(name)).toBeTruthy();
     }
@@ -151,5 +151,27 @@ describe("engine metrics", () => {
     expect(find("dee_task_latency_seconds_bucket", { outcome: "completed", le: "5" })).toBe(2);
     expect(find("dee_task_latency_seconds_bucket", { outcome: "failed", le: "30" })).toBe(0);
     expect(find("dee_task_latency_seconds_bucket", { outcome: "failed", le: "+Inf" })).toBe(1);
+  });
+
+  it("reports held slots and queued tasks per concurrency key", async () => {
+    const queue = createTaskQueue(database.pool, { clock });
+    for (let index = 0; index < 3; index += 1) {
+      const result = await database.pool.query<{ id: string }>(
+        `insert into workflow_runs (namespace_id, workflow_type, concurrency_key, concurrency_limit)
+         values ($1, 'order', 'customer-7', 1) returning id`,
+        [namespaceId],
+      );
+      await queue.enqueue({
+        namespaceId,
+        runId: result.rows[0]?.id ?? "",
+        queueName: "metrics-keys",
+        taskType: "WORKFLOW_TASK",
+      });
+    }
+    await queue.dequeue({ queueName: "metrics-keys", visibilityTimeoutMs: 60_000, limit: 3 });
+
+    const labels = { namespace: "default", scope: "run", key: "customer-7" };
+    expect(await sample("dee_concurrency_slots_held", labels)).toBe(1);
+    expect(await sample("dee_concurrency_queued_tasks", labels)).toBe(2);
   });
 });

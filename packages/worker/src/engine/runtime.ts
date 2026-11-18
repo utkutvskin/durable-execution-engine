@@ -44,7 +44,7 @@ import {
  * claimed to that worker, so decisions advance a cached session instead of
  * replaying the history. `compaction` adds a loop that compacts closed runs
  * every `intervalMs` under `policy` (`batchSize` runs per sweep).
- * `engine.metrics` renders the eight engine metrics: task latency is filled
+ * `engine.metrics` renders the ten engine metrics: task latency is filled
  * from the worker and the reclaimed lease count from the janitor of this
  * engine.
  *

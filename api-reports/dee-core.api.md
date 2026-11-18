@@ -833,7 +833,7 @@ export function enforceWorkflowTimeout(options: {
 }): Promise<WorkflowTimeoutOutcome>;
 
 // @public
-export const ENGINE_METRIC_NAMES: readonly ["dee_queue_depth", "dee_task_latency_seconds", "dee_step_retries_total", "dee_timer_lag_seconds", "dee_active_workers", "dee_runs", "dee_tasks_quarantined", "dee_leases_reclaimed_total"];
+export const ENGINE_METRIC_NAMES: readonly ["dee_queue_depth", "dee_task_latency_seconds", "dee_step_retries_total", "dee_timer_lag_seconds", "dee_active_workers", "dee_runs", "dee_tasks_quarantined", "dee_leases_reclaimed_total", "dee_concurrency_slots_held", "dee_concurrency_queued_tasks"];
 
 // @public
 export interface EngineMetrics {
@@ -850,6 +850,8 @@ export interface EngineMetricsOptions {
     readonly clock?: {
         now(): Date;
     };
+    // (undocumented)
+    readonly concurrencyKeys?: number;
     // (undocumented)
     readonly queues?: readonly string[];
     // (undocumented)
@@ -3643,12 +3645,13 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/invariants/invariant-checker.d.ts:42:5 - (ae-undocumented) Missing documentation for "expectedTaskIds".
 // dist/invariants/invariant-checker.d.ts:43:5 - (ae-undocumented) Missing documentation for "at".
 // dist/invariants/invariant-checker.d.ts:70:5 - (ae-undocumented) Missing documentation for "check".
-// dist/observability/engine-metrics.d.ts:24:5 - (ae-undocumented) Missing documentation for "queues".
-// dist/observability/engine-metrics.d.ts:25:5 - (ae-undocumented) Missing documentation for "registry".
-// dist/observability/engine-metrics.d.ts:26:5 - (ae-undocumented) Missing documentation for "recovery".
-// dist/observability/engine-metrics.d.ts:27:5 - (ae-undocumented) Missing documentation for "clock".
-// dist/observability/engine-metrics.d.ts:37:5 - (ae-undocumented) Missing documentation for "registry".
-// dist/observability/engine-metrics.d.ts:42:5 - (ae-undocumented) Missing documentation for "render".
+// dist/observability/engine-metrics.d.ts:27:5 - (ae-undocumented) Missing documentation for "queues".
+// dist/observability/engine-metrics.d.ts:28:5 - (ae-undocumented) Missing documentation for "registry".
+// dist/observability/engine-metrics.d.ts:29:5 - (ae-undocumented) Missing documentation for "recovery".
+// dist/observability/engine-metrics.d.ts:30:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/observability/engine-metrics.d.ts:33:5 - (ae-undocumented) Missing documentation for "concurrencyKeys".
+// dist/observability/engine-metrics.d.ts:41:5 - (ae-undocumented) Missing documentation for "registry".
+// dist/observability/engine-metrics.d.ts:46:5 - (ae-undocumented) Missing documentation for "render".
 // dist/observability/health.d.ts:6:5 - (ae-undocumented) Missing documentation for "ready".
 // dist/observability/health.d.ts:7:5 - (ae-undocumented) Missing documentation for "checks".
 // dist/observability/health.d.ts:14:5 - (ae-undocumented) Missing documentation for "live".

@@ -59,7 +59,7 @@ describe("api operational endpoints", () => {
     expect(await ready.json()).toEqual({ status: "ok", checks: { database: "ok" } });
   });
 
-  it("serves /metrics in prometheus format with the eight engine metrics", async () => {
+  it("serves /metrics in prometheus format with every engine metric", async () => {
     const response = await fetch(`${running.baseUrl}/metrics`);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/plain; version=0.0.4; charset=utf-8");

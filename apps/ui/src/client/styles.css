@@ -184,3 +184,11 @@ pre {
 .live {
   color: var(--good);
 }
+.hint {
+  color: var(--muted);
+  margin: 0.25rem 0;
+}
+.hint.waiting {
+  color: var(--warn);
+  font-weight: 600;
+}

@@ -1,3 +1,5 @@
+import type { RunConcurrency } from "./api.js";
+
 /**
  * Renders a millisecond offset from the start of a run, such as `+0 ms`,
  * `+1.5 s` or `+2 min`.
@@ -35,4 +37,20 @@ export function formatTimestamp(iso: string): string {
     .replace("T", " ")
     .replace(/\.\d+Z$/, "")
     .replace(/Z$/, "");
+}
+
+/**
+ * The hint the run page shows for a run with a concurrency key, or
+ * `undefined` for a run without one. A run waiting for a slot says how many
+ * runs of its key hold one.
+ */
+export function formatConcurrency(concurrency: RunConcurrency | undefined): string | undefined {
+  if (concurrency === undefined) {
+    return undefined;
+  }
+  const key = `concurrency key "${concurrency.key}" (limit ${String(concurrency.limit)})`;
+  if (concurrency.waitingForSlot) {
+    return `waiting for a slot of ${key}: ${String(concurrency.holders)} of ${String(concurrency.limit)} held by other runs`;
+  }
+  return concurrency.holdsSlot ? `holds a slot of ${key}` : `uses ${key}, holds no slot now`;
 }

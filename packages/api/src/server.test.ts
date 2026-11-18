@@ -299,6 +299,42 @@ describe("http api", () => {
       expect(task.rows).toEqual([{ task_type: "WORKFLOW_TASK", payload: { reason: "start" } }]);
     });
 
+    it("describeRun shows the concurrency slot of a keyed run and of a run waiting for one", async () => {
+      const holder = await startRun(keyA, "keyed", { customer: "c-1" });
+      const waiting = await startRun(keyA, "keyed", { customer: "c-1" });
+      await database.pool.query(
+        `update workflow_runs set concurrency_key = 'c-1', concurrency_limit = 1
+         where id = any($1::uuid[])`,
+        [[holder, waiting]],
+      );
+      await database.pool.query(
+        `insert into concurrency_slots
+           (namespace_id, scope, concurrency_key, slot, slot_limit, run_id, acquired_at)
+         select namespace_id, 'run', 'c-1', 0, 1, id, now() from workflow_runs where id = $1`,
+        [holder],
+      );
+
+      const held = await call(keyA, "GET", `/v1/runs/${holder}`);
+      const queued = await call(keyA, "GET", `/v1/runs/${waiting}`);
+
+      expect(held.body["concurrency"]).toEqual({
+        key: "c-1",
+        limit: 1,
+        holders: 1,
+        holdsSlot: true,
+        waitingForSlot: false,
+      });
+      expect(queued.body["concurrency"]).toEqual({
+        key: "c-1",
+        limit: 1,
+        holders: 1,
+        holdsSlot: false,
+        waitingForSlot: true,
+      });
+      const plain = await call(keyA, "GET", `/v1/runs/${await startRun(keyA)}`);
+      expect(plain.body).not.toHaveProperty("concurrency");
+    });
+
     it("signalRun appends signal_received to the history", async () => {
       const runId = await startRun(keyA);
       const reply = await call(keyA, "POST", `/v1/runs/${runId}/signal`, {

@@ -113,6 +113,19 @@ const runDescriptionSchema = runSummarySchema
     error: z.object({ name: z.string(), message: z.string() }).nullable(),
     lastSequenceNumber: z.number().int(),
     idempotencyKey: z.string().nullable(),
+    concurrency: z
+      .object({
+        key: z.string(),
+        limit: z.number().int(),
+        holders: z.number().int(),
+        holdsSlot: z.boolean(),
+        waitingForSlot: z.boolean(),
+      })
+      .optional()
+      .meta({
+        description:
+          "Present when the run's workflow has a concurrency key: the key, its limit, how many runs hold a slot, whether this run holds one and whether it waits for one.",
+      }),
   })
   .meta({ id: "RunDescription" });
 

@@ -1,6 +1,6 @@
 import { ApiError, type ApiClient, type RunDescription } from "./api.js";
 import { h } from "./dom.js";
-import { formatJson, formatOffset, formatTimestamp } from "./format.js";
+import { formatConcurrency, formatJson, formatOffset, formatTimestamp } from "./format.js";
 import { buildTimeline, mergeEntries, type HistoryEntry, type TimelineItem } from "./timeline.js";
 
 const RECONNECT_MS = 1000;
@@ -85,6 +85,7 @@ export function mountRunView(
       return;
     }
     const open = description.status === "RUNNING";
+    const concurrency = open ? formatConcurrency(description.concurrency) : undefined;
     header.replaceChildren(
       h("h2", {}, description.workflowType),
       h(
@@ -98,6 +99,19 @@ export function mountRunView(
         ` run ${description.runId} started ${formatTimestamp(description.startedAt)}`,
         description.closedAt === null ? "" : `, closed ${formatTimestamp(description.closedAt)}`,
       ),
+      ...(concurrency === undefined
+        ? []
+        : [
+            h(
+              "p",
+              {
+                className:
+                  description.concurrency?.waitingForSlot === true ? "hint waiting" : "hint",
+                testId: "concurrency-hint",
+              },
+              concurrency,
+            ),
+          ]),
     );
     viewers.replaceChildren(
       viewer("input-viewer", "input", description.input),
