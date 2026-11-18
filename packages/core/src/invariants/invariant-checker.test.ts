@@ -241,4 +241,52 @@ describe("invariant checker", () => {
     ]);
     expect((await checker.check({ runIds: [runId] })).waitingRuns).toBe(0);
   });
+  it("reports runs of one key whose slot history overlaps beyond the limit", async () => {
+    const first = await createRun();
+    const second = await createRun();
+    await database.pool.query(
+      `insert into concurrency_slot_history
+         (namespace_id, scope, concurrency_key, slot, slot_limit, run_id, acquired_seq,
+          released_seq)
+       values ($1, 'run', 'overlap-key', 0, 1, $2, 1, 4), ($1, 'run', 'overlap-key', 1, 1, $3, 2, 3)`,
+      [namespaceId, first, second],
+    );
+
+    const held = async (runId: string) =>
+      (await violationsOf(runId)).filter((found) => found.invariant === "concurrency-limit-held");
+
+    expect(await held(second)).toEqual([
+      {
+        invariant: "concurrency-limit-held",
+        runId: second,
+        taskId: null,
+        detail: '2 runs held a slot of key "overlap-key" at once, over its limit of 1',
+      },
+    ]);
+    expect(await held(first)).toEqual([]);
+  });
+
+  it("reports a leased task of a keyed run that holds no slot", async () => {
+    const runId = await createRun([
+      { type: "step_scheduled", stepId: "s1", stepType: "double", input: 1 },
+    ]);
+    await database.pool.query(
+      "update workflow_runs set concurrency_key = 'lonely', concurrency_limit = 1 where id = $1",
+      [runId],
+    );
+    const taskId = await enqueueStepTask(runId, "s1");
+    await database.pool.query(
+      "update tasks set state = 'LEASED', lease_token = gen_random_uuid() where id = $1",
+      [taskId],
+    );
+
+    const violations = await violationsOf(runId, [taskId]);
+
+    expect(violations).toContainEqual({
+      invariant: "concurrency-limit-held",
+      runId,
+      taskId,
+      detail: 'a leased task of workflow key "lonely" holds no slot',
+    });
+  });
 });

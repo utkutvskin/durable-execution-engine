@@ -1,12 +1,14 @@
+import type { ConcurrencyRule } from "../queue/concurrency-keys.ts";
 import type { WorkflowHandler } from "./context.ts";
 
 /**
  * A workflow registered under `workflowType`: its handler, as returned by
- * `defineWorkflow`.
+ * `defineWorkflow`, and its concurrency rule when it has one.
  */
 export interface WorkflowDefinition<TInput = unknown, TResult = unknown> {
   readonly workflowType: string;
   readonly handler: WorkflowHandler<TInput, TResult>;
+  readonly concurrency?: ConcurrencyRule<TInput>;
 }
 
 /**

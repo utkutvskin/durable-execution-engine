@@ -4,7 +4,12 @@
  */
 export const packageName = "@dee/worker";
 
-export { LeaseLostError, ParkTaskError, ShutdownTimeoutError } from "./errors.ts";
+export {
+  LeaseLostError,
+  ParkTaskError,
+  ShutdownTimeoutError,
+  TaskReleasedError,
+} from "./errors.ts";
 export { installShutdownHandlers } from "./shutdown.ts";
 export type { ProcessLike } from "./shutdown.ts";
 export { systemTimers } from "./timers.ts";

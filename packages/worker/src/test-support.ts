@@ -98,6 +98,8 @@ export function createMemoryQueue(): MemoryQueue {
           leaseToken: `lease-${String(sequence)}`,
           visibleAt: new Date(0),
           priority: 0,
+          concurrencyKey: null,
+          stepConcurrencyKey: null,
         });
       }
     },

@@ -69,7 +69,10 @@ export type StepTaskOutcome =
  * its type; `clock`, `random` and `timers` default to the real ones. With
  * `tracing`, each executed attempt emits a `step` span under the run's stored
  * `traceparent`; a delivery whose result is already recorded emits none.
- * `heartbeats` defaults to a `HeartbeatStore` over `pool`.
+ * `heartbeats` defaults to a `HeartbeatStore` over `pool`. `beforeSettle`
+ * runs once a completed, failed or already recorded outcome is stored and
+ * before the task is acked, which is where a worker enqueues the run's next
+ * workflow task so the run never stands without an open task.
  */
 export interface StepTaskProcessorOptions {
   readonly pool: Pool;
@@ -83,6 +86,7 @@ export interface StepTaskProcessorOptions {
   readonly timers?: TimeoutTimers;
   readonly tracing?: Tracing;
   readonly heartbeats?: HeartbeatStore;
+  readonly beforeSettle?: (task: LeasedTask) => Promise<void>;
 }
 
 /**
@@ -328,6 +332,7 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
         return { status: "lease_lost" };
       }
       if (await hasRecordedResult(runId, stepId)) {
+        await options.beforeSettle?.(task);
         await options.queue.ack(task.id, task.leaseToken);
         return { status: "already_recorded" };
       }
@@ -346,6 +351,7 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
           attemptKey: `attempt-${String(attempt)}`,
           outcome: { status: "failed", error },
         });
+        await options.beforeSettle?.(task);
         await options.queue.ack(task.id, task.leaseToken);
         return recorded.recorded ? { status: "failed", attempt } : { status: "already_recorded" };
       };
@@ -454,6 +460,7 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
         attemptKey: `attempt-${String(attempt)}`,
         outcome: { status: "completed", result },
       });
+      await options.beforeSettle?.(task);
       const acked = await options.queue.ack(task.id, task.leaseToken);
       if (!acked) {
         return { status: "lease_lost" };

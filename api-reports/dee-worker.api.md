@@ -388,6 +388,13 @@ export interface TaskContext {
 export type TaskHandler = (task: LeasedTask, context: TaskContext) => Promise<void>;
 
 // @public
+export class TaskReleasedError extends Error {
+    constructor(taskId: string, reason: string);
+    // (undocumented)
+    readonly taskId: string;
+}
+
+// @public
 export interface TimerLoop {
     stop(): Promise<void>;
 }
@@ -565,6 +572,7 @@ export interface WorkerOptions {
 // dist/engine/task-handler.d.ts:46:5 - (ae-undocumented) Missing documentation for "source".
 // dist/errors.d.ts:6:5 - (ae-undocumented) Missing documentation for "taskId".
 // dist/errors.d.ts:14:5 - (ae-undocumented) Missing documentation for "taskId".
+// dist/errors.d.ts:34:5 - (ae-undocumented) Missing documentation for "taskId".
 // dist/identity.d.ts:7:5 - (ae-undocumented) Missing documentation for "id".
 // dist/identity.d.ts:8:5 - (ae-undocumented) Missing documentation for "version".
 // dist/identity.d.ts:15:5 - (ae-undocumented) Missing documentation for "version".

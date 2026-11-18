@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { validateConcurrencyRule, type ConcurrencyRule } from "../queue/concurrency-keys.ts";
 import { resolveRetryPolicy, type RetryPolicy } from "../retry/retry-policy.ts";
 import { detachedStepContext, type StepContext, type StepHandler } from "./step-registry.ts";
 
@@ -14,7 +15,9 @@ import { detachedStepContext, type StepContext, type StepHandler } from "./step-
  * `timeoutMs` is the start-to-close timeout of one attempt.
  * `scheduleToCloseTimeoutMs` bounds the whole step, every attempt and
  * every backoff, from the moment it was scheduled. `heartbeatTimeoutMs`
- * fails an attempt that went that long without a heartbeat.
+ * fails an attempt that went that long without a heartbeat. `concurrency`
+ * limits how many executions with the same key, evaluated from the step's
+ * input, run at once; an execution holds its slot while its task is leased.
  */
 export interface StepDefinition<TInput = unknown, TResult = unknown> {
   readonly stepType: string;
@@ -23,6 +26,7 @@ export interface StepDefinition<TInput = unknown, TResult = unknown> {
   readonly scheduleToCloseTimeoutMs?: number;
   readonly heartbeatTimeoutMs?: number;
   readonly retry?: RetryPolicy;
+  readonly concurrency?: ConcurrencyRule<TInput>;
 }
 
 /**
@@ -39,6 +43,7 @@ export interface DefineStepOptions<TInput, TResult> {
   readonly scheduleToCloseTimeoutMs?: number;
   readonly heartbeatTimeoutMs?: number;
   readonly retry?: Partial<RetryPolicy>;
+  readonly concurrency?: ConcurrencyRule<TInput>;
 }
 
 function checkPositive(stepType: string, name: string, value: number | undefined): void {
@@ -55,7 +60,8 @@ function checkPositive(stepType: string, name: string, value: number | undefined
  * carried on the returned `StepDefinition` for a worker to enforce,
  * `defineStep` itself does not run anything on a timer. `retry`, when
  * given, is filled in from the default policy and validated with
- * `resolveRetryPolicy`.
+ * `resolveRetryPolicy`. A concurrency limit that is not a positive integer
+ * is rejected with `InvalidConcurrencyRuleError`.
  */
 export function defineStep<TInput = unknown, TResult = unknown>(
   stepType: string,
@@ -81,6 +87,10 @@ export function defineStep<TInput = unknown, TResult = unknown>(
   };
 
   const retry = options.retry === undefined ? undefined : resolveRetryPolicy(options.retry);
+  const concurrency =
+    options.concurrency === undefined
+      ? undefined
+      : validateConcurrencyRule(`step "${stepType}"`, options.concurrency);
   return {
     stepType,
     handler,
@@ -92,5 +102,6 @@ export function defineStep<TInput = unknown, TResult = unknown>(
       ? {}
       : { heartbeatTimeoutMs: options.heartbeatTimeoutMs }),
     ...(retry === undefined ? {} : { retry }),
+    ...(concurrency === undefined ? {} : { concurrency }),
   };
 }

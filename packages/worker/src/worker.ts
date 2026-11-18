@@ -1,6 +1,11 @@
 import type { LeasedTask, TaskQueue, TaskType } from "@dee/core";
 import type { WorkerIdentity } from "./identity.ts";
-import { LeaseLostError, ParkTaskError, ShutdownTimeoutError } from "./errors.ts";
+import {
+  LeaseLostError,
+  ParkTaskError,
+  ShutdownTimeoutError,
+  TaskReleasedError,
+} from "./errors.ts";
 import { systemTimers, type Timers } from "./timers.ts";
 
 /**
@@ -362,7 +367,7 @@ export function createWorker(options: WorkerOptions): Worker {
     const failed = failure !== undefined;
     const leaseLost = running.controller.signal.aborted;
     stopHeartbeat(running);
-    if (running.dropped || leaseLost) {
+    if (running.dropped || leaseLost || failure?.error instanceof TaskReleasedError) {
       return;
     }
     try {
@@ -392,7 +397,9 @@ export function createWorker(options: WorkerOptions): Worker {
       await config.handler(running.task, { signal: running.controller.signal });
     } catch (error) {
       failure = { error };
-      config.onError(error);
+      if (!(error instanceof TaskReleasedError)) {
+        config.onError(error);
+      }
     }
     await settle(running, failure);
     inFlight.delete(running.task.id);

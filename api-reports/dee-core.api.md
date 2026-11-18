@@ -264,6 +264,34 @@ export interface CompleteUpdateCommand {
 export function computeBackoffMs(policy: RetryPolicy, failedAttempt: number, random: RandomSource): number;
 
 // @public
+export interface ConcurrencyAssignment {
+    // (undocumented)
+    readonly leaseToken: string;
+    // (undocumented)
+    readonly run?: ResolvedConcurrency;
+    // (undocumented)
+    readonly runId: string;
+    // (undocumented)
+    readonly step?: ResolvedConcurrency;
+    // (undocumented)
+    readonly taskId: string;
+}
+
+// @public
+export interface ConcurrencyBacklogEntry {
+    // (undocumented)
+    readonly held: number;
+    // (undocumented)
+    readonly key: string;
+    // (undocumented)
+    readonly namespace: string;
+    // (undocumented)
+    readonly queued: number;
+    // (undocumented)
+    readonly scope: "run" | "step";
+}
+
+// @public
 export class ConcurrencyError extends Error {
     constructor(runId: string, expectedSeq: number, actualSeq?: number);
     // (undocumented)
@@ -272,6 +300,14 @@ export class ConcurrencyError extends Error {
     readonly expectedSeq: number;
     // (undocumented)
     readonly runId: string;
+}
+
+// @public
+export interface ConcurrencyRule<TInput = never> {
+    // (undocumented)
+    readonly key: (input: TInput) => string;
+    // (undocumented)
+    readonly limit: number;
 }
 
 // @public
@@ -665,6 +701,8 @@ export function defineStep<TInput = unknown, TResult = unknown>(stepType: string
 // @public
 export interface DefineStepOptions<TInput, TResult> {
     // (undocumented)
+    readonly concurrency?: ConcurrencyRule<TInput>;
+    // (undocumented)
     readonly handler: StepHandler<TInput, TResult>;
     // (undocumented)
     readonly heartbeatTimeoutMs?: number;
@@ -686,7 +724,13 @@ export interface DefineStepOptions<TInput, TResult> {
 export function defineUpdate<TArgument = unknown, TResult = unknown>(updateName: string, spec: UpdateSpec<TArgument, TResult>): UpdateDefinition<TArgument, TResult>;
 
 // @public
-export function defineWorkflow<TInput = unknown, TResult = unknown>(workflowType: string, handler: WorkflowHandler<TInput, TResult>): WorkflowDefinition<TInput, TResult>;
+export function defineWorkflow<TInput = unknown, TResult = unknown>(workflowType: string, handler: WorkflowHandler<TInput, TResult>, options?: DefineWorkflowOptions<TInput>): WorkflowDefinition<TInput, TResult>;
+
+// @public
+export interface DefineWorkflowOptions<TInput> {
+    // (undocumented)
+    readonly concurrency?: ConcurrencyRule<TInput>;
+}
 
 // @public
 export interface DemoContext {
@@ -1093,6 +1137,11 @@ export class IdempotencyKeyConflictError extends Error {
 export function insertTimerOnClient(client: PoolClient, input: ScheduleTimerInput): Promise<boolean>;
 
 // @public
+export class InvalidConcurrencyRuleError extends RangeError {
+    constructor(message: string);
+}
+
+// @public
 export class InvalidHistoryExportError extends Error {
     constructor(source: string, reason: string, sequenceNumber?: number);
     // (undocumented)
@@ -1135,7 +1184,7 @@ export class InvalidTransitionError extends Error {
 }
 
 // @public
-export const INVARIANT_NAMES: readonly ["run-terminal-or-advancing", "task-not-lost", "step-result-written-once", "projection-consistent", "timer-fired-once"];
+export const INVARIANT_NAMES: readonly ["run-terminal-or-advancing", "task-not-lost", "step-result-written-once", "projection-consistent", "timer-fired-once", "concurrency-limit-held"];
 
 // @public
 export interface InvariantChecker {
@@ -1145,6 +1194,8 @@ export interface InvariantChecker {
 
 // @public
 export interface InvariantCheckOptions {
+    // (undocumented)
+    readonly at?: Date;
     // (undocumented)
     readonly expectedTaskIds?: readonly string[];
     // (undocumented)
@@ -1223,6 +1274,8 @@ export interface LeasedTask {
     // (undocumented)
     readonly attempts: number;
     // (undocumented)
+    readonly concurrencyKey: string | null;
+    // (undocumented)
     readonly id: string;
     // (undocumented)
     readonly leaseToken: string;
@@ -1236,6 +1289,8 @@ export interface LeasedTask {
     readonly queueName: string;
     // (undocumented)
     readonly runId: string;
+    // (undocumented)
+    readonly stepConcurrencyKey: string | null;
     // (undocumented)
     readonly taskType: TaskType;
     // (undocumented)
@@ -1329,6 +1384,9 @@ export function markRunWaiting(pool: Pool, mark: RunWaitingMark): Promise<void>;
 
 // @public
 export function maskSensitiveFields(value: unknown, sensitiveFields: readonly string[]): unknown;
+
+// @public
+export const MAX_CONCURRENCY_KEY_LENGTH = 256;
 
 // @public
 export const MAX_EVENT_BUFFER_MS: number;
@@ -1631,6 +1689,12 @@ export interface RateLimiter {
 }
 
 // @public
+export function readConcurrencyBacklog(pool: Pool, options?: {
+    readonly limit?: number;
+    readonly clock?: ClockSource;
+}): Promise<ConcurrencyBacklogEntry[]>;
+
+// @public
 export interface ReadinessResult {
     // (undocumented)
     readonly checks: Readonly<Record<string, "ok" | "failed">>;
@@ -1640,6 +1704,9 @@ export interface ReadinessResult {
 
 // @public
 export function readRunChain(pool: Pool, firstRunId: string): Promise<ChainRun[]>;
+
+// @public
+export function readRunConcurrency(pool: Pool, runId: string): Promise<RunConcurrencyState | undefined>;
 
 // @public
 export function readSnapshotOnClient(client: Pick<PoolClient, "query">, runId: string): Promise<RunSnapshot | undefined>;
@@ -1871,10 +1938,26 @@ export function requestCancellationOnClient(client: PoolClient, codec: Codec, ru
 }>;
 
 // @public
+export function requeueWithConcurrency(pool: Pool, assignment: ConcurrencyAssignment, options?: {
+    readonly clock?: ClockSource;
+}): Promise<boolean>;
+
+// @public
+export function resolveConcurrency<TInput>(owner: string, rule: ConcurrencyRule<TInput>, input: TInput): ResolvedConcurrency;
+
+// @public
 export function resolveCorrelationId(candidate: string | null | undefined): string;
 
 // @public
 export function resolveDatabaseUrl(env: DatabaseUrlEnv): string;
+
+// @public
+export interface ResolvedConcurrency {
+    // (undocumented)
+    readonly key: string;
+    // (undocumented)
+    readonly limit: number;
+}
 
 // @public
 export function resolveRetryPolicy(partial?: Partial<RetryPolicy>): RetryPolicy;
@@ -1998,6 +2081,20 @@ export const runCompletedEventSchema: z.ZodObject<{
     type: z.ZodLiteral<"run_completed">;
     result: z.ZodUnknown;
 }, z.core.$strip>;
+
+// @public
+export interface RunConcurrencyState {
+    // (undocumented)
+    readonly holders: number;
+    // (undocumented)
+    readonly holdsSlot: boolean;
+    // (undocumented)
+    readonly key: string;
+    // (undocumented)
+    readonly limit: number;
+    // (undocumented)
+    readonly waitingForSlot: boolean;
+}
 
 // @public
 export interface RunControl {
@@ -2543,6 +2640,8 @@ export interface StepContext {
 // @public
 export interface StepDefinition<TInput = unknown, TResult = unknown> {
     // (undocumented)
+    readonly concurrency?: ConcurrencyRule<TInput>;
+    // (undocumented)
     readonly handler: (input: TInput, context?: StepContext) => TResult | Promise<TResult>;
     // (undocumented)
     readonly heartbeatTimeoutMs?: number;
@@ -2681,6 +2780,8 @@ export interface StepTaskProcessor {
 export interface StepTaskProcessorOptions {
     // (undocumented)
     readonly attempts: AttemptLog;
+    // (undocumented)
+    readonly beforeSettle?: (task: LeasedTask) => Promise<void>;
     // (undocumented)
     readonly clock?: ClockSource;
     // (undocumented)
@@ -3098,6 +3199,9 @@ export interface UpsertSearchAttributesCommand {
 }
 
 // @public
+export function validateConcurrencyRule<TInput>(owner: string, rule: ConcurrencyRule<TInput>): ConcurrencyRule<TInput>;
+
+// @public
 export function validateMemo(value: unknown): unknown;
 
 // @public
@@ -3213,6 +3317,8 @@ export function workflowDeadline(startedAt: Date, timeoutMs: number): Date;
 
 // @public
 export interface WorkflowDefinition<TInput = unknown, TResult = unknown> {
+    // (undocumented)
+    readonly concurrency?: ConcurrencyRule<TInput>;
     // (undocumented)
     readonly handler: WorkflowHandler<TInput, TResult>;
     // (undocumented)
@@ -3533,9 +3639,10 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/invariants/invariant-checker.d.ts:29:5 - (ae-undocumented) Missing documentation for "tasksChecked".
 // dist/invariants/invariant-checker.d.ts:30:5 - (ae-undocumented) Missing documentation for "waitingRuns".
 // dist/invariants/invariant-checker.d.ts:31:5 - (ae-undocumented) Missing documentation for "violations".
-// dist/invariants/invariant-checker.d.ts:40:5 - (ae-undocumented) Missing documentation for "runIds".
-// dist/invariants/invariant-checker.d.ts:41:5 - (ae-undocumented) Missing documentation for "expectedTaskIds".
-// dist/invariants/invariant-checker.d.ts:63:5 - (ae-undocumented) Missing documentation for "check".
+// dist/invariants/invariant-checker.d.ts:41:5 - (ae-undocumented) Missing documentation for "runIds".
+// dist/invariants/invariant-checker.d.ts:42:5 - (ae-undocumented) Missing documentation for "expectedTaskIds".
+// dist/invariants/invariant-checker.d.ts:43:5 - (ae-undocumented) Missing documentation for "at".
+// dist/invariants/invariant-checker.d.ts:70:5 - (ae-undocumented) Missing documentation for "check".
 // dist/observability/engine-metrics.d.ts:24:5 - (ae-undocumented) Missing documentation for "queues".
 // dist/observability/engine-metrics.d.ts:25:5 - (ae-undocumented) Missing documentation for "registry".
 // dist/observability/engine-metrics.d.ts:26:5 - (ae-undocumented) Missing documentation for "recovery".
@@ -3584,6 +3691,25 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/observability/tracing.d.ts:42:5 - (ae-undocumented) Missing documentation for "setAttributes".
 // dist/observability/tracing.d.ts:47:5 - (ae-undocumented) Missing documentation for "end".
 // dist/observability/tracing.d.ts:55:5 - (ae-undocumented) Missing documentation for "startSpan".
+// dist/queue/concurrency-keys.d.ts:13:5 - (ae-undocumented) Missing documentation for "key".
+// dist/queue/concurrency-keys.d.ts:14:5 - (ae-undocumented) Missing documentation for "limit".
+// dist/queue/concurrency-keys.d.ts:21:5 - (ae-undocumented) Missing documentation for "key".
+// dist/queue/concurrency-keys.d.ts:22:5 - (ae-undocumented) Missing documentation for "limit".
+// dist/queue/concurrency-keys.d.ts:54:5 - (ae-undocumented) Missing documentation for "taskId".
+// dist/queue/concurrency-keys.d.ts:55:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/queue/concurrency-keys.d.ts:56:5 - (ae-undocumented) Missing documentation for "leaseToken".
+// dist/queue/concurrency-keys.d.ts:57:5 - (ae-undocumented) Missing documentation for "run".
+// dist/queue/concurrency-keys.d.ts:58:5 - (ae-undocumented) Missing documentation for "step".
+// dist/queue/concurrency-keys.d.ts:78:5 - (ae-undocumented) Missing documentation for "key".
+// dist/queue/concurrency-keys.d.ts:79:5 - (ae-undocumented) Missing documentation for "limit".
+// dist/queue/concurrency-keys.d.ts:80:5 - (ae-undocumented) Missing documentation for "holders".
+// dist/queue/concurrency-keys.d.ts:81:5 - (ae-undocumented) Missing documentation for "holdsSlot".
+// dist/queue/concurrency-keys.d.ts:82:5 - (ae-undocumented) Missing documentation for "waitingForSlot".
+// dist/queue/concurrency-keys.d.ts:95:5 - (ae-undocumented) Missing documentation for "scope".
+// dist/queue/concurrency-keys.d.ts:96:5 - (ae-undocumented) Missing documentation for "namespace".
+// dist/queue/concurrency-keys.d.ts:97:5 - (ae-undocumented) Missing documentation for "key".
+// dist/queue/concurrency-keys.d.ts:98:5 - (ae-undocumented) Missing documentation for "held".
+// dist/queue/concurrency-keys.d.ts:99:5 - (ae-undocumented) Missing documentation for "queued".
 // dist/queue/step-task-enqueue.d.ts:7:5 - (ae-undocumented) Missing documentation for "namespaceId".
 // dist/queue/step-task-enqueue.d.ts:8:5 - (ae-undocumented) Missing documentation for "runId".
 // dist/queue/step-task-enqueue.d.ts:9:5 - (ae-undocumented) Missing documentation for "queueName".
@@ -3601,25 +3727,27 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/queue/task-queue.d.ts:25:5 - (ae-undocumented) Missing documentation for "leaseToken".
 // dist/queue/task-queue.d.ts:26:5 - (ae-undocumented) Missing documentation for "visibleAt".
 // dist/queue/task-queue.d.ts:27:5 - (ae-undocumented) Missing documentation for "priority".
-// dist/queue/task-queue.d.ts:34:5 - (ae-undocumented) Missing documentation for "namespaceId".
-// dist/queue/task-queue.d.ts:35:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/queue/task-queue.d.ts:36:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/queue/task-queue.d.ts:37:5 - (ae-undocumented) Missing documentation for "taskType".
-// dist/queue/task-queue.d.ts:38:5 - (ae-undocumented) Missing documentation for "payload".
-// dist/queue/task-queue.d.ts:39:5 - (ae-undocumented) Missing documentation for "delayMs".
-// dist/queue/task-queue.d.ts:63:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/queue/task-queue.d.ts:64:5 - (ae-undocumented) Missing documentation for "visibilityTimeoutMs".
-// dist/queue/task-queue.d.ts:65:5 - (ae-undocumented) Missing documentation for "limit".
-// dist/queue/task-queue.d.ts:66:5 - (ae-undocumented) Missing documentation for "workerId".
-// dist/queue/task-queue.d.ts:67:5 - (ae-undocumented) Missing documentation for "workerVersion".
-// dist/queue/task-queue.d.ts:68:5 - (ae-undocumented) Missing documentation for "stickyFor".
-// dist/queue/task-queue.d.ts:69:5 - (ae-undocumented) Missing documentation for "taskTypes".
-// dist/queue/task-queue.d.ts:78:5 - (ae-undocumented) Missing documentation for "enqueue".
-// dist/queue/task-queue.d.ts:79:5 - (ae-undocumented) Missing documentation for "dequeue".
-// dist/queue/task-queue.d.ts:80:5 - (ae-undocumented) Missing documentation for "ack".
-// dist/queue/task-queue.d.ts:81:5 - (ae-undocumented) Missing documentation for "nack".
-// dist/queue/task-queue.d.ts:82:5 - (ae-undocumented) Missing documentation for "quarantine".
-// dist/queue/task-queue.d.ts:83:5 - (ae-undocumented) Missing documentation for "extend".
+// dist/queue/task-queue.d.ts:28:5 - (ae-undocumented) Missing documentation for "concurrencyKey".
+// dist/queue/task-queue.d.ts:29:5 - (ae-undocumented) Missing documentation for "stepConcurrencyKey".
+// dist/queue/task-queue.d.ts:36:5 - (ae-undocumented) Missing documentation for "namespaceId".
+// dist/queue/task-queue.d.ts:37:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/queue/task-queue.d.ts:38:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/queue/task-queue.d.ts:39:5 - (ae-undocumented) Missing documentation for "taskType".
+// dist/queue/task-queue.d.ts:40:5 - (ae-undocumented) Missing documentation for "payload".
+// dist/queue/task-queue.d.ts:41:5 - (ae-undocumented) Missing documentation for "delayMs".
+// dist/queue/task-queue.d.ts:65:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/queue/task-queue.d.ts:66:5 - (ae-undocumented) Missing documentation for "visibilityTimeoutMs".
+// dist/queue/task-queue.d.ts:67:5 - (ae-undocumented) Missing documentation for "limit".
+// dist/queue/task-queue.d.ts:68:5 - (ae-undocumented) Missing documentation for "workerId".
+// dist/queue/task-queue.d.ts:69:5 - (ae-undocumented) Missing documentation for "workerVersion".
+// dist/queue/task-queue.d.ts:70:5 - (ae-undocumented) Missing documentation for "stickyFor".
+// dist/queue/task-queue.d.ts:71:5 - (ae-undocumented) Missing documentation for "taskTypes".
+// dist/queue/task-queue.d.ts:80:5 - (ae-undocumented) Missing documentation for "enqueue".
+// dist/queue/task-queue.d.ts:81:5 - (ae-undocumented) Missing documentation for "dequeue".
+// dist/queue/task-queue.d.ts:82:5 - (ae-undocumented) Missing documentation for "ack".
+// dist/queue/task-queue.d.ts:83:5 - (ae-undocumented) Missing documentation for "nack".
+// dist/queue/task-queue.d.ts:84:5 - (ae-undocumented) Missing documentation for "quarantine".
+// dist/queue/task-queue.d.ts:85:5 - (ae-undocumented) Missing documentation for "extend".
 // dist/quota/quota-store.d.ts:6:5 - (ae-undocumented) Missing documentation for "maxConcurrentRuns".
 // dist/quota/quota-store.d.ts:7:5 - (ae-undocumented) Missing documentation for "maxPendingTasks".
 // dist/quota/quota-store.d.ts:8:5 - (ae-undocumented) Missing documentation for "ratePerSecond".
@@ -3760,17 +3888,18 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/retry/retry-policy.d.ts:15:5 - (ae-undocumented) Missing documentation for "maxAttempts".
 // dist/retry/retry-policy.d.ts:16:5 - (ae-undocumented) Missing documentation for "jitter".
 // dist/retry/retry-policy.d.ts:17:5 - (ae-undocumented) Missing documentation for "nonRetryableErrorNames".
-// dist/retry/step-task-processor.d.ts:59:5 - (ae-undocumented) Missing documentation for "pool".
-// dist/retry/step-task-processor.d.ts:60:5 - (ae-undocumented) Missing documentation for "queue".
-// dist/retry/step-task-processor.d.ts:61:5 - (ae-undocumented) Missing documentation for "recorder".
-// dist/retry/step-task-processor.d.ts:62:5 - (ae-undocumented) Missing documentation for "attempts".
-// dist/retry/step-task-processor.d.ts:63:5 - (ae-undocumented) Missing documentation for "deadLetters".
-// dist/retry/step-task-processor.d.ts:64:5 - (ae-undocumented) Missing documentation for "lookup".
-// dist/retry/step-task-processor.d.ts:65:5 - (ae-undocumented) Missing documentation for "clock".
-// dist/retry/step-task-processor.d.ts:66:5 - (ae-undocumented) Missing documentation for "random".
-// dist/retry/step-task-processor.d.ts:67:5 - (ae-undocumented) Missing documentation for "timers".
-// dist/retry/step-task-processor.d.ts:68:5 - (ae-undocumented) Missing documentation for "tracing".
-// dist/retry/step-task-processor.d.ts:69:5 - (ae-undocumented) Missing documentation for "heartbeats".
+// dist/retry/step-task-processor.d.ts:62:5 - (ae-undocumented) Missing documentation for "pool".
+// dist/retry/step-task-processor.d.ts:63:5 - (ae-undocumented) Missing documentation for "queue".
+// dist/retry/step-task-processor.d.ts:64:5 - (ae-undocumented) Missing documentation for "recorder".
+// dist/retry/step-task-processor.d.ts:65:5 - (ae-undocumented) Missing documentation for "attempts".
+// dist/retry/step-task-processor.d.ts:66:5 - (ae-undocumented) Missing documentation for "deadLetters".
+// dist/retry/step-task-processor.d.ts:67:5 - (ae-undocumented) Missing documentation for "lookup".
+// dist/retry/step-task-processor.d.ts:68:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/retry/step-task-processor.d.ts:69:5 - (ae-undocumented) Missing documentation for "random".
+// dist/retry/step-task-processor.d.ts:70:5 - (ae-undocumented) Missing documentation for "timers".
+// dist/retry/step-task-processor.d.ts:71:5 - (ae-undocumented) Missing documentation for "tracing".
+// dist/retry/step-task-processor.d.ts:72:5 - (ae-undocumented) Missing documentation for "heartbeats".
+// dist/retry/step-task-processor.d.ts:73:5 - (ae-undocumented) Missing documentation for "beforeSettle".
 // dist/retry/timeout.d.ts:8:5 - (ae-undocumented) Missing documentation for "setTimeout".
 // dist/retry/timeout.d.ts:9:5 - (ae-undocumented) Missing documentation for "clearTimeout".
 // dist/retry/timeout.d.ts:16:5 - (ae-undocumented) Missing documentation for "timeoutMs".
@@ -3993,20 +4122,22 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/workflow/define-signal.d.ts:17:5 - (ae-undocumented) Missing documentation for "queryName".
 // dist/workflow/define-signal.d.ts:18:5 - (ae-undocumented) Missing documentation for "argumentType".
 // dist/workflow/define-signal.d.ts:19:5 - (ae-undocumented) Missing documentation for "resultType".
-// dist/workflow/define-step.d.ts:19:5 - (ae-undocumented) Missing documentation for "stepType".
-// dist/workflow/define-step.d.ts:20:5 - (ae-undocumented) Missing documentation for "handler".
-// dist/workflow/define-step.d.ts:21:5 - (ae-undocumented) Missing documentation for "timeoutMs".
-// dist/workflow/define-step.d.ts:22:5 - (ae-undocumented) Missing documentation for "scheduleToCloseTimeoutMs".
-// dist/workflow/define-step.d.ts:23:5 - (ae-undocumented) Missing documentation for "heartbeatTimeoutMs".
-// dist/workflow/define-step.d.ts:24:5 - (ae-undocumented) Missing documentation for "retry".
-// dist/workflow/define-step.d.ts:32:5 - (ae-undocumented) Missing documentation for "handler".
-// dist/workflow/define-step.d.ts:33:5 - (ae-undocumented) Missing documentation for "input".
-// dist/workflow/define-step.d.ts:34:5 - (ae-undocumented) Missing documentation for "output".
-// dist/workflow/define-step.d.ts:35:5 - (ae-undocumented) Missing documentation for "timeoutMs".
-// dist/workflow/define-step.d.ts:36:5 - (ae-undocumented) Missing documentation for "startToCloseTimeoutMs".
-// dist/workflow/define-step.d.ts:37:5 - (ae-undocumented) Missing documentation for "scheduleToCloseTimeoutMs".
-// dist/workflow/define-step.d.ts:38:5 - (ae-undocumented) Missing documentation for "heartbeatTimeoutMs".
-// dist/workflow/define-step.d.ts:39:5 - (ae-undocumented) Missing documentation for "retry".
+// dist/workflow/define-step.d.ts:22:5 - (ae-undocumented) Missing documentation for "stepType".
+// dist/workflow/define-step.d.ts:23:5 - (ae-undocumented) Missing documentation for "handler".
+// dist/workflow/define-step.d.ts:24:5 - (ae-undocumented) Missing documentation for "timeoutMs".
+// dist/workflow/define-step.d.ts:25:5 - (ae-undocumented) Missing documentation for "scheduleToCloseTimeoutMs".
+// dist/workflow/define-step.d.ts:26:5 - (ae-undocumented) Missing documentation for "heartbeatTimeoutMs".
+// dist/workflow/define-step.d.ts:27:5 - (ae-undocumented) Missing documentation for "retry".
+// dist/workflow/define-step.d.ts:28:5 - (ae-undocumented) Missing documentation for "concurrency".
+// dist/workflow/define-step.d.ts:36:5 - (ae-undocumented) Missing documentation for "handler".
+// dist/workflow/define-step.d.ts:37:5 - (ae-undocumented) Missing documentation for "input".
+// dist/workflow/define-step.d.ts:38:5 - (ae-undocumented) Missing documentation for "output".
+// dist/workflow/define-step.d.ts:39:5 - (ae-undocumented) Missing documentation for "timeoutMs".
+// dist/workflow/define-step.d.ts:40:5 - (ae-undocumented) Missing documentation for "startToCloseTimeoutMs".
+// dist/workflow/define-step.d.ts:41:5 - (ae-undocumented) Missing documentation for "scheduleToCloseTimeoutMs".
+// dist/workflow/define-step.d.ts:42:5 - (ae-undocumented) Missing documentation for "heartbeatTimeoutMs".
+// dist/workflow/define-step.d.ts:43:5 - (ae-undocumented) Missing documentation for "retry".
+// dist/workflow/define-step.d.ts:44:5 - (ae-undocumented) Missing documentation for "concurrency".
 // dist/workflow/define-update.d.ts:19:5 - (ae-undocumented) Missing documentation for "updateName".
 // dist/workflow/define-update.d.ts:20:5 - (ae-undocumented) Missing documentation for "validate".
 // dist/workflow/define-update.d.ts:21:5 - (ae-undocumented) Missing documentation for "handler".
@@ -4014,6 +4145,7 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/workflow/define-update.d.ts:29:5 - (ae-undocumented) Missing documentation for "handler".
 // dist/workflow/define-update.d.ts:36:5 - (ae-undocumented) Missing documentation for "updateName".
 // dist/workflow/define-update.d.ts:44:5 - (ae-undocumented) Missing documentation for "updateName".
+// dist/workflow/define-workflow.d.ts:11:5 - (ae-undocumented) Missing documentation for "concurrency".
 // dist/workflow/error-serialization.d.ts:11:5 - (ae-undocumented) Missing documentation for "name".
 // dist/workflow/error-serialization.d.ts:12:5 - (ae-undocumented) Missing documentation for "message".
 // dist/workflow/error-serialization.d.ts:13:5 - (ae-undocumented) Missing documentation for "stack".
@@ -4047,10 +4179,11 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/workflow/step-registry.d.ts:9:5 - (ae-undocumented) Missing documentation for "signal".
 // dist/workflow/step-registry.d.ts:47:5 - (ae-undocumented) Missing documentation for "register".
 // dist/workflow/step-registry.d.ts:48:5 - (ae-undocumented) Missing documentation for "get".
-// dist/workflow/workflow-registry.d.ts:7:5 - (ae-undocumented) Missing documentation for "workflowType".
-// dist/workflow/workflow-registry.d.ts:8:5 - (ae-undocumented) Missing documentation for "handler".
-// dist/workflow/workflow-registry.d.ts:17:5 - (ae-undocumented) Missing documentation for "register".
-// dist/workflow/workflow-registry.d.ts:18:5 - (ae-undocumented) Missing documentation for "get".
+// dist/workflow/workflow-registry.d.ts:8:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/workflow/workflow-registry.d.ts:9:5 - (ae-undocumented) Missing documentation for "handler".
+// dist/workflow/workflow-registry.d.ts:10:5 - (ae-undocumented) Missing documentation for "concurrency".
+// dist/workflow/workflow-registry.d.ts:19:5 - (ae-undocumented) Missing documentation for "register".
+// dist/workflow/workflow-registry.d.ts:20:5 - (ae-undocumented) Missing documentation for "get".
 
 // (No @packageDocumentation comment for this package)
 

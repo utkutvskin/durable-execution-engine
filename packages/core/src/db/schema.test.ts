@@ -84,6 +84,8 @@ describe("initial schema", () => {
     );
     expect(result.rows.map((row) => row.table_name)).toEqual([
       "api_keys",
+      "concurrency_slot_history",
+      "concurrency_slots",
       "dead_letters",
       "event_triggers",
       "event_waits",

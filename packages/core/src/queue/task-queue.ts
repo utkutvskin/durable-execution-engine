@@ -29,6 +29,8 @@ export interface LeasedTask {
   readonly leaseToken: string;
   readonly visibleAt: Date;
   readonly priority: number;
+  readonly concurrencyKey: string | null;
+  readonly stepConcurrencyKey: string | null;
 }
 
 /**
@@ -109,6 +111,8 @@ interface TaskRow {
   lease_token: string;
   visible_at: Date;
   priority: number;
+  concurrency_key: string | null;
+  step_concurrency_key: string | null;
 }
 
 function toLeasedTask(row: TaskRow): LeasedTask {
@@ -123,6 +127,8 @@ function toLeasedTask(row: TaskRow): LeasedTask {
     leaseToken: row.lease_token,
     visibleAt: row.visible_at,
     priority: row.priority,
+    concurrencyKey: row.concurrency_key,
+    stepConcurrencyKey: row.step_concurrency_key,
   };
 }
 
@@ -224,9 +230,15 @@ export function createTaskQueue(
                     order by lane_task.visible_at, lane_task.created_at, lane_task.id
                   ) as lane_rank
            from lanes cross join lateral (
-             select id, namespace_id, priority, visible_at, created_at,
+             select id, namespace_id, run_id, priority, visible_at, created_at,
+                    concurrency_key, concurrency_limit, step_concurrency_key,
+                    step_concurrency_limit,
                     state = 'LEASED' as reclaimed,
-                    state = 'LEASED' and reclaim_count + 1 >= $8 as poisoned
+                    state = 'LEASED' and reclaim_count + 1 >= $8 as poisoned,
+                    concurrency_key is not null and exists (
+                      select 1 from concurrency_slots held
+                      where held.scope = 'run' and held.run_id = tasks.run_id
+                    ) as run_holds
              from tasks
              where queue_name = $1 and namespace_id = lanes.namespace_id
                and task_type = lanes.task_type
@@ -237,19 +249,98 @@ export function createTaskQueue(
                    and sticky.worker_id <> $7
                    and sticky.expires_at > ${at("$2")}
                ))
+               and (concurrency_key is null or exists (
+                 select 1 from concurrency_slots held
+                 where held.scope = 'run' and held.run_id = tasks.run_id
+               ) or (
+                 select count(*) from concurrency_slots held
+                 where held.namespace_id = tasks.namespace_id and held.scope = 'run'
+                   and held.concurrency_key = tasks.concurrency_key
+               ) < concurrency_limit)
+               and (step_concurrency_key is null or (
+                 select count(*) from concurrency_slots held
+                 where held.namespace_id = tasks.namespace_id and held.scope = 'step'
+                   and held.concurrency_key = tasks.step_concurrency_key
+                   and held.expires_at > ${at("$2")}
+               ) < step_concurrency_limit)
              order by priority desc, visible_at, created_at, id
              limit $4
              for update skip locked
            ) lane_task
          ),
          next as (
-           select id, reclaimed, poisoned,
+           select id, namespace_id, run_id, reclaimed, poisoned, run_holds, concurrency_key,
+                  concurrency_limit, step_concurrency_key, step_concurrency_limit,
+                  gen_random_uuid() as lease_token,
                   row_number() over (
                     order by priority desc, lane_rank, turn, visible_at, created_at, id
                   ) as position
            from candidates
            order by position
            limit $4
+         ),
+         run_requests as (
+           select distinct on (namespace_id, run_id)
+                  namespace_id, run_id, concurrency_key, concurrency_limit, position
+           from next
+           where not poisoned and concurrency_key is not null and not run_holds
+           order by namespace_id, run_id, position
+         ),
+         requests as (
+           select 'run' as scope, namespace_id, concurrency_key, concurrency_limit as slot_limit,
+                  run_id, null::uuid as task_id, null::uuid as lease_token,
+                  null::timestamptz as expires_at,
+                  row_number() over (
+                    partition by namespace_id, concurrency_key order by position
+                  ) as wanted
+           from run_requests
+           union all
+           select 'step', namespace_id, step_concurrency_key, step_concurrency_limit,
+                  run_id, id, lease_token,
+                  ${at("$2")} + $3 * interval '1 millisecond',
+                  row_number() over (
+                    partition by namespace_id, step_concurrency_key order by position
+                  )
+           from next
+           where not poisoned and step_concurrency_key is not null
+         ),
+         free_slots as (
+           select pools.scope, pools.namespace_id, pools.concurrency_key, free.slot,
+                  row_number() over (
+                    partition by pools.scope, pools.namespace_id, pools.concurrency_key
+                    order by free.slot
+                  ) as free_rank
+           from (
+             select scope, namespace_id, concurrency_key, max(slot_limit) as slot_limit
+             from requests group by scope, namespace_id, concurrency_key
+           ) pools
+           cross join lateral generate_series(0, pools.slot_limit - 1) as free (slot)
+           where not exists (
+             select 1 from concurrency_slots held
+             where held.namespace_id = pools.namespace_id and held.scope = pools.scope
+               and held.concurrency_key = pools.concurrency_key and held.slot = free.slot
+               and (held.expires_at is null or held.expires_at > ${at("$2")})
+           )
+         ),
+         acquired as (
+           insert into concurrency_slots
+             (namespace_id, scope, concurrency_key, slot, slot_limit, run_id, task_id,
+              lease_token, expires_at, acquired_at)
+           select requests.namespace_id, requests.scope, requests.concurrency_key,
+                  free_slots.slot, requests.slot_limit, requests.run_id, requests.task_id,
+                  requests.lease_token, requests.expires_at, ${at("$2")}
+           from requests
+           join free_slots on free_slots.scope = requests.scope
+             and free_slots.namespace_id = requests.namespace_id
+             and free_slots.concurrency_key = requests.concurrency_key
+             and free_slots.free_rank = requests.wanted
+           where free_slots.slot < requests.slot_limit
+           on conflict (namespace_id, scope, concurrency_key, slot) do update
+           set slot_limit = excluded.slot_limit, run_id = excluded.run_id,
+               task_id = excluded.task_id, lease_token = excluded.lease_token,
+               expires_at = excluded.expires_at, acquired_at = excluded.acquired_at
+           where concurrency_slots.expires_at <= ${at("$2")}
+           returning scope, run_id, task_id
          ),
          parked as (
            update tasks
@@ -265,7 +356,7 @@ export function createTaskQueue(
          leased as (
            update tasks
            set state = 'LEASED',
-               lease_token = gen_random_uuid(),
+               lease_token = next.lease_token,
                lease_seq = nextval('task_lease_seq'),
                attempts = tasks.attempts + 1,
                reclaim_count = tasks.reclaim_count + case when next.reclaimed then 1 else 0 end,
@@ -276,11 +367,19 @@ export function createTaskQueue(
                updated_at = ${at("$2")}
            from next
            where tasks.id = next.id and not next.poisoned
-           returning tasks.id, namespace_id, run_id, queue_name, task_type, payload,
-                     attempts, lease_token, visible_at, priority, next.position
+             and (next.concurrency_key is null or next.run_holds or next.run_id in (
+               select run_id from acquired where scope = 'run'
+             ))
+             and (next.step_concurrency_key is null or next.id in (
+               select task_id from acquired where scope = 'step'
+             ))
+           returning tasks.id, tasks.namespace_id, tasks.run_id, queue_name, task_type, payload,
+                     attempts, tasks.lease_token, visible_at, priority, tasks.concurrency_key,
+                     tasks.step_concurrency_key, next.position
          )
          select id, namespace_id, run_id, queue_name, task_type, payload,
-                attempts, lease_token, visible_at, priority
+                attempts, lease_token, visible_at, priority, concurrency_key,
+                step_concurrency_key
          from leased order by position`,
         [
           dequeueOptions.queueName,

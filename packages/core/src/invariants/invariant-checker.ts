@@ -14,6 +14,7 @@ export const INVARIANT_NAMES = [
   "step-result-written-once",
   "projection-consistent",
   "timer-fired-once",
+  "concurrency-limit-held",
 ] as const;
 
 /**
@@ -49,11 +50,13 @@ export interface InvariantReport {
  * Narrows `InvariantChecker.check`. `runIds` limits it to those runs (default
  * every run in the database). `expectedTaskIds` are tasks the caller enqueued
  * and knows must still exist, which is how a task that vanished without a
- * trace is caught.
+ * trace is caught. `at` is the instant step leases are judged at (default
+ * the database's time), for a workload that runs on a fake clock.
  */
 export interface InvariantCheckOptions {
   readonly runIds?: readonly string[];
   readonly expectedTaskIds?: readonly string[];
+  readonly at?: Date;
 }
 
 /**
@@ -74,6 +77,11 @@ export interface InvariantCheckOptions {
  *   terminal whenever the log is.
  * - `timer-fired-once`: a timer has at most one `timer_fired` event, a fired
  *   timer has its event and no timer fired before it was due.
+ * - `concurrency-limit-held`: the slot history of a concurrency key never
+ *   has more runs (or step executions) holding a slot at once than the
+ *   limit of the one that acquired last, a leased task of a run with a
+ *   workflow key belongs to a run holding a slot, and a live step lease with
+ *   a step key holds a step slot.
  */
 export interface InvariantChecker {
   check(options?: InvariantCheckOptions): Promise<InvariantReport>;
@@ -419,6 +427,77 @@ export function createInvariantChecker(pool: Pool, store: EventStore): Invariant
     return { violations, runsChecked: runs.rows.length };
   }
 
+  async function concurrencyViolations(
+    runIds: string[] | null,
+    at: Date | null,
+  ): Promise<InvariantViolation[]> {
+    const violations: InvariantViolation[] = [];
+    const crowded = await pool.query<{
+      run_id: string;
+      task_id: string | null;
+      scope: string;
+      concurrency_key: string;
+      slot_limit: number;
+      holders: string;
+    }>(
+      `select h.run_id, h.task_id, h.scope, h.concurrency_key, h.slot_limit,
+              count(distinct case when h.scope = 'run' then o.run_id::text
+                                  else o.task_id::text end) as holders
+       from concurrency_slot_history h
+       join concurrency_slot_history o on o.namespace_id = h.namespace_id
+         and o.scope = h.scope and o.concurrency_key = h.concurrency_key
+         and o.acquired_seq <= h.acquired_seq
+         and (o.released_seq is null or o.released_seq > h.acquired_seq)
+       where $1::uuid[] is null or h.run_id = any($1::uuid[])
+       group by h.id, h.run_id, h.task_id, h.scope, h.concurrency_key, h.slot_limit
+       having count(distinct case when h.scope = 'run' then o.run_id::text
+                                  else o.task_id::text end) > h.slot_limit
+       order by h.id`,
+      [runIds],
+    );
+    for (const row of crowded.rows) {
+      violations.push(
+        violation(
+          "concurrency-limit-held",
+          `${row.holders} ${row.scope === "run" ? "runs" : "steps"} held a slot of key "${row.concurrency_key}" at once, over its limit of ${String(row.slot_limit)}`,
+          row.run_id,
+          row.task_id,
+        ),
+      );
+    }
+    const unslotted = await pool.query<{ id: string; run_id: string; scope: string; key: string }>(
+      `select tasks.id, tasks.run_id, 'run' as scope, tasks.concurrency_key as key from tasks
+       where tasks.state = 'LEASED' and tasks.concurrency_key is not null
+         and ($1::uuid[] is null or tasks.run_id = any($1::uuid[]))
+         and not exists (
+           select 1 from concurrency_slots held
+           where held.scope = 'run' and held.run_id = tasks.run_id
+         )
+       union all
+       select tasks.id, tasks.run_id, 'step', tasks.step_concurrency_key from tasks
+       where tasks.state = 'LEASED' and tasks.step_concurrency_key is not null
+         and tasks.visible_at > coalesce($2::timestamptz, now())
+         and ($1::uuid[] is null or tasks.run_id = any($1::uuid[]))
+         and not exists (
+           select 1 from concurrency_slots held
+           where held.scope = 'step' and held.lease_token = tasks.lease_token
+         )
+       order by id`,
+      [runIds, at],
+    );
+    for (const row of unslotted.rows) {
+      violations.push(
+        violation(
+          "concurrency-limit-held",
+          `a leased task of ${row.scope === "run" ? "workflow" : "step"} key "${row.key}" holds no slot`,
+          row.run_id,
+          row.id,
+        ),
+      );
+    }
+    return violations;
+  }
+
   return {
     async check(options: InvariantCheckOptions = {}): Promise<InvariantReport> {
       const runIds = scope(options);
@@ -428,6 +507,7 @@ export function createInvariantChecker(pool: Pool, store: EventStore): Invariant
       const timers = await timerViolations(runIds);
       const projections = await inconsistentProjections(runIds);
       const waiting = await waitingRuns(runIds);
+      const concurrency = await concurrencyViolations(runIds, options.at ?? null);
       return {
         runsChecked: projections.runsChecked,
         tasksChecked: tasks.tasksChecked,
@@ -438,6 +518,7 @@ export function createInvariantChecker(pool: Pool, store: EventStore): Invariant
           ...steps,
           ...projections.violations,
           ...timers,
+          ...concurrency,
         ],
       };
     },

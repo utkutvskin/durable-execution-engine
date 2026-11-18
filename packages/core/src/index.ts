@@ -97,6 +97,23 @@ export type { QueryDefinition, SignalDefinition } from "./workflow/define-signal
 export { defineStep } from "./workflow/define-step.ts";
 export type { DefineStepOptions, StepDefinition } from "./workflow/define-step.ts";
 export { defineWorkflow } from "./workflow/define-workflow.ts";
+export type { DefineWorkflowOptions } from "./workflow/define-workflow.ts";
+export {
+  InvalidConcurrencyRuleError,
+  MAX_CONCURRENCY_KEY_LENGTH,
+  readConcurrencyBacklog,
+  readRunConcurrency,
+  requeueWithConcurrency,
+  resolveConcurrency,
+  validateConcurrencyRule,
+} from "./queue/concurrency-keys.ts";
+export type {
+  ConcurrencyAssignment,
+  ConcurrencyBacklogEntry,
+  ConcurrencyRule,
+  ResolvedConcurrency,
+  RunConcurrencyState,
+} from "./queue/concurrency-keys.ts";
 export { deserializeError, serializeError } from "./workflow/error-serialization.ts";
 export type { SerializedError } from "./workflow/error-serialization.ts";
 export {

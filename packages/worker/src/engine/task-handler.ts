@@ -12,6 +12,8 @@ import {
   isTerminalState,
   markRunWaiting,
   NonDeterminismError,
+  requeueWithConcurrency,
+  resolveConcurrency,
   VersionMismatchError,
   systemClock,
   systemRandomSource,
@@ -22,6 +24,7 @@ import {
   type LiveSession,
   type Pool,
   type RandomSource,
+  type ResolvedConcurrency,
   type RunState,
   type StickyRouter,
   type StepDefinition,
@@ -34,7 +37,7 @@ import {
   type WaitingOn,
   type WorkflowHandler,
 } from "@dee/core";
-import { ParkTaskError } from "../errors.ts";
+import { ParkTaskError, TaskReleasedError } from "../errors.ts";
 import type { TaskHandler } from "../worker.ts";
 
 /**
@@ -103,6 +106,20 @@ export class UnknownWorkflowError extends Error {
 interface RunRow {
   status: RunState;
   namespace_id: string;
+  concurrency_key: string | null;
+}
+
+interface StepPayload {
+  readonly stepType: string;
+  readonly input: unknown;
+}
+
+function readStepPayload(payload: unknown): StepPayload | undefined {
+  if (typeof payload !== "object" || payload === null) {
+    return undefined;
+  }
+  const { stepType, input } = payload as { stepType?: unknown; input?: unknown };
+  return typeof stepType === "string" ? { stepType, input } : undefined;
 }
 
 const DEFAULT_MAX_CACHED_RUNS = 1000;
@@ -175,11 +192,22 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
     random,
     ...(options.stepTimers === undefined ? {} : { timers: options.stepTimers }),
     ...(options.tracing === undefined ? {} : { tracing: options.tracing }),
+    beforeSettle: enqueueFollowUp,
   });
+
+  async function enqueueFollowUp(task: LeasedTask): Promise<void> {
+    await options.queue.enqueue({
+      namespaceId: task.namespaceId,
+      runId: task.runId,
+      queueName: options.queueName,
+      taskType: "WORKFLOW_TASK",
+      payload: { reason: "step_completed" },
+    });
+  }
 
   async function readRun(runId: string): Promise<RunRow | undefined> {
     const result = await options.pool.query<RunRow>(
-      "select status, namespace_id from workflow_runs where id = $1",
+      "select status, namespace_id, concurrency_key from workflow_runs where id = $1",
       [runId],
     );
     return result.rows[0];
@@ -278,6 +306,14 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
     if (definition === undefined) {
       throw new UnknownWorkflowError(started.workflowType);
     }
+    if (definition.concurrency !== undefined && run.concurrency_key === null) {
+      const assigned = resolveConcurrency(
+        `workflow "${definition.workflowType}"`,
+        definition.concurrency,
+        started.input as never,
+      );
+      await releaseWithConcurrency(task, { run: assigned });
+    }
     const { decision, source } = await decider.decide(
       task.runId,
       definition.handler as unknown as WorkflowHandler,
@@ -326,21 +362,43 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
     }
   }
 
+  async function releaseWithConcurrency(
+    task: LeasedTask,
+    keys: { readonly run?: ResolvedConcurrency; readonly step?: ResolvedConcurrency },
+  ): Promise<never> {
+    const released = await requeueWithConcurrency(
+      options.pool,
+      { taskId: task.id, runId: task.runId, leaseToken: task.leaseToken, ...keys },
+      { clock },
+    );
+    throw new TaskReleasedError(
+      task.id,
+      released ? "its concurrency key was recorded" : "its lease was lost",
+    );
+  }
+
+  async function assignStepConcurrency(task: LeasedTask): Promise<void> {
+    if (task.stepConcurrencyKey !== null) {
+      return;
+    }
+    const payload = readStepPayload(task.payload);
+    const definition = payload === undefined ? undefined : steps.get(payload.stepType);
+    if (payload === undefined || definition?.concurrency === undefined) {
+      return;
+    }
+    const assigned = resolveConcurrency(
+      `step "${payload.stepType}"`,
+      definition.concurrency,
+      payload.input as never,
+    );
+    await releaseWithConcurrency(task, { step: assigned });
+  }
+
   async function handleStepTask(task: LeasedTask, signal: AbortSignal): Promise<void> {
+    await assignStepConcurrency(task);
     const outcome = await processor.process(task, { signal });
-    if (
-      outcome.status === "completed" ||
-      outcome.status === "failed" ||
-      outcome.status === "dead_lettered" ||
-      outcome.status === "already_recorded"
-    ) {
-      await options.queue.enqueue({
-        namespaceId: task.namespaceId,
-        runId: task.runId,
-        queueName: options.queueName,
-        taskType: "WORKFLOW_TASK",
-        payload: { reason: "step_completed" },
-      });
+    if (outcome.status === "dead_lettered") {
+      await enqueueFollowUp(task);
     }
   }
 

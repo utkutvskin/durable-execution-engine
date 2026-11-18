@@ -37,3 +37,19 @@ export class ParkTaskError extends Error {
     this.name = "ParkTaskError";
   }
 }
+
+/**
+ * Thrown by a task handler that already handed its lease back to the queue,
+ * for example after recording the task's concurrency key so the next
+ * dequeue can wait for a slot. The worker neither acks nor nacks the task
+ * and does not report the error.
+ */
+export class TaskReleasedError extends Error {
+  readonly taskId: string;
+
+  constructor(taskId: string, reason: string) {
+    super(`task ${taskId} was handed back to the queue: ${reason}`);
+    this.name = "TaskReleasedError";
+    this.taskId = taskId;
+  }
+}

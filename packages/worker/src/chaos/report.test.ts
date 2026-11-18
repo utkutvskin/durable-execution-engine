@@ -59,6 +59,7 @@ describe("chaos report", () => {
       "step-result-written-once",
       "projection-consistent",
       "timer-fired-once",
+      "concurrency-limit-held",
     ]) {
       expect(text).toContain(`\`${name}\``);
     }
