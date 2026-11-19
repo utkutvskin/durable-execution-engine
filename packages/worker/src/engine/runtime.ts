@@ -2,6 +2,7 @@ import {
   createEngineMetrics,
   createHistoryCompactor,
   createJanitor,
+  createPendingStartFirer,
   createStickyRouter,
   createScheduleManager,
   createTaskQueue,
@@ -55,7 +56,8 @@ import {
  * (default 4).
  *
  * `queueRateLimit` caps the steps started from the engine's queue per period,
- * shared through Postgres by every engine on the queue.
+ * shared through Postgres by every engine on the queue. The schedule loop
+ * also fires due debounced starts and queued singleton starts.
  */
 export interface EngineOptions {
   readonly pool: Pool;
@@ -212,6 +214,7 @@ export function startEngine(options: EngineOptions): Engine {
   });
   const scheduleLoop: ScheduleLoop = startScheduleLoop({
     manager: schedules,
+    pendingStarts: createPendingStartFirer(options.pool, clockOption),
     intervalMs: loopIntervalMs,
     onError,
   });

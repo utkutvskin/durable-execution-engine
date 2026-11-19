@@ -36,6 +36,14 @@ import {
   type SendEventReceipt,
   type SignalReceipt,
   type SignalWithStartReceipt,
+  InvalidStartPolicyError,
+  admitStartOnClient,
+  liveIdempotencyKeyCondition,
+  validateStartPolicies,
+  type ClockSource,
+  type DebounceStart,
+  type PendingStart,
+  type SingletonStart,
 } from "@dee/core";
 
 /**
@@ -176,6 +184,12 @@ export interface StartRunInput {
   readonly searchAttributes?: SearchAttributes;
   readonly memo?: unknown;
   readonly priority?: number;
+  /** How long `idempotencyKey` keeps mapping to the run it started. */
+  readonly idempotencyTtlMs?: number;
+  /** Folds the starts of one key in a window into one run (see `DebounceStart`). */
+  readonly debounce?: DebounceStart;
+  /** Allows one open run per key (see `SingletonStart`). */
+  readonly singleton?: SingletonStart;
 }
 
 /**
@@ -185,6 +199,28 @@ export interface StartRunInput {
 export interface StartRunResult {
   readonly created: boolean;
   readonly run: RunDescription;
+}
+
+/**
+ * A start that was recorded but has not created its run yet: a debounced
+ * start (`fireAt` is when its window closes) or a queued singleton start
+ * (`fireAt` is null). `runId` is the id the run will get.
+ */
+export interface PendingStartDescription {
+  readonly runId: string;
+  readonly kind: "debounce" | "singleton";
+  readonly key: string;
+  readonly workflowType: string;
+  readonly fireAt: string | null;
+  readonly startCount: number;
+}
+
+/**
+ * What `requestStart` returns for a start that creates its run later.
+ */
+export interface PendingStartResult {
+  readonly created: false;
+  readonly pending: PendingStartDescription;
 }
 
 /**
@@ -268,6 +304,18 @@ export interface RunService {
    * for a different request.
    */
   startRun(namespaceId: string, input: StartRunInput): Promise<StartRunResult>;
+
+  /**
+   * Like `startRun`, and also accepts the policies that create the run
+   * later: a debounced start and a queued singleton start resolve a
+   * `PendingStartResult`. Rejects with `SingletonRunOpenError` when a
+   * refusing singleton start finds its key open, and with
+   * `InvalidStartPolicyError` for malformed policies.
+   */
+  requestStart(
+    namespaceId: string,
+    input: StartRunInput,
+  ): Promise<StartRunResult | PendingStartResult>;
 
   /**
    * Reads one run. Rejects with `RunNotFoundError`.
@@ -423,6 +471,8 @@ export interface RunServiceOptions {
   readonly tracing?: Tracing;
   readonly workflows?: WorkflowRegistry;
   readonly updateWait?: UpdateWaitOptions;
+  /** "Now" for idempotency key expiry and debounce windows (default the system clock). */
+  readonly clock?: ClockSource;
 }
 
 interface RunRow {
@@ -457,6 +507,17 @@ function toSummary(row: RunRow): RunSummary {
     closedAt: row.closed_at === null ? null : row.closed_at.toISOString(),
     searchAttributes: row.search_attributes,
     memo: row.memo,
+  };
+}
+
+function toPendingDescription(pending: PendingStart): PendingStartDescription {
+  return {
+    runId: pending.runId,
+    kind: pending.kind,
+    key: pending.key,
+    workflowType: pending.workflowType,
+    fireAt: pending.fireAt === null ? null : pending.fireAt.toISOString(),
+    startCount: pending.startCount,
   };
 }
 
@@ -515,6 +576,7 @@ function decodeCursor(cursor: string): { startedCursor: string; runId: string } 
  */
 export function createRunService(pool: Pool, options: RunServiceOptions): RunService {
   const tracing = options.tracing ?? noopTracing;
+  const clock = options.clock ?? systemClock;
   const store = createPostgresEventStore(pool);
   const interactions: RunInteractions = createRunInteractions(pool, {
     workflows: options.workflows ?? createWorkflowRegistry(),
@@ -563,14 +625,15 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
   async function findByKey(
     namespaceId: string,
     input: StartRunInput,
+    now: Date,
   ): Promise<StartRunResult | undefined> {
     if (input.idempotencyKey === undefined) {
       return undefined;
     }
     const existing = await pool.query<RunRow>(
       `select ${RUN_COLUMNS} from workflow_runs
-       where namespace_id = $1 and idempotency_key = $2`,
-      [namespaceId, input.idempotencyKey],
+       where namespace_id = $1 and idempotency_key = $2 and ${liveIdempotencyKeyCondition(3)}`,
+      [namespaceId, input.idempotencyKey, now],
     );
     const row = existing.rows[0];
     if (row === undefined) {
@@ -584,7 +647,11 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     return { created: false, run: toDescription(row) };
   }
 
-  async function insertRun(namespaceId: string, input: StartRunInput): Promise<string | undefined> {
+  async function insertRun(
+    namespaceId: string,
+    input: StartRunInput,
+    now: Date,
+  ): Promise<{ readonly runId: string } | { readonly pending: PendingStart } | undefined> {
     const searchAttributes =
       input.searchAttributes === undefined ? {} : validateSearchAttributes(input.searchAttributes);
     const memo = input.memo === undefined ? undefined : validateMemo(input.memo);
@@ -598,11 +665,35 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     });
     try {
       await client.query("begin");
+      const admission = await admitStartOnClient(
+        client,
+        {
+          namespaceId,
+          workflowType: input.workflowType,
+          input: input.input ?? null,
+          queueName: options.queueName,
+          options: {
+            runTimeoutMs: input.runTimeoutMs,
+            executionTimeoutMs: input.executionTimeoutMs,
+            searchAttributes: input.searchAttributes,
+            memo: input.memo,
+            priority: input.priority,
+          },
+        },
+        input,
+        now,
+      );
+      if (admission.kind === "pending") {
+        await client.query("commit");
+        span.setAttributes({ "dee.start.pending": admission.pending.kind });
+        span.end();
+        return { pending: admission.pending };
+      }
       const inserted = await client.query<{ id: string }>(
         `insert into workflow_runs
            (namespace_id, workflow_type, input, idempotency_key, traceparent, queue_name,
-            search_attributes, memo, priority)
-         values ($1, $2, $3::jsonb, $4, $5, $6, $7::jsonb, $8::jsonb, $9)
+            search_attributes, memo, priority, singleton_key, idempotency_expires_at)
+         values ($1, $2, $3::jsonb, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11)
          on conflict (namespace_id, idempotency_key) where idempotency_key is not null
          do nothing
          returning id`,
@@ -616,6 +707,10 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
           JSON.stringify(searchAttributes),
           memo === undefined ? null : JSON.stringify(memo),
           priority,
+          admission.singletonKey ?? null,
+          input.idempotencyTtlMs === undefined
+            ? null
+            : new Date(now.getTime() + input.idempotencyTtlMs),
         ],
       );
       const runId = inserted.rows[0]?.id;
@@ -625,7 +720,7 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
         span.end();
         return undefined;
       }
-      await applyRunTimeoutsOnClient(client, runId, systemClock.now(), {
+      await applyRunTimeoutsOnClient(client, runId, now, {
         runTimeoutMs: input.runTimeoutMs,
         executionTimeoutMs: input.executionTimeoutMs,
       });
@@ -646,7 +741,7 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
       await client.query("commit");
       span.setAttributes({ "dee.run.id": runId });
       span.end();
-      return runId;
+      return { runId };
     } catch (error) {
       broken = !(await rollbackQuietly(client));
       span.recordError(error);
@@ -657,28 +752,51 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     }
   }
 
+  async function requestStart(
+    namespaceId: string,
+    input: StartRunInput,
+  ): Promise<StartRunResult | PendingStartResult> {
+    if (
+      options.workflows !== undefined &&
+      options.workflows.get(input.workflowType) === undefined
+    ) {
+      throw new UnknownWorkflowTypeError(input.workflowType);
+    }
+    validateStartPolicies(input);
+    const now = clock.now();
+    const earlier = await findByKey(namespaceId, input, now);
+    if (earlier !== undefined) {
+      return earlier;
+    }
+    const inserted = await insertRun(namespaceId, input, now);
+    if (inserted !== undefined && "pending" in inserted) {
+      return { created: false, pending: toPendingDescription(inserted.pending) };
+    }
+    if (inserted !== undefined) {
+      return { created: true, run: toDescription(await readRun(namespaceId, inserted.runId)) };
+    }
+    const raced = await findByKey(namespaceId, input, now);
+    if (raced === undefined) {
+      throw new Error("a start request was rejected as a duplicate but no run holds its key");
+    }
+    return raced;
+  }
+
   return {
     async startRun(namespaceId: string, input: StartRunInput): Promise<StartRunResult> {
-      if (
-        options.workflows !== undefined &&
-        options.workflows.get(input.workflowType) === undefined
-      ) {
-        throw new UnknownWorkflowTypeError(input.workflowType);
+      if (input.debounce !== undefined || input.singleton?.whenOpen === "queue") {
+        throw new InvalidStartPolicyError(
+          "startRun creates its run at once; a debounced or queued start goes through requestStart",
+        );
       }
-      const earlier = await findByKey(namespaceId, input);
-      if (earlier !== undefined) {
-        return earlier;
+      const result = await requestStart(namespaceId, input);
+      if ("pending" in result) {
+        throw new Error("startRun recorded a pending start");
       }
-      const runId = await insertRun(namespaceId, input);
-      if (runId !== undefined) {
-        return { created: true, run: toDescription(await readRun(namespaceId, runId)) };
-      }
-      const raced = await findByKey(namespaceId, input);
-      if (raced === undefined) {
-        throw new Error("a start request was rejected as a duplicate but no run holds its key");
-      }
-      return raced;
+      return result;
     },
+
+    requestStart,
 
     async describeRun(namespaceId: string, runId: string): Promise<RunDescription> {
       const description = toDescription(await readRun(namespaceId, runId));

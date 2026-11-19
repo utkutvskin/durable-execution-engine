@@ -1,12 +1,14 @@
-import type { ScheduleManager, ScheduleTickReport } from "@dee/core";
+import type { PendingStartFirer, ScheduleManager, ScheduleTickReport } from "@dee/core";
 import { systemTimers, type Timers } from "./timers.ts";
 
 /**
  * Configuration for `startScheduleLoop`. `onTick` receives each report and
- * `onError` the errors a tick survives.
+ * `onError` the errors a tick survives. With `pendingStarts`, every pass also
+ * fires due debounced starts and queued singleton starts.
  */
 export interface ScheduleLoopOptions {
   readonly manager: ScheduleManager;
+  readonly pendingStarts?: PendingStartFirer;
   readonly intervalMs: number;
   readonly timers?: Timers;
   readonly onTick?: (report: ScheduleTickReport) => void;
@@ -42,6 +44,11 @@ export function startScheduleLoop(options: ScheduleLoopOptions): ScheduleLoop {
     try {
       const report = await options.manager.catchUp();
       options.onTick?.(report);
+    } catch (error) {
+      options.onError?.(error);
+    }
+    try {
+      await options.pendingStarts?.fireDue();
     } catch (error) {
       options.onError?.(error);
     }

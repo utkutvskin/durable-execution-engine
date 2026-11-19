@@ -1,6 +1,9 @@
 import { z } from "zod";
 import {
   InvalidSearchAttributesError,
+  InvalidStartPolicyError,
+  MAX_START_KEY_LENGTH,
+  SingletonRunOpenError,
   PRIORITY_RANGE,
   VisibilityQueryError,
   MAX_EVENT_BUFFER_MS,
@@ -144,8 +147,47 @@ const startRequestSchema = z
     priority: z.number().int().min(PRIORITY_RANGE.min).max(PRIORITY_RANGE.max).optional().meta({
       description: "Orders the run's tasks, higher first (default 0). Its child runs inherit it.",
     }),
+    idempotencyTtlMs: z.number().int().positive().optional().meta({
+      description:
+        "How long the Idempotency-Key keeps mapping to the run it started. A start after it creates a new run.",
+    }),
+    debounce: z
+      .object({
+        key: z.string().min(1).max(MAX_START_KEY_LENGTH),
+        windowMs: z.number().int().positive(),
+      })
+      .optional()
+      .meta({
+        description:
+          "Folds every start of the key within windowMs of the first into one run, started with the last input when the window closes. Answers 202.",
+      }),
+    singleton: z
+      .object({
+        key: z.string().min(1).max(MAX_START_KEY_LENGTH),
+        whenOpen: z.enum(["refuse", "queue"]).optional(),
+      })
+      .optional()
+      .meta({
+        description:
+          "Allows one open run per key. While one is open a start is refused with 409 singleton_open (the default) or queued and answered 202.",
+      }),
   })
   .meta({ id: "StartRunRequest" });
+
+const pendingStartSchema = z
+  .object({
+    runId: z.uuid(),
+    kind: z.enum(["debounce", "singleton"]),
+    key: z.string(),
+    workflowType: z.string(),
+    fireAt: z.iso.datetime().nullable(),
+    startCount: z.number().int(),
+  })
+  .meta({ id: "PendingStart" });
+
+const pendingStartResponseSchema = z
+  .object({ created: z.literal(false), pending: pendingStartSchema })
+  .meta({ id: "PendingStartResponse" });
 
 const startResponseSchema = z
   .object({ created: z.boolean(), run: runDescriptionSchema })
@@ -468,8 +510,15 @@ export function createRoutes(service: RunService): readonly Route[] {
           schema: startResponseSchema,
         },
         201: { description: "The run was created.", schema: startResponseSchema },
+        202: {
+          description:
+            "The start was recorded and creates its run later: a debounced or queued singleton start.",
+          schema: pendingStartResponseSchema,
+        },
         ...commonErrors,
-        409: errorResponse("The idempotency key was used for a different request."),
+        409: errorResponse(
+          "The idempotency key was used for a different request, or a singleton run of the key is open.",
+        ),
       },
       async handle(request) {
         const key = request.headers["idempotency-key"];
@@ -482,7 +531,7 @@ export function createRoutes(service: RunService): readonly Route[] {
             },
           ]);
         }
-        const result = await service.startRun(request.namespaceId, {
+        const result = await service.requestStart(request.namespaceId, {
           workflowType: request.parsedBody.workflowType,
           input: request.parsedBody.input,
           ...(request.parsedBody.runTimeoutMs === undefined
@@ -498,11 +547,30 @@ export function createRoutes(service: RunService): readonly Route[] {
           ...(request.parsedBody.priority === undefined
             ? {}
             : { priority: request.parsedBody.priority }),
+          ...(request.parsedBody.idempotencyTtlMs === undefined
+            ? {}
+            : { idempotencyTtlMs: request.parsedBody.idempotencyTtlMs }),
+          ...(request.parsedBody.debounce === undefined
+            ? {}
+            : { debounce: request.parsedBody.debounce }),
+          ...(request.parsedBody.singleton === undefined
+            ? {}
+            : {
+                singleton: {
+                  key: request.parsedBody.singleton.key,
+                  ...(request.parsedBody.singleton.whenOpen === undefined
+                    ? {}
+                    : { whenOpen: request.parsedBody.singleton.whenOpen }),
+                },
+              }),
           ...(key === undefined ? {} : { idempotencyKey: key }),
           ...(request.headers["traceparent"] === undefined
             ? {}
             : { traceparent: request.headers["traceparent"] }),
         });
+        if ("pending" in result) {
+          return { status: 202, body: result };
+        }
         return { status: result.created ? 201 : 200, body: result };
       },
     }),
@@ -878,6 +946,24 @@ export function toErrorResult(error: unknown): ErrorResult {
           details: { position: error.position },
         },
       },
+    };
+  }
+  if (error instanceof SingletonRunOpenError) {
+    return {
+      status: 409,
+      body: {
+        error: {
+          code: "singleton_open",
+          message: error.message,
+          details: { key: error.key, runId: error.runId ?? null },
+        },
+      },
+    };
+  }
+  if (error instanceof InvalidStartPolicyError) {
+    return {
+      status: 400,
+      body: { error: { code: "invalid_start_policy", message: error.message } },
     };
   }
   if (error instanceof InvalidSearchAttributesError) {

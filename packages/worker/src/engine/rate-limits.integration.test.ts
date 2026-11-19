@@ -22,7 +22,7 @@ async function waitUntil(condition: () => Promise<boolean>, what: string): Promi
   throw new Error(`timed out waiting for ${what}`);
 }
 
-describe("shared rate limits in the engine", () => {
+describe("shared rate limits and pending starts in the engine", () => {
   let database: IsolatedSchema;
   let pool: Pool;
   let clock: ShiftableClock;
@@ -48,7 +48,7 @@ describe("shared rate limits in the engine", () => {
     );
     namespaceId = created.rows[0]?.id ?? "";
     clock = createShiftableClock();
-    service = createRunService(pool, { queueName: "default" });
+    service = createRunService(pool, { queueName: "default", clock });
     errors.length = 0;
   });
 
@@ -148,6 +148,71 @@ describe("shared rate limits in the engine", () => {
     clock.shift(PERIOD_MS);
     await waitUntil(async () => (await completed(runIds)) === 6, "every run");
     expect(executed).toBe(6);
+    expect(errors).toEqual([]);
+  });
+
+  it("starts a debounced run with the last input and a queued singleton after the open one closes", async () => {
+    const echo = defineWorkflow<{ readonly n: number }, number>("echo", (_ctx, input) =>
+      Promise.resolve(input.n),
+    );
+    const gate = defineWorkflow<{ readonly n: number }, number>("gate", async (ctx, input) => {
+      await ctx.waitForSignal("open");
+      return input.n;
+    });
+    boot({ workflows: [echo, gate], steps: [] });
+
+    const debounced = [];
+    for (let n = 1; n <= 10; n += 1) {
+      debounced.push(
+        await service.requestStart(namespaceId, {
+          workflowType: "echo",
+          input: { n },
+          debounce: { key: "echo", windowMs: 5000 },
+        }),
+      );
+    }
+    const pending = debounced.at(-1);
+    const debouncedRunId =
+      pending !== undefined && "pending" in pending ? pending.pending.runId : "";
+    await settle();
+    expect(await completed([debouncedRunId])).toBe(0);
+    clock.shift(5000);
+    await waitUntil(async () => (await completed([debouncedRunId])) === 1, "the debounced run");
+    const result = await pool.query<{ result: unknown; count: string }>(
+      `select (select result from workflow_runs where id = $1) as result,
+              (select count(*) from workflow_runs where workflow_type = 'echo') as count`,
+      [debouncedRunId],
+    );
+    expect(result.rows[0]).toEqual({ result: 10, count: "1" });
+
+    const singleton = { key: "gate", whenOpen: "queue" as const };
+    const first = await service.requestStart(namespaceId, {
+      workflowType: "gate",
+      input: { n: 1 },
+      singleton,
+    });
+    const second = await service.requestStart(namespaceId, {
+      workflowType: "gate",
+      input: { n: 2 },
+      singleton,
+    });
+    const firstRunId = "run" in first ? first.run.runId : "";
+    const secondRunId = "pending" in second ? second.pending.runId : "";
+    await settle();
+    expect(await completed([firstRunId, secondRunId])).toBe(0);
+    await service.signalRun(namespaceId, firstRunId, "open", null);
+    await waitUntil(async () => (await completed([firstRunId])) === 1, "the first gate");
+    await waitUntil(
+      async () =>
+        (
+          await pool.query("select 1 from workflow_runs where id = $1 and status = 'RUNNING'", [
+            secondRunId,
+          ])
+        ).rowCount === 1,
+      "the queued gate to start",
+    );
+    await service.signalRun(namespaceId, secondRunId, "open", null);
+    await waitUntil(async () => (await completed([secondRunId])) === 1, "the second gate");
     expect(errors).toEqual([]);
   });
 });

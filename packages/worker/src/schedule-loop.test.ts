@@ -77,6 +77,38 @@ describe("schedule loop", () => {
     expect((errors[0] as Error).message).toBe("db down");
   });
 
+  it("fires pending starts on every pass, even when the schedule catch-up fails", async () => {
+    const time = createVirtualTime();
+    const errors: unknown[] = [];
+    let fired = 0;
+    const loop = startScheduleLoop({
+      manager: fakeManager(() => Promise.reject(new Error("schedules down"))),
+      pendingStarts: {
+        fireDue: () => {
+          fired += 1;
+          return fired === 2
+            ? Promise.reject(new Error("pending down"))
+            : Promise.resolve({ debounced: [], singletons: [] });
+        },
+      },
+      intervalMs: 1000,
+      timers: time.timers,
+      onError: (error) => errors.push(error),
+    });
+    await waitFor(() => fired === 1);
+    time.advance(1000);
+    await waitFor(() => fired === 2 && errors.length === 3);
+    time.advance(1000);
+    await waitFor(() => fired === 3);
+    await loop.stop();
+    expect(errors.map((error) => (error as Error).message)).toEqual([
+      "schedules down",
+      "schedules down",
+      "pending down",
+      "schedules down",
+    ]);
+  });
+
   it("stops scheduling after stop and rejects a non-positive interval", async () => {
     const time = createVirtualTime();
     let passes = 0;

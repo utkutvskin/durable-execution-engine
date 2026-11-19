@@ -426,6 +426,30 @@ export type {
   RateLimitRule,
   SharedRateLimiter,
 } from "./quota/shared-rate-limiter.ts";
+export {
+  InvalidStartPolicyError,
+  MAX_START_KEY_LENGTH,
+  SingletonRunOpenError,
+  admitStartOnClient,
+  createPendingStartFirer,
+  liveIdempotencyKeyCondition,
+  readPendingStart,
+  releaseExpiredIdempotencyKeyOnClient,
+  validateStartPolicies,
+} from "./run/start-policies.ts";
+export type {
+  DebounceStart,
+  PendingRunOptions,
+  PendingStart,
+  PendingStartFirer,
+  PendingStartFirerOptions,
+  PendingStartReport,
+  SingletonStart,
+  SingletonWhenOpen,
+  StartAdmission,
+  StartPolicies,
+  StartRequest,
+} from "./run/start-policies.ts";
 
 export type { NamespaceQuota, NamespaceUsage, QuotaStore } from "./quota/quota-store.ts";
 

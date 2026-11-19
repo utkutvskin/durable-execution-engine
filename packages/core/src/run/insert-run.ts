@@ -26,6 +26,12 @@ export interface InsertRunInput {
   readonly searchAttributes?: SearchAttributes | undefined;
   readonly memo?: unknown;
   readonly priority?: number | undefined;
+  /** The id the run gets; a fresh one is generated without it. */
+  readonly runId?: string | undefined;
+  /** Marks the run as the open run of a singleton key (see `SingletonStart`). */
+  readonly singletonKey?: string | undefined;
+  /** When `idempotencyKey` stops mapping to the run. */
+  readonly idempotencyExpiresAt?: Date | undefined;
 }
 
 /**
@@ -47,9 +53,10 @@ export async function insertRunOnClient(
   const priority = validatePriority(input.priority);
   const inserted = await client.query<{ id: string; started_at: Date }>(
     `insert into workflow_runs
-       (namespace_id, workflow_type, input, idempotency_key, queue_name, search_attributes, memo,
-        priority)
-     values ($1, $2, $3::jsonb, $4, $5, $6::jsonb, $7::jsonb, $8)
+       (id, namespace_id, workflow_type, input, idempotency_key, queue_name, search_attributes,
+        memo, priority, singleton_key, idempotency_expires_at)
+     values (coalesce($9::uuid, gen_random_uuid()), $1, $2, $3::jsonb, $4, $5, $6::jsonb,
+             $7::jsonb, $8, $10, $11)
      on conflict (namespace_id, idempotency_key) where idempotency_key is not null
      do nothing
      returning id, started_at`,
@@ -62,6 +69,9 @@ export async function insertRunOnClient(
       JSON.stringify(searchAttributes),
       memo === undefined ? null : JSON.stringify(memo),
       priority,
+      input.runId ?? null,
+      input.singletonKey ?? null,
+      input.idempotencyExpiresAt ?? null,
     ],
   );
   const created = inserted.rows[0];
