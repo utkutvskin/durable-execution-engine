@@ -8,12 +8,15 @@ import {
   createRunCache,
   createStepTaskProcessor,
   createStickyDecider,
+  createSharedRateLimiter,
+  deferLeasedTask,
   enqueueStepTaskOnClient,
   isTerminalState,
   markRunWaiting,
   NonDeterminismError,
   requeueWithConcurrency,
   resolveConcurrency,
+  resolveRateLimitBucket,
   VersionMismatchError,
   systemClock,
   systemRandomSource,
@@ -24,6 +27,8 @@ import {
   type LiveSession,
   type Pool,
   type RandomSource,
+  type RateLimitRule,
+  type SharedRateLimiter,
   type ResolvedConcurrency,
   type RunState,
   type StickyRouter,
@@ -54,7 +59,12 @@ export type AnyStepDefinition = StepDefinition<never>;
 /**
  * What `createEngineTaskHandler` needs. Workflow tasks and step tasks share
  * `queueName`. `buildId` is stamped on the patch markers a decision records.
- * `stepTimers` are the timers step timeouts use.
+ * `stepTimers` are the timers step timeouts use. `queueRateLimit` caps the
+ * step executions started from `queueName` per period across every worker
+ * of the queue; a step's own `rateLimit` is checked before it. A step task
+ * that a rate limit refuses goes back to the queue until the window frees
+ * a slot, without running and without counting an attempt. `rateLimiter`
+ * replaces the Postgres limiter both use.
  */
 export interface EngineTaskHandlerOptions {
   readonly pool: Pool;
@@ -69,6 +79,8 @@ export interface EngineTaskHandlerOptions {
   readonly tracing?: Tracing;
   readonly maxCachedRuns?: number;
   readonly stickyTimeoutMs?: number;
+  readonly queueRateLimit?: RateLimitRule;
+  readonly rateLimiter?: SharedRateLimiter;
   readonly router?: StickyRouter;
   readonly workerId?: string;
   readonly onDecision?: (decision: DecisionReport) => void;
@@ -166,6 +178,7 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
     clock,
     ...(options.tracing === undefined ? {} : { tracing: options.tracing }),
   });
+  const rateLimiter = options.rateLimiter ?? createSharedRateLimiter(options.pool, { clock });
   const workflows = new Map(options.workflows.map((entry) => [entry.workflowType, entry]));
   const steps = new Map(
     options.steps.map((entry) => [entry.stepType, entry as unknown as StepDefinition]),
@@ -394,8 +407,48 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
     await releaseWithConcurrency(task, { step: assigned });
   }
 
+  function stepRateLimits(task: LeasedTask): [string, RateLimitRule][] {
+    const payload = readStepPayload(task.payload);
+    const definition = payload === undefined ? undefined : steps.get(payload.stepType);
+    const limits: [string, RateLimitRule][] = [];
+    if (payload !== undefined && definition?.rateLimit !== undefined) {
+      const bucket = resolveRateLimitBucket(
+        `step "${payload.stepType}"`,
+        `step:${payload.stepType}`,
+        definition.rateLimit,
+        payload.input as never,
+      );
+      limits.push([bucket, definition.rateLimit]);
+    }
+    if (options.queueRateLimit !== undefined) {
+      limits.push([`queue:${options.queueName}`, options.queueRateLimit]);
+    }
+    return limits;
+  }
+
+  async function takeStepRateLimits(task: LeasedTask): Promise<void> {
+    for (const [bucket, rule] of stepRateLimits(task)) {
+      const decision = await rateLimiter.take(bucket, rule);
+      if (!decision.allowed) {
+        const visibleAt = new Date(clock.now().getTime() + decision.retryAfterMs);
+        const released = await deferLeasedTask(
+          options.pool,
+          { taskId: task.id, leaseToken: task.leaseToken },
+          visibleAt,
+        );
+        throw new TaskReleasedError(
+          task.id,
+          released
+            ? `rate limit "${bucket}" is spent until ${visibleAt.toISOString()}`
+            : "its lease was lost",
+        );
+      }
+    }
+  }
+
   async function handleStepTask(task: LeasedTask, signal: AbortSignal): Promise<void> {
     await assignStepConcurrency(task);
+    await takeStepRateLimits(task);
     const outcome = await processor.process(task, { signal });
     if (outcome.status === "dead_lettered") {
       await enqueueFollowUp(task);

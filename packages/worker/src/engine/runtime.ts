@@ -11,6 +11,7 @@ import {
   type EngineMetrics,
   type Pool,
   type RandomSource,
+  type RateLimitRule,
   type RecoveryMetrics,
   type RetentionPolicy,
   type ScheduleManager,
@@ -52,6 +53,9 @@ import {
  * long never hold up a decision: `workflowConcurrency` decisions and
  * `stepConcurrency` steps run at once, each defaulting to `concurrency`
  * (default 4).
+ *
+ * `queueRateLimit` caps the steps started from the engine's queue per period,
+ * shared through Postgres by every engine on the queue.
  */
 export interface EngineOptions {
   readonly pool: Pool;
@@ -64,6 +68,7 @@ export interface EngineOptions {
   readonly concurrency?: number;
   readonly workflowConcurrency?: number;
   readonly stepConcurrency?: number;
+  readonly queueRateLimit?: RateLimitRule;
   readonly pollIntervalMs?: number;
   readonly visibilityTimeoutMs?: number;
   readonly loopIntervalMs?: number;
@@ -156,6 +161,7 @@ export function startEngine(options: EngineOptions): Engine {
     ...(options.maxCachedRuns === undefined ? {} : { maxCachedRuns: options.maxCachedRuns }),
     ...(options.stickyTimeoutMs === undefined ? {} : { stickyTimeoutMs: options.stickyTimeoutMs }),
     ...(options.tracing === undefined ? {} : { tracing: options.tracing }),
+    ...(options.queueRateLimit === undefined ? {} : { queueRateLimit: options.queueRateLimit }),
     ...(router === undefined ? {} : { router, workerId: identity.id }),
     onDecision: (decision) => {
       if (decision.source === "cache") {

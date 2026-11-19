@@ -1,9 +1,10 @@
 import {
   createQuotaStore,
-  createRateLimiter,
+  createSharedRateLimiter,
+  quotaRateLimitRule,
   type Pool,
   type QuotaStore,
-  type RateLimiter,
+  type SharedRateLimiter,
 } from "@dee/core";
 
 /**
@@ -41,7 +42,7 @@ export interface QuotaGuard {
  */
 export interface QuotaGuardOptions {
   readonly quotas?: QuotaStore;
-  readonly limiter?: RateLimiter;
+  readonly limiter?: SharedRateLimiter;
   readonly queueName?: string;
   readonly maxQueueDepth?: number;
   readonly quotaRetryAfterSeconds?: number;
@@ -50,14 +51,18 @@ export interface QuotaGuardOptions {
 const DEFAULT_QUOTA_RETRY_AFTER_SECONDS = 5;
 
 /**
- * Creates a `QuotaGuard` over `pool`. The rate limit is checked first and
+ * Creates a `QuotaGuard` over `pool`. The rate limit is a sliding window kept
+ * in Postgres (`createSharedRateLimiter`, bucket `namespace:<id>`), so every
+ * api process on the database shares it; a quota's `ratePerSecond` and
+ * `burst` become `burst` admissions per the time `ratePerSecond` takes to
+ * refill them (see `quotaRateLimitRule`). The rate limit is checked first and
  * spends a token even when the request is refused later; the checks of
  * usage are read-then-write, so concurrent writes may overshoot a quota by
  * the number of requests in flight.
  */
 export function createQuotaGuard(pool: Pool, options: QuotaGuardOptions = {}): QuotaGuard {
   const quotas = options.quotas ?? createQuotaStore(pool);
-  const limiter = options.limiter ?? createRateLimiter();
+  const limiter = options.limiter ?? createSharedRateLimiter(pool);
   const quotaRetryAfter = options.quotaRetryAfterSeconds ?? DEFAULT_QUOTA_RETRY_AFTER_SECONDS;
 
   return {
@@ -65,10 +70,10 @@ export function createQuotaGuard(pool: Pool, options: QuotaGuardOptions = {}): Q
       const quota = await quotas.get(namespaceId);
 
       if (quota.ratePerSecond !== null) {
-        const decision = limiter.take(namespaceId, {
-          ratePerSecond: quota.ratePerSecond,
-          burst: quota.burst ?? Math.max(1, Math.ceil(quota.ratePerSecond)),
-        });
+        const decision = await limiter.take(
+          `namespace:${namespaceId}`,
+          quotaRateLimitRule(quota.ratePerSecond, quota.burst),
+        );
         if (!decision.allowed) {
           return {
             status: 429,

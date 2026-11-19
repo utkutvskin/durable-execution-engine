@@ -412,6 +412,21 @@ export type { StickyClaim, StickyRouter } from "./sticky/sticky-router.ts";
 export { createRateLimiter } from "./quota/token-bucket.ts";
 export type { RateLimitDecision, RateLimiter, TokenBucketConfig } from "./quota/token-bucket.ts";
 export { UNLIMITED_QUOTA, createQuotaStore } from "./quota/quota-store.ts";
+export {
+  InvalidRateLimitError,
+  MAX_RATE_LIMIT_BUCKET_LENGTH,
+  createSharedRateLimiter,
+  deferLeasedTask,
+  quotaRateLimitRule,
+  resolveRateLimitBucket,
+  validateRateLimitRule,
+} from "./quota/shared-rate-limiter.ts";
+export type {
+  KeyedRateLimitRule,
+  RateLimitRule,
+  SharedRateLimiter,
+} from "./quota/shared-rate-limiter.ts";
+
 export type { NamespaceQuota, NamespaceUsage, QuotaStore } from "./quota/quota-store.ts";
 
 export {

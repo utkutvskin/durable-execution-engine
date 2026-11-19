@@ -78,10 +78,10 @@ describe("migrations into a named schema", () => {
   it("reverts inside the named schema", async () => {
     await migrateUp(app.pool, defaultMigrationsDir, { schema: engineSchema });
     const reverted = await migrateDown(app.pool, defaultMigrationsDir, 1, { schema: engineSchema });
-    expect(reverted).toEqual(["0027_concurrency_keys"]);
+    expect(reverted).toEqual(["0028_rate_limits_and_start_policies"]);
     expect(
       await pendingMigrations(app.pool, defaultMigrationsDir, { schema: engineSchema }),
-    ).toEqual(["0027_concurrency_keys"]);
+    ).toEqual(["0028_rate_limits_and_start_policies"]);
     await migrateUp(app.pool, defaultMigrationsDir, { schema: engineSchema });
   });
 

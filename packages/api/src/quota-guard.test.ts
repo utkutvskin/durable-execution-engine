@@ -1,6 +1,6 @@
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createQuotaStore, createRateLimiter, createTaskQueue } from "@dee/core";
+import { createQuotaStore, createSharedRateLimiter, createTaskQueue } from "@dee/core";
 import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.ts";
 import { validateOpenApiDocument } from "./openapi-validator.ts";
 import { createQuotaGuard } from "./quota-guard.ts";
@@ -55,7 +55,7 @@ describe("quotas and rate limiting over http", () => {
     database = await createIsolatedDatabase();
     const clock = { now: () => new Date(Date.UTC(2026, 2, 1) + elapsedMs) };
     const guard = createQuotaGuard(database.pool, {
-      limiter: createRateLimiter({ clock }),
+      limiter: createSharedRateLimiter(database.pool, { clock }),
       queueName: "default",
       maxQueueDepth: 50,
     });
@@ -90,15 +90,18 @@ describe("quotas and rate limiting over http", () => {
     expect(statuses).toEqual([200, 200, 200, 429, 429]);
 
     const refused = await call(namespaceA.key, "GET", "/v1/runs");
-    expect(refused.headers.get("retry-after")).toBe("1");
+    expect(refused.headers.get("retry-after")).toBe("3");
     expect((refused.body["error"] as { code: string }).code).toBe("rate_limited");
 
     expect((await call(namespaceB.key, "GET", "/v1/runs")).status).toBe(200);
     expect((await start(namespaceB.key)).status).toBe(201);
   });
 
-  it("lets the namespace through again once the bucket has refilled", async () => {
-    elapsedMs += 2000;
+  it("lets the namespace through again once its admissions have left the window", async () => {
+    elapsedMs += 2999;
+    expect((await call(namespaceA.key, "GET", "/v1/runs")).status).toBe(429);
+    elapsedMs += 1;
+    expect((await call(namespaceA.key, "GET", "/v1/runs")).status).toBe(200);
     expect((await call(namespaceA.key, "GET", "/v1/runs")).status).toBe(200);
     expect((await call(namespaceA.key, "GET", "/v1/runs")).status).toBe(200);
     expect((await call(namespaceA.key, "GET", "/v1/runs")).status).toBe(429);

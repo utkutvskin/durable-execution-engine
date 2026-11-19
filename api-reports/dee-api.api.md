@@ -12,13 +12,13 @@ import { IncomingMessage } from 'node:http';
 import { Logger } from '@dee/core';
 import { Pool } from '@dee/core';
 import { QuotaStore } from '@dee/core';
-import { RateLimiter } from '@dee/core';
 import { RunConcurrencyState } from '@dee/core';
 import { SearchAttributes } from '@dee/core';
 import { SendEventInput } from '@dee/core';
 import { SendEventReceipt } from '@dee/core';
 import { Server } from 'node:http';
 import { ServerResponse } from 'node:http';
+import { SharedRateLimiter } from '@dee/core';
 import { SignalReceipt } from '@dee/core';
 import { SignalWithStartReceipt } from '@dee/core';
 import { Tracing } from '@dee/core';
@@ -293,7 +293,7 @@ export interface QuotaGuard {
 // @public
 export interface QuotaGuardOptions {
     // (undocumented)
-    readonly limiter?: RateLimiter;
+    readonly limiter?: SharedRateLimiter;
     // (undocumented)
     readonly maxQueueDepth?: number;
     // (undocumented)

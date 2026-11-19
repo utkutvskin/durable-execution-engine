@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import { validateConcurrencyRule, type ConcurrencyRule } from "../queue/concurrency-keys.ts";
 import { resolveRetryPolicy, type RetryPolicy } from "../retry/retry-policy.ts";
+import { validateRateLimitRule, type KeyedRateLimitRule } from "../quota/shared-rate-limiter.ts";
 import { detachedStepContext, type StepContext, type StepHandler } from "./step-registry.ts";
 
 /**
@@ -18,6 +19,8 @@ import { detachedStepContext, type StepContext, type StepHandler } from "./step-
  * fails an attempt that went that long without a heartbeat. `concurrency`
  * limits how many executions with the same key, evaluated from the step's
  * input, run at once; an execution holds its slot while its task is leased.
+ * `rateLimit` caps how many executions start per period across every
+ * worker, per key when it has one (see `KeyedRateLimitRule`).
  */
 export interface StepDefinition<TInput = unknown, TResult = unknown> {
   readonly stepType: string;
@@ -27,6 +30,7 @@ export interface StepDefinition<TInput = unknown, TResult = unknown> {
   readonly heartbeatTimeoutMs?: number;
   readonly retry?: RetryPolicy;
   readonly concurrency?: ConcurrencyRule<TInput>;
+  readonly rateLimit?: KeyedRateLimitRule<TInput>;
 }
 
 /**
@@ -44,6 +48,7 @@ export interface DefineStepOptions<TInput, TResult> {
   readonly heartbeatTimeoutMs?: number;
   readonly retry?: Partial<RetryPolicy>;
   readonly concurrency?: ConcurrencyRule<TInput>;
+  readonly rateLimit?: KeyedRateLimitRule<TInput>;
 }
 
 function checkPositive(stepType: string, name: string, value: number | undefined): void {
@@ -61,7 +66,8 @@ function checkPositive(stepType: string, name: string, value: number | undefined
  * `defineStep` itself does not run anything on a timer. `retry`, when
  * given, is filled in from the default policy and validated with
  * `resolveRetryPolicy`. A concurrency limit that is not a positive integer
- * is rejected with `InvalidConcurrencyRuleError`.
+ * is rejected with `InvalidConcurrencyRuleError`, a malformed rate limit
+ * with `InvalidRateLimitError`.
  */
 export function defineStep<TInput = unknown, TResult = unknown>(
   stepType: string,
@@ -91,6 +97,10 @@ export function defineStep<TInput = unknown, TResult = unknown>(
     options.concurrency === undefined
       ? undefined
       : validateConcurrencyRule(`step "${stepType}"`, options.concurrency);
+  const rateLimit =
+    options.rateLimit === undefined
+      ? undefined
+      : validateRateLimitRule(`step "${stepType}"`, options.rateLimit);
   return {
     stepType,
     handler,
@@ -103,5 +113,6 @@ export function defineStep<TInput = unknown, TResult = unknown>(
       : { heartbeatTimeoutMs: options.heartbeatTimeoutMs }),
     ...(retry === undefined ? {} : { retry }),
     ...(concurrency === undefined ? {} : { concurrency }),
+    ...(rateLimit === undefined ? {} : { rateLimit }),
   };
 }

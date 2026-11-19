@@ -473,6 +473,11 @@ export interface CreateScheduleInput {
 export function createScheduleManager(pool: Pool, options: ScheduleManagerOptions): ScheduleManager;
 
 // @public
+export function createSharedRateLimiter(pool: Pool, options?: {
+    readonly clock?: ClockSource;
+}): SharedRateLimiter;
+
+// @public
 export function createSizeLimitedCodec(codec: Codec, maxBytes?: number): Codec;
 
 // @public
@@ -690,6 +695,12 @@ export const DEFAULT_UPDATE_WAIT_MS = 10000;
 export const defaultMigrationsDir: string;
 
 // @public
+export function deferLeasedTask(pool: Pool, task: {
+    readonly taskId: string;
+    readonly leaseToken: string;
+}, visibleAt: Date): Promise<boolean>;
+
+// @public
 export function defineQuery<TArgument = undefined, TResult = unknown>(queryName: string): QueryDefinition<TArgument, TResult>;
 
 // @public
@@ -710,6 +721,8 @@ export interface DefineStepOptions<TInput, TResult> {
     readonly input?: z.ZodType<TInput>;
     // (undocumented)
     readonly output?: z.ZodType<TResult>;
+    // (undocumented)
+    readonly rateLimit?: KeyedRateLimitRule<TInput>;
     // (undocumented)
     readonly retry?: Partial<RetryPolicy>;
     // (undocumented)
@@ -1160,6 +1173,11 @@ export class InvalidPriorityError extends RangeError {
 }
 
 // @public
+export class InvalidRateLimitError extends RangeError {
+    constructor(message: string);
+}
+
+// @public
 export class InvalidScheduleError extends Error {
     constructor(message: string);
 }
@@ -1264,6 +1282,12 @@ export interface JanitorOptions {
 
 // @public
 export const jsonCodec: Codec;
+
+// @public
+export interface KeyedRateLimitRule<TInput = never> extends RateLimitRule {
+    // (undocumented)
+    readonly key?: (input: TInput) => string;
+}
 
 // @public
 export const KNOWN_EVENT_TYPES: readonly WorkflowEvent["type"][];
@@ -1404,6 +1428,9 @@ export const MAX_QUERY_DEPTH = 16;
 
 // @public
 export const MAX_QUERY_LENGTH = 2000;
+
+// @public
+export const MAX_RATE_LIMIT_BUCKET_LENGTH = 512;
 
 // @public
 export const MAX_RECOVERY_BACKOFF_MS = 3600000;
@@ -1656,6 +1683,9 @@ export interface QueryDefinition<TArgument = undefined, TResult = unknown> {
 export type QueryHandler = (argument: unknown) => unknown;
 
 // @public
+export function quotaRateLimitRule(ratePerSecond: number, burst: number | null): RateLimitRule;
+
+// @public
 export interface QuotaStore {
     get(namespaceId: string): Promise<NamespaceQuota>;
     queueDepth(queueName: string): Promise<number>;
@@ -1688,6 +1718,14 @@ export interface RateLimiter {
     reset(key: string): void;
     // (undocumented)
     take(key: string, config: TokenBucketConfig): RateLimitDecision;
+}
+
+// @public
+export interface RateLimitRule {
+    // (undocumented)
+    readonly limitPerPeriod: number;
+    // (undocumented)
+    readonly periodMs: number;
 }
 
 // @public
@@ -1960,6 +1998,9 @@ export interface ResolvedConcurrency {
     // (undocumented)
     readonly limit: number;
 }
+
+// @public
+export function resolveRateLimitBucket<TInput>(owner: string, prefix: string, rule: KeyedRateLimitRule<TInput>, input: TInput): string;
 
 // @public
 export function resolveRetryPolicy(partial?: Partial<RetryPolicy>): RetryPolicy;
@@ -2458,6 +2499,11 @@ export interface SerializedError {
 export function serializeError(reason: unknown): SerializedError;
 
 // @public
+export interface SharedRateLimiter {
+    take(bucket: string, rule: RateLimitRule): Promise<RateLimitDecision>;
+}
+
+// @public
 export interface SignalDefinition<TPayload = unknown> {
     // (undocumented)
     readonly payloadType?: TPayload;
@@ -2647,6 +2693,8 @@ export interface StepDefinition<TInput = unknown, TResult = unknown> {
     readonly handler: (input: TInput, context?: StepContext) => TResult | Promise<TResult>;
     // (undocumented)
     readonly heartbeatTimeoutMs?: number;
+    // (undocumented)
+    readonly rateLimit?: KeyedRateLimitRule<TInput>;
     // (undocumented)
     readonly retry?: RetryPolicy;
     // (undocumented)
@@ -3210,6 +3258,9 @@ export function validateMemo(value: unknown): unknown;
 export function validatePriority(priority: number | undefined): number;
 
 // @public
+export function validateRateLimitRule<TRule extends RateLimitRule>(owner: string, rule: TRule): TRule;
+
+// @public
 export function validateSearchAttributes(value: unknown): SearchAttributes;
 
 // @public
@@ -3758,6 +3809,9 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/quota/quota-store.d.ts:16:5 - (ae-undocumented) Missing documentation for "openRuns".
 // dist/quota/quota-store.d.ts:17:5 - (ae-undocumented) Missing documentation for "pendingTasks".
 // dist/quota/quota-store.d.ts:27:5 - (ae-undocumented) Missing documentation for "usage".
+// dist/quota/shared-rate-limiter.d.ts:11:5 - (ae-undocumented) Missing documentation for "limitPerPeriod".
+// dist/quota/shared-rate-limiter.d.ts:12:5 - (ae-undocumented) Missing documentation for "periodMs".
+// dist/quota/shared-rate-limiter.d.ts:20:5 - (ae-undocumented) Missing documentation for "key".
 // dist/quota/token-bucket.d.ts:8:5 - (ae-undocumented) Missing documentation for "ratePerSecond".
 // dist/quota/token-bucket.d.ts:9:5 - (ae-undocumented) Missing documentation for "burst".
 // dist/quota/token-bucket.d.ts:16:5 - (ae-undocumented) Missing documentation for "allowed".
@@ -4125,22 +4179,24 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/workflow/define-signal.d.ts:17:5 - (ae-undocumented) Missing documentation for "queryName".
 // dist/workflow/define-signal.d.ts:18:5 - (ae-undocumented) Missing documentation for "argumentType".
 // dist/workflow/define-signal.d.ts:19:5 - (ae-undocumented) Missing documentation for "resultType".
-// dist/workflow/define-step.d.ts:22:5 - (ae-undocumented) Missing documentation for "stepType".
-// dist/workflow/define-step.d.ts:23:5 - (ae-undocumented) Missing documentation for "handler".
-// dist/workflow/define-step.d.ts:24:5 - (ae-undocumented) Missing documentation for "timeoutMs".
-// dist/workflow/define-step.d.ts:25:5 - (ae-undocumented) Missing documentation for "scheduleToCloseTimeoutMs".
-// dist/workflow/define-step.d.ts:26:5 - (ae-undocumented) Missing documentation for "heartbeatTimeoutMs".
-// dist/workflow/define-step.d.ts:27:5 - (ae-undocumented) Missing documentation for "retry".
-// dist/workflow/define-step.d.ts:28:5 - (ae-undocumented) Missing documentation for "concurrency".
-// dist/workflow/define-step.d.ts:36:5 - (ae-undocumented) Missing documentation for "handler".
-// dist/workflow/define-step.d.ts:37:5 - (ae-undocumented) Missing documentation for "input".
-// dist/workflow/define-step.d.ts:38:5 - (ae-undocumented) Missing documentation for "output".
-// dist/workflow/define-step.d.ts:39:5 - (ae-undocumented) Missing documentation for "timeoutMs".
-// dist/workflow/define-step.d.ts:40:5 - (ae-undocumented) Missing documentation for "startToCloseTimeoutMs".
-// dist/workflow/define-step.d.ts:41:5 - (ae-undocumented) Missing documentation for "scheduleToCloseTimeoutMs".
-// dist/workflow/define-step.d.ts:42:5 - (ae-undocumented) Missing documentation for "heartbeatTimeoutMs".
-// dist/workflow/define-step.d.ts:43:5 - (ae-undocumented) Missing documentation for "retry".
-// dist/workflow/define-step.d.ts:44:5 - (ae-undocumented) Missing documentation for "concurrency".
+// dist/workflow/define-step.d.ts:25:5 - (ae-undocumented) Missing documentation for "stepType".
+// dist/workflow/define-step.d.ts:26:5 - (ae-undocumented) Missing documentation for "handler".
+// dist/workflow/define-step.d.ts:27:5 - (ae-undocumented) Missing documentation for "timeoutMs".
+// dist/workflow/define-step.d.ts:28:5 - (ae-undocumented) Missing documentation for "scheduleToCloseTimeoutMs".
+// dist/workflow/define-step.d.ts:29:5 - (ae-undocumented) Missing documentation for "heartbeatTimeoutMs".
+// dist/workflow/define-step.d.ts:30:5 - (ae-undocumented) Missing documentation for "retry".
+// dist/workflow/define-step.d.ts:31:5 - (ae-undocumented) Missing documentation for "concurrency".
+// dist/workflow/define-step.d.ts:32:5 - (ae-undocumented) Missing documentation for "rateLimit".
+// dist/workflow/define-step.d.ts:40:5 - (ae-undocumented) Missing documentation for "handler".
+// dist/workflow/define-step.d.ts:41:5 - (ae-undocumented) Missing documentation for "input".
+// dist/workflow/define-step.d.ts:42:5 - (ae-undocumented) Missing documentation for "output".
+// dist/workflow/define-step.d.ts:43:5 - (ae-undocumented) Missing documentation for "timeoutMs".
+// dist/workflow/define-step.d.ts:44:5 - (ae-undocumented) Missing documentation for "startToCloseTimeoutMs".
+// dist/workflow/define-step.d.ts:45:5 - (ae-undocumented) Missing documentation for "scheduleToCloseTimeoutMs".
+// dist/workflow/define-step.d.ts:46:5 - (ae-undocumented) Missing documentation for "heartbeatTimeoutMs".
+// dist/workflow/define-step.d.ts:47:5 - (ae-undocumented) Missing documentation for "retry".
+// dist/workflow/define-step.d.ts:48:5 - (ae-undocumented) Missing documentation for "concurrency".
+// dist/workflow/define-step.d.ts:49:5 - (ae-undocumented) Missing documentation for "rateLimit".
 // dist/workflow/define-update.d.ts:19:5 - (ae-undocumented) Missing documentation for "updateName".
 // dist/workflow/define-update.d.ts:20:5 - (ae-undocumented) Missing documentation for "validate".
 // dist/workflow/define-update.d.ts:21:5 - (ae-undocumented) Missing documentation for "handler".
