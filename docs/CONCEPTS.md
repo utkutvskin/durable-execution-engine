@@ -138,6 +138,21 @@ A run holds its slot while it has an open task, pending or leased, and a trigger
 
 Every acquisition and release is written to `concurrency_slot_history` in the order of one sequence, and the invariant checker's `concurrency-limit-held` reads it to prove that no key ever had more holders than its limit. `dee_concurrency_slots_held` and `dee_concurrency_queued_tasks` report each key, and the run page shows a run that waits for a slot.
 
+## Shared rate limits, debounce and singleton starts
+
+A rate limit is a sliding window kept in Postgres: at most `limitPerPeriod` admissions in any `periodMs`. Each call is one statement that takes an advisory lock on the bucket, deletes the admissions that left the window, and records the call if the window has room, so every process on the database shares the limit and a bucket never holds more rows than its limit. The api uses it for each namespace's request rate. A step can carry one, per key when it has a key function:
+
+```ts
+const charge = defineStep("charge", {
+  handler,
+  rateLimit: { limitPerPeriod: 100, periodMs: 60_000, key: (payment: Payment) => payment.provider },
+});
+```
+
+and `startEngine({ queueRateLimit })` caps the steps started from a queue. A step task that a limit refuses is handed back to the queue, visible again when the window has room; it did not run, so it counts no attempt.
+
+Three start options decide whether and when a start creates its run. An idempotency key with a TTL maps to its run only until the TTL ends; the next start then frees the key from the old run and creates a new one. A debounced start records its input in `pending_starts` and returns the id its run will have; starts of the same key inside the window replace the input, and the engine's schedule loop starts the run when the window closes. A singleton start checks, under an advisory lock on its key, that no run of the key is open; it is created, refused, or queued in `pending_starts` until the open run closes. Both pending kinds are fired by any engine's schedule loop, each in its own transaction.
+
 ## Guarantees and limits
 
 | The engine guarantees                                             | The engine does not guarantee                         |

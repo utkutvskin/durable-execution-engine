@@ -141,6 +141,16 @@ const order = defineWorkflow("order", async (ctx, input: { orderId: string }) =>
 
 Send `Idempotency-Key: <1 to 255 characters>` with `POST /v1/runs`. The first call answers 201 and creates the run; any repeat in the same namespace answers 200 with `"created": false` and the same run. Reusing the key with a different workflow type or input answers 409.
 
+`idempotencyTtlMs` in the body limits how long the key maps to its run. A start after the TTL answers 201 with a new run, which takes the key over; the old run keeps running and its `idempotencyKey` becomes `null`. A TTL without a key answers 400 `invalid_start_policy`.
+
+## Debounced and singleton starts
+
+`debounce: { key, windowMs }` folds starts. The first start of a key opens a window of `windowMs`; it and every start of the key inside the window answer 202 with `{ "created": false, "pending": { runId, kind: "debounce", key, workflowType, fireAt, startCount } }`, all with the same `runId`, and each replaces the input. When the window closes, the engine's schedule loop starts one run under that `runId` with the last input. The window counts from the first start; later starts do not extend it. Until it fires, `GET /v1/runs/{runId}` answers 404.
+
+`singleton: { key, whenOpen }` allows one open run per key. A start while no run of the key is open creates the run (201). While one is open, `whenOpen: "refuse"` (the default) answers 409 `singleton_open` with `details: { key, runId }`, and `whenOpen: "queue"` answers 202 with a pending start of kind `singleton` (`fireAt` is null), which the schedule loop starts once no run of the key is open, oldest first. A refusing start is also refused while queued starts of its key wait.
+
+`debounce` cannot be combined with `singleton` or an `Idempotency-Key`, and a queued singleton start cannot carry an `Idempotency-Key`; these answer 400 `invalid_start_policy`.
+
 ## Listing
 
 `POST /v1/runs` also accepts `runTimeoutMs` and `executionTimeoutMs` (positive numbers, milliseconds). A run that outlives its run timeout, or whose continue-as-new chain outlives the execution timeout, ends `TIMED_OUT`; a zero or negative value answers 400.
@@ -193,9 +203,9 @@ Each namespace can carry a row in `namespace_quotas`, written with `createQuotaS
 | Pending tasks        | `maxPendingTasks`        | every write (`PENDING` or `LEASED`) | 429 `task_quota_exceeded` |
 | Queue depth (global) | `maxQueueDepth` option   | every write                         | 503 `overloaded`          |
 
-Every refusal carries a `Retry-After` header in whole seconds. For the rate limit it is the time until one token is available; for quotas and queue depth it is `quotaRetryAfterSeconds` (default 5). Limits are per namespace: a namespace that exhausts its bucket or quota does not change the answers other namespaces get. Reads only spend rate limit tokens.
+Every refusal carries a `Retry-After` header in whole seconds. For the rate limit it is the time until the oldest admission leaves the window; for quotas and queue depth it is `quotaRetryAfterSeconds` (default 5). Limits are per namespace: a namespace that exhausts its rate limit or quota does not change the answers other namespaces get. Reads only spend the rate limit.
 
-The token bucket lives in the memory of one api process, so with several api processes the effective rate is the sum of their buckets.
+The rate limit is kept in Postgres and shared by every api process on the database: a namespace gets `burst` requests (by default `ratePerSecond` rounded up) in any sliding window of `burst / ratePerSecond` seconds, however many processes serve it. `ratePerSecond: 1, burst: 3` therefore admits 3 requests in any 3 seconds.
 
 ## Poison pills
 
