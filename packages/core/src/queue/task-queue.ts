@@ -64,6 +64,10 @@ export interface EnqueueInput {
  * namespaces the one served least recently goes first, so a namespace with a
  * deep backlog cannot hold back a namespace with a few tasks.
  *
+ * Tasks held back by a pause (see `createPauseControl`) are skipped: a
+ * paused namespace or queue lane is not scanned at all, and a paused run's
+ * tasks are passed over. They are leased once the pause is resumed.
+ *
  * Taking a task whose lease expired counts as a reclaim. A task reclaimed
  * for the `poisonThreshold`th time is quarantined instead of delivered.
  */
@@ -222,6 +226,13 @@ export function createTaskQueue(
                       and served.task_type = kind.task_type and served.lease_seq is not null
                   ), 0) as turn
            from namespaces n cross join unnest($9::text[]) as kind (task_type)
+           where not exists (
+             select 1 from pauses held_back
+             where held_back.namespace_id = n.id and (
+               held_back.scope = 'namespace'
+               or (held_back.scope = 'queue' and held_back.queue_name = $1)
+             )
+           )
          ),
          candidates as (
            select lane_task.*, lanes.turn,
@@ -243,6 +254,10 @@ export function createTaskQueue(
              where queue_name = $1 and namespace_id = lanes.namespace_id
                and task_type = lanes.task_type
                and state in ('PENDING', 'LEASED') and visible_at <= ${at("$2")}
+               and not exists (
+                 select 1 from pauses held_run
+                 where held_run.scope = 'run' and held_run.run_id = tasks.run_id
+               )
                and ($7::text is null or task_type <> 'WORKFLOW_TASK' or not exists (
                  select 1 from run_stickiness sticky
                  where sticky.run_id = tasks.run_id

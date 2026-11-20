@@ -261,6 +261,14 @@ export type {
   ScheduleTrigger,
   TriggerOutcome,
 } from "./schedules/schedule-manager.ts";
+export { createPauseControl } from "./pause/pauses.ts";
+export type {
+  PauseControl,
+  PauseReceipt,
+  PauseRecord,
+  PauseScope,
+  PauseTarget,
+} from "./pause/pauses.ts";
 export { UnknownQueryError, runQuery } from "./workflow/query.ts";
 export { UnknownUpdateError, UpdateRejectedError, defineUpdate } from "./workflow/define-update.ts";
 export type {

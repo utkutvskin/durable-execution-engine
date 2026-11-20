@@ -92,6 +92,7 @@ describe("initial schema", () => {
       "external_events",
       "namespace_quotas",
       "namespaces",
+      "pauses",
       "pending_starts",
       "rate_limit_admissions",
       "run_events",
