@@ -7,11 +7,17 @@ import { serveCommand } from "./commands/serve.ts";
 import { runCommand } from "./commands/run.ts";
 import { historyCommand, type HistoryHooks } from "./commands/history.ts";
 import { replayCommand } from "./commands/replay.ts";
+import {
+  pauseCommand,
+  resumeCommand,
+  scheduleCommand,
+  type OperationsHooks,
+} from "./commands/operations.ts";
 
 /**
  * Replacements for the effects commands reach for, used by tests.
  */
-export interface CliHooks extends ProcessHooks, HistoryHooks, DatabaseHooks {}
+export interface CliHooks extends ProcessHooks, HistoryHooks, DatabaseHooks, OperationsHooks {}
 
 /**
  * The text `wf help` prints.
@@ -30,6 +36,14 @@ commands:
   run cancel <id>         request cancellation (--reason text)
   run describe <id>       show a run (--history for its events)
   run list                list runs (--status s, --type t, --query q, --limit n)
+  pause <what>            hold back run <id>, queue [name] or namespace (--reason text); pause list
+  resume <what>           release run <id>, queue [name] or namespace
+  schedule create <name> <cron> <type>
+                          create a schedule (--input json, --time-zone tz, --overlap p, --catch-up p)
+  schedule list           list schedules
+  schedule describe <id>  show a schedule and its latest triggers
+  schedule pause <id>     stop a schedule; schedule resume <id> starts it from the next match
+  schedule backfill <id>  start every trigger of --from to --to once (--overlap p)
   history export <id>     print the run's whole history as a history export (--out file)
   replay <file...>        replay history exports against --module code, exit 1 on non-determinism
   example <name|all>      run a bundled example end to end (payment-saga, etl-pipeline)
@@ -95,6 +109,12 @@ export async function main(
         return await migrateCommand(rest, io, hooks);
       case "run":
         return await runCommand(rest, io, hooks);
+      case "pause":
+        return await pauseCommand(rest, io, hooks);
+      case "resume":
+        return await resumeCommand(rest, io, hooks);
+      case "schedule":
+        return await scheduleCommand(rest, io, hooks);
       case "history":
         return await historyCommand(rest, io, hooks);
       case "replay":

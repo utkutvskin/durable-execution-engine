@@ -154,21 +154,30 @@ function preview(text: string): string {
 }
 
 /**
- * Creates a `RunClient` that talks to the http api at `baseUrl` with a
- * bearer key. Error answers become `ApiError`s carrying the status and the
- * api's error code.
+ * Sends one request to the api and resolves with its parsed json body.
  */
-export function createApiClient(options: ApiClientOptions): RunClient {
+export type ApiCall = (
+  method: string,
+  path: string,
+  body?: unknown,
+  headers?: Record<string, string>,
+) => Promise<unknown>;
+
+/**
+ * Creates the `ApiCall` every api client of the cli sends its requests
+ * through: a bearer key on every request, and error answers turned into
+ * `ApiError`s carrying the status, the api's error code and `Retry-After`.
+ */
+export function createApiCall(options: ApiClientOptions): ApiCall {
   const fetchImpl = options.fetch ?? fetch;
   const base = options.baseUrl.replace(/\/+$/, "");
   const now = options.now ?? Date.now;
-  const sleep = options.sleep ?? delay;
 
-  async function call(
+  return async function call(
     method: string,
     path: string,
     body?: unknown,
-    headers = {},
+    headers: Record<string, string> = {},
   ): Promise<unknown> {
     const response = await fetchImpl(`${base}${path}`, {
       method,
@@ -204,7 +213,19 @@ export function createApiClient(options: ApiClientOptions): RunClient {
       );
     }
     return parsed;
-  }
+  };
+}
+
+/**
+ * Creates a `RunClient` that talks to the http api at `baseUrl` with a
+ * bearer key. Error answers become `ApiError`s carrying the status and the
+ * api's error code.
+ */
+export function createApiClient(options: ApiClientOptions): RunClient {
+  const now = options.now ?? Date.now;
+  const sleep = options.sleep ?? delay;
+
+  const call = createApiCall(options);
 
   async function describe(runId: string): Promise<RunSnapshot> {
     return (await call("GET", `/v1/runs/${encodeURIComponent(runId)}`)) as RunSnapshot;
