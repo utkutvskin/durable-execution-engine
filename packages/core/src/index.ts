@@ -246,11 +246,13 @@ export {
 } from "./schedules/cron.ts";
 export type { CronSchedule } from "./schedules/cron.ts";
 export {
+  OVERLAP_POLICIES,
   ScheduleAlreadyExistsError,
   ScheduleNotFoundError,
   createScheduleManager,
 } from "./schedules/schedule-manager.ts";
 export type {
+  BackfillOptions,
   CreateScheduleInput,
   CatchUpPolicy,
   OverlapPolicy,
@@ -259,6 +261,7 @@ export type {
   ScheduleRecord,
   ScheduleTickReport,
   ScheduleTrigger,
+  ScheduleTriggerRecord,
   TriggerOutcome,
 } from "./schedules/schedule-manager.ts";
 export { createPauseControl } from "./pause/pauses.ts";

@@ -12,13 +12,26 @@ import {
   type CronSchedule,
 } from "./cron.ts";
 import { rollbackQuietly } from "../db/transaction.ts";
+import { cancelRunOnClient } from "../cancellation/run-control.ts";
 
 /**
  * What to do when a schedule fires while a run it started earlier is still
  * open: `skip` drops the new trigger, `buffer_one` keeps the latest one and
- * starts it when the open run ends, `allow_all` starts it anyway.
+ * starts it when the open run ends, `cancel_other` requests cancellation of
+ * the open runs and starts the trigger once they have closed (a buffered
+ * trigger, like `buffer_one`), `allow_all` starts it anyway.
  */
-export type OverlapPolicy = "skip" | "buffer_one" | "allow_all";
+export type OverlapPolicy = "skip" | "buffer_one" | "cancel_other" | "allow_all";
+
+/**
+ * Every value of `OverlapPolicy`.
+ */
+export const OVERLAP_POLICIES: readonly OverlapPolicy[] = [
+  "skip",
+  "buffer_one",
+  "cancel_other",
+  "allow_all",
+];
 
 /**
  * How a trigger was handled.
@@ -78,13 +91,35 @@ export interface CreateScheduleInput {
 
 /**
  * One trigger of a schedule and what became of it. `runId` is set when a
- * run was started.
+ * run was started. `cancelledRunIds` lists the open runs a `cancel_other`
+ * trigger requested cancellation of.
  */
 export interface ScheduleTrigger {
   readonly scheduleId: string;
   readonly scheduledFor: Date;
   readonly outcome: TriggerOutcome;
   readonly runId?: string;
+  readonly cancelledRunIds?: readonly string[];
+}
+
+/**
+ * A stored trigger as `ScheduleManager.listTriggers` reads it. `runId` is
+ * `null` until a run was started for it.
+ */
+export interface ScheduleTriggerRecord {
+  readonly scheduledFor: Date;
+  readonly outcome: TriggerOutcome;
+  readonly runId: string | null;
+  readonly createdAt: Date;
+}
+
+/**
+ * Options for `ScheduleManager.backfill`. `overlapPolicy` replaces the
+ * schedule's own policy for the backfilled triggers, so a backfill can start
+ * every trigger of the range with `allow_all` while the schedule skips.
+ */
+export interface BackfillOptions {
+  readonly overlapPolicy?: OverlapPolicy;
 }
 
 /**
@@ -140,6 +175,15 @@ export interface ScheduleManager {
   /** Reads a schedule. Throws `ScheduleNotFoundError`. */
   get(id: string): Promise<ScheduleRecord>;
 
+  /** Lists the schedules of a namespace on every queue, by name. */
+  list(namespaceId: string): Promise<ScheduleRecord[]>;
+
+  /**
+   * Reads the latest `limit` triggers of a schedule (default 50), newest
+   * first. Throws `ScheduleNotFoundError`.
+   */
+  listTriggers(id: string, limit?: number): Promise<ScheduleTriggerRecord[]>;
+
   /** Stops triggering. A paused schedule starts nothing, not even a buffered trigger. */
   pause(id: string): Promise<ScheduleRecord>;
 
@@ -161,10 +205,16 @@ export interface ScheduleManager {
 
   /**
    * Handles every trigger in `[from, to)` under the schedule's overlap
-   * policy, paused or not. A trigger that was already handled is not
-   * handled again, so a backfill can be repeated safely.
+   * policy, or `options.overlapPolicy` when set, paused or not. A trigger
+   * that was already handled is not handled again, so a backfill can be
+   * repeated safely, also while another backfill of the range runs.
    */
-  backfill(id: string, from: Date, to: Date): Promise<ScheduleTickReport>;
+  backfill(
+    id: string,
+    from: Date,
+    to: Date,
+    options?: BackfillOptions,
+  ): Promise<ScheduleTickReport>;
 
   /** The earliest `nextFireAt` among active schedules, if any. */
   nextDueAt(): Promise<Date | undefined>;
@@ -189,7 +239,15 @@ interface ScheduleRow {
   buffered_for: Date | null;
 }
 
+interface TriggerRow {
+  scheduled_for: Date;
+  outcome: TriggerOutcome;
+  run_id: string | null;
+  created_at: Date;
+}
+
 const DEFAULT_BATCH_SIZE = 100;
+const DEFAULT_TRIGGER_LIMIT = 50;
 const UNIQUE_VIOLATION = "23505";
 
 function toRecord(row: ScheduleRow): ScheduleRecord {
@@ -332,12 +390,28 @@ export function createScheduleManager(
     return runId;
   }
 
-  async function hasOpenRun(client: PoolClient, scheduleId: string): Promise<boolean> {
-    const open = await client.query(
-      "select 1 from workflow_runs where schedule_id = $1 and status = 'RUNNING' limit 1",
+  async function openRuns(client: PoolClient, scheduleId: string): Promise<string[]> {
+    const open = await client.query<{ id: string }>(
+      "select id from workflow_runs where schedule_id = $1 and status = 'RUNNING' order by started_at, id",
       [scheduleId],
     );
-    return open.rowCount === 1;
+    return open.rows.map((row) => row.id);
+  }
+
+  async function cancelOpenRuns(
+    client: PoolClient,
+    schedule: ScheduleRow,
+    runIds: readonly string[],
+    scheduledFor: Date,
+  ): Promise<void> {
+    for (const runId of runIds) {
+      await cancelRunOnClient(
+        client,
+        codec,
+        runId,
+        `schedule "${schedule.name}" triggered for ${scheduledFor.toISOString()}`,
+      );
+    }
   }
 
   async function recordTrigger(
@@ -361,6 +435,7 @@ export function createScheduleManager(
     schedule: ScheduleRow,
     scheduledFor: Date,
     spans: TraceSpan[],
+    overlapPolicy: OverlapPolicy = schedule.overlap_policy,
   ): Promise<ScheduleTrigger | undefined> {
     const known = await client.query(
       "select 1 from schedule_triggers where schedule_id = $1 and scheduled_for = $2",
@@ -369,14 +444,16 @@ export function createScheduleManager(
     if (known.rowCount === 1) {
       return undefined;
     }
-    const overlapping =
-      schedule.overlap_policy !== "allow_all" && (await hasOpenRun(client, schedule.id));
-    if (!overlapping) {
+    const open = overlapPolicy === "allow_all" ? [] : await openRuns(client, schedule.id);
+    if (open.length === 0) {
       const runId = await startRun(client, schedule, scheduledFor, spans);
       await recordTrigger(client, schedule.id, scheduledFor, "STARTED", runId);
       return { scheduleId: schedule.id, scheduledFor, outcome: "STARTED", runId };
     }
-    if (schedule.overlap_policy === "buffer_one") {
+    if (overlapPolicy === "cancel_other") {
+      await cancelOpenRuns(client, schedule, open, scheduledFor);
+    }
+    if (overlapPolicy === "buffer_one" || overlapPolicy === "cancel_other") {
       const replaced = schedule.buffered_for;
       await client.query(
         "update schedules set buffered_for = $2, updated_at = now() where id = $1",
@@ -390,7 +467,12 @@ export function createScheduleManager(
         );
       }
       await recordTrigger(client, schedule.id, scheduledFor, "BUFFERED", undefined);
-      return { scheduleId: schedule.id, scheduledFor, outcome: "BUFFERED" };
+      return {
+        scheduleId: schedule.id,
+        scheduledFor,
+        outcome: "BUFFERED",
+        ...(overlapPolicy === "cancel_other" ? { cancelledRunIds: open } : {}),
+      };
     }
     await recordTrigger(client, schedule.id, scheduledFor, "SKIPPED", undefined);
     return { scheduleId: schedule.id, scheduledFor, outcome: "SKIPPED" };
@@ -577,6 +659,35 @@ export function createScheduleManager(
       return toRecord(row);
     },
 
+    async list(namespaceId: string): Promise<ScheduleRecord[]> {
+      const found = await pool.query<ScheduleRow>(
+        "select * from schedules where namespace_id = $1 order by name, id",
+        [namespaceId],
+      );
+      return found.rows.map(toRecord);
+    },
+
+    async listTriggers(
+      id: string,
+      limit = DEFAULT_TRIGGER_LIMIT,
+    ): Promise<ScheduleTriggerRecord[]> {
+      if (!Number.isInteger(limit) || limit <= 0) {
+        throw new RangeError(`limit must be a positive integer, got ${String(limit)}`);
+      }
+      await this.get(id);
+      const found = await pool.query<TriggerRow>(
+        `select scheduled_for, outcome, run_id, created_at from schedule_triggers
+         where schedule_id = $1 order by scheduled_for desc limit $2`,
+        [id, limit],
+      );
+      return found.rows.map((row) => ({
+        scheduledFor: row.scheduled_for,
+        outcome: row.outcome,
+        runId: row.run_id,
+        createdAt: row.created_at,
+      }));
+    },
+
     async pause(id: string): Promise<ScheduleRecord> {
       return inTransaction(async (client) => {
         await loadForUpdate(client, id);
@@ -628,7 +739,12 @@ export function createScheduleManager(
       }
     },
 
-    async backfill(id: string, from: Date, to: Date): Promise<ScheduleTickReport> {
+    async backfill(
+      id: string,
+      from: Date,
+      to: Date,
+      backfillOptions: BackfillOptions = {},
+    ): Promise<ScheduleTickReport> {
       const current = await this.get(id);
       const instants = cronTimesBetween(
         parseCron(current.cronExpression, current.timeZone),
@@ -639,7 +755,13 @@ export function createScheduleManager(
       for (const scheduledFor of instants) {
         const trigger = await inTransaction(async (client, spans) => {
           const row = await loadForUpdate(client, id);
-          return handleTrigger(client, row, scheduledFor, spans);
+          return handleTrigger(
+            client,
+            row,
+            scheduledFor,
+            spans,
+            backfillOptions.overlapPolicy ?? row.overlap_policy,
+          );
         });
         if (trigger !== undefined) {
           triggers.push(trigger);
