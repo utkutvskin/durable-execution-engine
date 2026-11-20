@@ -46,26 +46,36 @@ The key is shown once; only its sha256 hash is stored.
 
 ## Endpoints
 
-| Method | Path                                      | Operation            | Success |
-| ------ | ----------------------------------------- | -------------------- | ------- |
-| POST   | `/v1/runs`                                | `startRun`           | 201/200 |
-| GET    | `/v1/runs`                                | `listRuns`           | 200     |
-| GET    | `/v1/runs/{runId}`                        | `describeRun`        | 200     |
-| GET    | `/v1/runs/{runId}/history`                | `getHistory`         | 200     |
-| POST   | `/v1/runs/{runId}/signal`                 | `signalRun`          | 200     |
-| POST   | `/v1/signal-with-start`                   | `signalWithStart`    | 201/200 |
-| POST   | `/v1/events`                              | `sendEvent`          | 202     |
-| POST   | `/v1/event-triggers`                      | `createEventTrigger` | 201     |
-| GET    | `/v1/event-triggers`                      | `listEventTriggers`  | 200     |
-| POST   | `/v1/runs/{runId}/updates/{updateName}`   | `updateRun`          | 200/202 |
-| GET    | `/v1/runs/{runId}/queries/{queryName}`    | `queryRun`           | 200     |
-| POST   | `/v1/runs/{runId}/cancel`                 | `cancelRun`          | 202     |
-| POST   | `/v1/runs/{runId}/terminate`              | `terminateRun`       | 200     |
-| GET    | `/v1/namespace`                           | `describeNamespace`  | 200     |
-| GET    | `/v1/dead-letters`                        | `listDeadLetters`    | 200     |
-| POST   | `/v1/dead-letters/{deadLetterId}/requeue` | `requeueDeadLetter`  | 200     |
-| GET    | `/v1/runs/{runId}/stream`                 | not in OpenAPI       | 200     |
-| GET    | `/openapi.json`                           | public               | 200     |
+| Method | Path                                      | Operation              | Success |
+| ------ | ----------------------------------------- | ---------------------- | ------- |
+| POST   | `/v1/runs`                                | `startRun`             | 201/200 |
+| GET    | `/v1/runs`                                | `listRuns`             | 200     |
+| GET    | `/v1/runs/{runId}`                        | `describeRun`          | 200     |
+| GET    | `/v1/runs/{runId}/history`                | `getHistory`           | 200     |
+| POST   | `/v1/runs/{runId}/signal`                 | `signalRun`            | 200     |
+| POST   | `/v1/signal-with-start`                   | `signalWithStart`      | 201/200 |
+| POST   | `/v1/events`                              | `sendEvent`            | 202     |
+| POST   | `/v1/event-triggers`                      | `createEventTrigger`   | 201     |
+| GET    | `/v1/event-triggers`                      | `listEventTriggers`    | 200     |
+| POST   | `/v1/runs/{runId}/updates/{updateName}`   | `updateRun`            | 200/202 |
+| GET    | `/v1/runs/{runId}/queries/{queryName}`    | `queryRun`             | 200     |
+| POST   | `/v1/runs/{runId}/cancel`                 | `cancelRun`            | 202     |
+| POST   | `/v1/runs/{runId}/terminate`              | `terminateRun`         | 200     |
+| GET    | `/v1/namespace`                           | `describeNamespace`    | 200     |
+| GET    | `/v1/dead-letters`                        | `listDeadLetters`      | 200     |
+| POST   | `/v1/dead-letters/{deadLetterId}/requeue` | `requeueDeadLetter`    | 200     |
+| POST   | `/v1/pauses`                              | `pause`                | 201/200 |
+| POST   | `/v1/pauses/resume`                       | `resume`               | 200     |
+| GET    | `/v1/pauses`                              | `listPauses`           | 200     |
+| POST   | `/v1/schedules`                           | `createSchedule`       | 201     |
+| GET    | `/v1/schedules`                           | `listSchedules`        | 200     |
+| GET    | `/v1/schedules/{scheduleId}`              | `getSchedule`          | 200     |
+| GET    | `/v1/schedules/{scheduleId}/triggers`     | `listScheduleTriggers` | 200     |
+| POST   | `/v1/schedules/{scheduleId}/pause`        | `pauseSchedule`        | 200     |
+| POST   | `/v1/schedules/{scheduleId}/resume`       | `resumeSchedule`       | 200     |
+| POST   | `/v1/schedules/{scheduleId}/backfill`     | `backfillSchedule`     | 200     |
+| GET    | `/v1/runs/{runId}/stream`                 | not in OpenAPI         | 200     |
+| GET    | `/openapi.json`                           | public                 | 200     |
 
 Errors are `{ "error": { "code", "message", "details"? } }`. 400 is a validation failure or a malformed body or cursor, a visibility query that does not parse (`invalid_query`, see below), invalid search attributes, a rejected or unknown update or an unknown query, 409 a closed run, a compacted history, a reused idempotency key with a different request or a workflow key of another type, 413 a body over 1 MiB, and 501 an update or query to an API that does not have the workflow's code.
 
@@ -150,6 +160,25 @@ Send `Idempotency-Key: <1 to 255 characters>` with `POST /v1/runs`. The first ca
 `singleton: { key, whenOpen }` allows one open run per key. A start while no run of the key is open creates the run (201). While one is open, `whenOpen: "refuse"` (the default) answers 409 `singleton_open` with `details: { key, runId }`, and `whenOpen: "queue"` answers 202 with a pending start of kind `singleton` (`fireAt` is null), which the schedule loop starts once no run of the key is open, oldest first. A refusing start is also refused while queued starts of its key wait.
 
 `debounce` cannot be combined with `singleton` or an `Idempotency-Key`, and a queued singleton start cannot carry an `Idempotency-Key`; these answer 400 `invalid_start_policy`.
+
+## Pause and resume
+
+`POST /v1/pauses` with `{ "scope": "run", "runId" }`, `{ "scope": "queue", "queueName"? }` or `{ "scope": "namespace" }` and an optional `reason` holds work back. A queue without `queueName` is the API's own queue, and a queue pause holds only the caller's namespace. The first pause answers 201 with `{ pause, created: true }`; pausing again answers 200 with the first pause. A run pause of an unknown run answers 404 and of a closed run 409 `run_closed`. `POST /v1/pauses/resume` with the same body removes the pause and answers `{ "resumed": true }`, or `false` when nothing was paused. `GET /v1/pauses` lists the namespace's pauses, oldest first.
+
+A pause only stops the dequeue. Paused tasks stay `PENDING` in their order, timers still fire and enqueue their workflow task, signals, updates and events are still recorded, and a task a worker already leased runs to its end. After a resume the next poll leases the held tasks. `GET /v1/runs/{runId}` carries `paused`, the pauses that hold the run back (its own first), when there are any.
+
+## Schedules
+
+`POST /v1/schedules` with `{ name, cronExpression, workflowType, input?, timeZone?, overlapPolicy?, catchUpPolicy?, catchUpWindowMs?, startAt? }` creates a cron schedule on the API's queue; a running engine of that queue starts its runs. A name that exists answers 409 `schedule_exists`, a cron expression or time zone that does not parse 400 `invalid_schedule`. `GET /v1/schedules` lists them by name, `GET /v1/schedules/{id}` reads one and `GET /v1/schedules/{id}/triggers?limit=` lists its latest triggers (`scheduledFor`, `outcome`, `runId`), newest first. A schedule of another namespace answers 404.
+
+`overlapPolicy` decides what a trigger does while a run of the schedule is open:
+
+- `skip` (the default) drops it.
+- `buffer_one` keeps the latest one and starts it when the open run closes; an older buffered trigger becomes `SKIPPED`.
+- `cancel_other` requests cancellation of the open runs and buffers the trigger like `buffer_one`, so it starts once they have closed and the runs never overlap. The trigger's report lists the cancelled runs in `cancelledRunIds`.
+- `allow_all` starts it anyway.
+
+`POST /v1/schedules/{id}/pause` stops a schedule; it starts nothing, not even a buffered trigger. `POST /v1/schedules/{id}/resume` starts again from the next match after now and does not make up the pause. `POST /v1/schedules/{id}/backfill` with `{ from, to, overlapPolicy? }` handles every trigger in `[from, to)` once, paused or not, under the schedule's policy or the one given (`allow_all` starts every hour of a skipping schedule). It answers the triggers this call handled; a trigger handled before, by a tick or another backfill, is left out, so repeating a backfill starts nothing new. A range that ends before it starts or holds more than 1000 triggers answers 400 `invalid_backfill`.
 
 ## Listing
 

@@ -39,6 +39,51 @@ export interface RunDescription extends RunSummary {
   readonly error: { readonly name: string; readonly message: string } | null;
   readonly lastSequenceNumber: number;
   readonly concurrency?: RunConcurrency;
+  readonly paused?: readonly Pause[];
+}
+
+/**
+ * A pause that holds back work: a run's own, a queue's or the namespace's.
+ */
+export interface Pause {
+  readonly scope: "namespace" | "queue" | "run";
+  readonly queueName: string | null;
+  readonly runId: string | null;
+  readonly reason: string | null;
+  readonly pausedAt: string;
+}
+
+/**
+ * What a pause or resume names. A queue without a name is the api's queue.
+ */
+export type PauseSubject =
+  | { readonly scope: "namespace" }
+  | { readonly scope: "queue"; readonly queueName?: string }
+  | { readonly scope: "run"; readonly runId: string };
+
+/**
+ * A cron schedule as the schedules page shows it.
+ */
+export interface Schedule {
+  readonly scheduleId: string;
+  readonly name: string;
+  readonly cronExpression: string;
+  readonly timeZone: string;
+  readonly workflowType: string;
+  readonly overlapPolicy: string;
+  readonly state: "ACTIVE" | "PAUSED" | "ERRORED";
+  readonly error: string | null;
+  readonly nextFireAt: string | null;
+  readonly lastFiredAt: string | null;
+}
+
+/**
+ * One trigger of a schedule and what became of it.
+ */
+export interface ScheduleTrigger {
+  readonly scheduledFor: string;
+  readonly outcome: "STARTED" | "SKIPPED" | "BUFFERED";
+  readonly runId: string | null;
 }
 
 /**
@@ -111,6 +156,18 @@ export interface ApiClient {
   /** Answers the query `name` from the run's current state. */
   queryRun(runId: string, name: string, argument: unknown): Promise<unknown>;
   listDeadLetters(): Promise<readonly DeadLetter[]>;
+  pause(subject: PauseSubject, reason: string): Promise<void>;
+  resume(subject: PauseSubject): Promise<void>;
+  listPauses(): Promise<readonly Pause[]>;
+  listSchedules(): Promise<readonly Schedule[]>;
+  pauseSchedule(scheduleId: string): Promise<void>;
+  resumeSchedule(scheduleId: string): Promise<void>;
+  /** Handles every trigger of `[from, to)` once and resolves with those this call handled. */
+  backfillSchedule(
+    scheduleId: string,
+    from: string,
+    to: string,
+  ): Promise<readonly ScheduleTrigger[]>;
   requeueDeadLetter(id: string): Promise<void>;
   /**
    * Follows a run's history until the run closes or `signal` aborts. Resolves
@@ -208,6 +265,32 @@ export function createApiClient(apiKey: string, fetchFn: typeof fetch, baseUrl =
         }
       }
       return letters;
+    },
+    async pause(subject, reason) {
+      await request("POST", "/v1/pauses", { ...subject, ...(reason === "" ? {} : { reason }) });
+    },
+    async resume(subject) {
+      await request("POST", "/v1/pauses/resume", subject);
+    },
+    async listPauses() {
+      return (await request<{ pauses: Pause[] }>("GET", "/v1/pauses")).pauses;
+    },
+    async listSchedules() {
+      return (await request<{ schedules: Schedule[] }>("GET", "/v1/schedules")).schedules;
+    },
+    async pauseSchedule(scheduleId) {
+      await request("POST", `/v1/schedules/${encodeURIComponent(scheduleId)}/pause`, {});
+    },
+    async resumeSchedule(scheduleId) {
+      await request("POST", `/v1/schedules/${encodeURIComponent(scheduleId)}/resume`, {});
+    },
+    async backfillSchedule(scheduleId, from, to) {
+      const answer = await request<{ triggers: ScheduleTrigger[] }>(
+        "POST",
+        `/v1/schedules/${encodeURIComponent(scheduleId)}/backfill`,
+        { from, to },
+      );
+      return answer.triggers;
     },
     async requeueDeadLetter(id) {
       await request("POST", `/v1/dead-letters/${encodeURIComponent(id)}/requeue`, {});

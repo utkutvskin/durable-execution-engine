@@ -3,6 +3,7 @@ import { mountDeadLettersView } from "./dead-letters-view.js";
 import { h } from "./dom.js";
 import { mountRunView } from "./run-view.js";
 import { mountRunsView } from "./runs-view.js";
+import { mountSchedulesView } from "./schedules-view.js";
 
 const KEY_STORAGE = "dee.apiKey";
 
@@ -28,7 +29,8 @@ function storeKey(key: string | undefined): void {
 
 /**
  * Starts the app inside `root`: a sign in form for an api key, then the run
- * list, the run detail and the dead letter queue behind a hash router.
+ * list, the run detail, the dead letter queue and the schedules and pauses
+ * page behind a hash router.
  */
 export function startApp(root: HTMLElement): void {
   const banner = h("p", { className: "banner", testId: "banner" });
@@ -68,6 +70,8 @@ export function startApp(root: HTMLElement): void {
       unmount = mountRunView(content, api, decodeURIComponent(run[1]), showError);
     } else if (hash === "/dead-letters") {
       unmount = mountDeadLettersView(content, api, showError);
+    } else if (hash === "/schedules") {
+      unmount = mountSchedulesView(content, api, showError);
     } else {
       unmount = mountRunsView(content, api, namespaceName, showError);
     }
@@ -90,6 +94,7 @@ export function startApp(root: HTMLElement): void {
           {},
           h("a", { href: "#/", testId: "nav-runs" }, "runs"),
           h("a", { href: "#/dead-letters", testId: "nav-dead-letters" }, "dead letters"),
+          h("a", { href: "#/schedules", testId: "nav-schedules" }, "schedules and pauses"),
           h("button", { type: "button", testId: "sign-out", onClick: signOut }, "sign out"),
         ),
       ),

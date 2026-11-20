@@ -1,6 +1,12 @@
 import { ApiError, type ApiClient, type RunDescription } from "./api.js";
 import { h } from "./dom.js";
-import { formatConcurrency, formatJson, formatOffset, formatTimestamp } from "./format.js";
+import {
+  formatConcurrency,
+  formatJson,
+  formatOffset,
+  formatPauses,
+  formatTimestamp,
+} from "./format.js";
 import { buildTimeline, mergeEntries, type HistoryEntry, type TimelineItem } from "./timeline.js";
 
 const RECONNECT_MS = 1000;
@@ -59,6 +65,11 @@ export function mountRunView(
     { testId: "cancel-button", type: "button", onClick: () => void cancel() },
     "cancel run",
   );
+  const pauseButton = h(
+    "button",
+    { testId: "pause-button", type: "button", onClick: () => void togglePause() },
+    "pause run",
+  );
   const signalButton = h("button", { testId: "signal-send", type: "submit" }, "send signal");
   const interactionName = h("input", {
     testId: "interaction-name",
@@ -86,6 +97,7 @@ export function mountRunView(
     }
     const open = description.status === "RUNNING";
     const concurrency = open ? formatConcurrency(description.concurrency) : undefined;
+    const paused = open ? formatPauses(description.paused) : undefined;
     header.replaceChildren(
       h("h2", {}, description.workflowType),
       h(
@@ -112,6 +124,9 @@ export function mountRunView(
               concurrency,
             ),
           ]),
+      ...(paused === undefined
+        ? []
+        : [h("p", { className: "hint waiting", testId: "pause-hint" }, paused)]),
     );
     viewers.replaceChildren(
       viewer("input-viewer", "input", description.input),
@@ -119,6 +134,8 @@ export function mountRunView(
       viewer("error-viewer", "error", description.error),
     );
     cancelButton.disabled = !open;
+    pauseButton.disabled = !open;
+    pauseButton.textContent = ownPause() ? "resume run" : "pause run";
     signalButton.disabled = !open;
     updateButton.disabled = !open;
   }
@@ -156,6 +173,25 @@ export function mountRunView(
     try {
       description = await api.describeRun(runId);
       renderHeader();
+    } catch (error) {
+      onError(error);
+    }
+  }
+
+  function ownPause(): boolean {
+    return description?.paused?.some((pause) => pause.scope === "run") === true;
+  }
+
+  async function togglePause(): Promise<void> {
+    const resuming = ownPause();
+    try {
+      if (resuming) {
+        await api.resume({ scope: "run", runId });
+      } else {
+        await api.pause({ scope: "run", runId }, "paused from the ui");
+      }
+      message.textContent = resuming ? "run resumed" : "run paused";
+      await refreshDescription();
     } catch (error) {
       onError(error);
     }
@@ -323,6 +359,7 @@ export function mountRunView(
         queryButton,
       ),
       interactionResult,
+      pauseButton,
       cancelButton,
       message,
     ),

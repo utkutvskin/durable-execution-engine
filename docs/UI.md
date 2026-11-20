@@ -20,6 +20,8 @@ The ui is then on the same origin as the api, so there is no CORS. The files in 
 - **Signal.** A name and an optional json payload, sent with `POST /v1/runs/{runId}/signal`. The form is disabled once the run is closed.
 - **Update and query.** One form with a name and an optional json argument. "send update" posts it with `POST /v1/runs/{runId}/updates/{name}` and shows the handler's result, or the validator's message when the update was rejected; it is disabled once the run is closed. "run query" reads `GET /v1/runs/{runId}/queries/{name}` and shows the answer.
 - **Cancel.** Asks for confirmation, then requests a graceful cancellation. The timeline shows `cancel requested` at once and `run cancelled` when the workflow has reacted.
+- **Pause.** The run page shows a hint when a pause holds the run back (its own, its queue's or the namespace's) and a "pause run" button that turns into "resume run" while the run's own pause is in force.
+- **Schedules and pauses.** A page with the namespace's pauses, each with a resume button, buttons that pause the API's queue or the namespace (after a confirmation), and the schedules with their cron, overlap policy, state and next fire time, a pause or resume button and a backfill form whose two times are read as UTC.
 - **Dead letters.** The step tasks that ran out of attempts, with a requeue button. Since day 37 the failure is already final for the workflow, so a requeue only acknowledges the entry.
 
 Run data is always inserted as text nodes, never as markup, so an input such as `<img onerror=...>` is displayed and not executed.

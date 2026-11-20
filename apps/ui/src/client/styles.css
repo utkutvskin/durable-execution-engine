@@ -114,8 +114,20 @@ td {
 .badge-timed_out {
   color: var(--bad);
 }
-.badge-cancelled {
+.badge-cancelled,
+.badge-paused {
   color: var(--warn);
+}
+.badge-active {
+  color: var(--good);
+}
+.badge-errored {
+  color: var(--bad);
+}
+.backfill {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
 }
 .viewers {
   display: grid;

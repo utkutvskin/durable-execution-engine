@@ -153,6 +153,12 @@ and `startEngine({ queueRateLimit })` caps the steps started from a queue. A ste
 
 Three start options decide whether and when a start creates its run. An idempotency key with a TTL maps to its run only until the TTL ends; the next start then frees the key from the old run and creates a new one. A debounced start records its input in `pending_starts` and returns the id its run will have; starts of the same key inside the window replace the input, and the engine's schedule loop starts the run when the window closes. A singleton start checks, under an advisory lock on its key, that no run of the key is open; it is created, refused, or queued in `pending_starts` until the open run closes. Both pending kinds are fired by any engine's schedule loop, each in its own transaction.
 
+## Pause, resume and schedule policies
+
+A pause holds back work without losing it. `createPauseControl` writes a row to `pauses` for a namespace, a queue of a namespace or a run, and the dequeue statement skips the lane of a paused namespace or queue and passes over the tasks of a paused run. Nothing else changes: tasks stay `PENDING` in their order, timers fire and enqueue their workflow task into the held state, signals and events are recorded, and a task leased before the pause runs to its end. An expired lease of a paused run is reclaimed only after the resume. Resuming deletes the row, and the next poll leases the held tasks in the order they would have had.
+
+A schedule's overlap policy decides what a trigger does while a run of the schedule is open. `skip` drops it, `buffer_one` keeps only the latest and starts it when the run closes, `allow_all` starts it anyway, and `cancel_other` requests cancellation of the open runs in the trigger's transaction and buffers the trigger like `buffer_one`, so the new run starts only after the cancelled one closed. Every trigger is a row of `schedule_triggers` keyed by schedule and instant, written in the transaction that handles it while the schedule row is locked, which is why a backfill of a range, repeated or run by three callers at once, handles each instant once. A backfill can override the overlap policy, so `allow_all` starts every hour of a range even for a schedule that skips. Pausing a schedule stops its ticks and its buffered trigger; a backfill still works on a paused schedule.
+
 ## Guarantees and limits
 
 | The engine guarantees                                             | The engine does not guarantee                         |

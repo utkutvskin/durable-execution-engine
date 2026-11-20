@@ -116,4 +116,39 @@ describe("createApiClient", () => {
     expect(letters.map((item) => item.id)).toEqual(["a", "b"]);
     expect(urls).toEqual(["/v1/dead-letters", "/v1/dead-letters?cursor=a%20b"]);
   });
+
+  it("sends pauses, resumes, schedule toggles and backfills to their routes", async () => {
+    const seen: { url: string; method: string | undefined; body: unknown }[] = [];
+    const client = createApiClient("k", (input, init) => {
+      seen.push({
+        url: input as string,
+        method: init?.method,
+        body: init?.body === undefined ? undefined : JSON.parse(init.body as string),
+      });
+      return Promise.resolve(jsonResponse(200, { triggers: [{ outcome: "STARTED" }] }));
+    });
+    await client.pause({ scope: "run", runId: "r 1" }, "");
+    await client.pause({ scope: "queue" }, "deploy");
+    await client.resume({ scope: "namespace" });
+    await client.pauseSchedule("s/1");
+    await client.resumeSchedule("s/1");
+    const triggers = await client.backfillSchedule(
+      "s/1",
+      "2026-01-01T00:00:00Z",
+      "2026-01-02T00:00:00Z",
+    );
+    expect(triggers).toHaveLength(1);
+    expect(seen).toEqual([
+      { url: "/v1/pauses", method: "POST", body: { scope: "run", runId: "r 1" } },
+      { url: "/v1/pauses", method: "POST", body: { scope: "queue", reason: "deploy" } },
+      { url: "/v1/pauses/resume", method: "POST", body: { scope: "namespace" } },
+      { url: "/v1/schedules/s%2F1/pause", method: "POST", body: {} },
+      { url: "/v1/schedules/s%2F1/resume", method: "POST", body: {} },
+      {
+        url: "/v1/schedules/s%2F1/backfill",
+        method: "POST",
+        body: { from: "2026-01-01T00:00:00Z", to: "2026-01-02T00:00:00Z" },
+      },
+    ]);
+  });
 });

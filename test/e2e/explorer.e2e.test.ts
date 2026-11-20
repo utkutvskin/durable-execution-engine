@@ -529,6 +529,81 @@ describe.skipIf(BROWSER.mode === "skip")("run explorer in a browser", () => {
     expect(task.rowCount).toBeGreaterThanOrEqual(1);
   }, 30_000);
 
+  it("pauses and resumes a run from its page", async () => {
+    const runId = await startRun();
+    await signIn();
+    await openRun(runId);
+    expect(await page.getByTestId("pause-hint").count()).toBe(0);
+    await page.getByTestId("pause-button").click();
+    await page.locator("[data-testid=pause-hint]", { hasText: "this run" }).waitFor();
+    expect(await page.getByTestId("pause-button").textContent()).toBe("resume run");
+    const held = await database.pool.query("select 1 from pauses where run_id = $1", [runId]);
+    expect(held.rowCount).toBe(1);
+    await page.getByTestId("pause-button").click();
+    await page.getByTestId("pause-hint").waitFor({ state: "detached" });
+    expect(await page.getByTestId("pause-button").textContent()).toBe("pause run");
+  }, 30_000);
+
+  it("pauses the queue, backfills a schedule twice and pauses it from the schedules page", async () => {
+    const created = await fetch(`${baseUrl}/v1/schedules`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "ui-hourly",
+        cronExpression: "0 * * * *",
+        workflowType: "approval",
+        overlapPolicy: "allow_all",
+      }),
+    });
+    const { scheduleId } = (await created.json()) as { scheduleId: string };
+    await signIn();
+    await page.getByTestId("nav-schedules").click();
+    await page.getByTestId("pause-queue").click();
+    await page.locator("[data-testid=pause-row][data-scope=queue]").waitFor();
+
+    const row = page.locator(`[data-schedule-id="${scheduleId}"]`);
+    await row.getByTestId("backfill-from").fill("2026-02-27T00:00");
+    await row.getByTestId("backfill-to").fill("2026-02-28T00:00");
+    await row.getByTestId("backfill-send").click();
+    await page
+      .locator("[data-testid=schedules-message]", {
+        hasText: "24 triggers handled, 24 runs started",
+      })
+      .waitFor();
+    const again = page.locator(`[data-schedule-id="${scheduleId}"]`);
+    await again.getByTestId("backfill-from").fill("2026-02-27T00:00");
+    await again.getByTestId("backfill-to").fill("2026-02-28T00:00");
+    await again.getByTestId("backfill-send").click();
+    await page
+      .locator("[data-testid=schedules-message]", { hasText: "0 triggers handled, 0 runs started" })
+      .waitFor();
+    const runs = await database.pool.query<{ count: string }>(
+      "select count(*) from workflow_runs where schedule_id = $1",
+      [scheduleId],
+    );
+    expect(Number(runs.rows[0]?.count)).toBe(24);
+
+    await page.locator(`[data-schedule-id="${scheduleId}"]`).getByTestId("toggle-schedule").click();
+    await page
+      .locator(`[data-schedule-id="${scheduleId}"] [data-testid=schedule-state]`, {
+        hasText: "PAUSED",
+      })
+      .waitFor();
+    await page
+      .locator("[data-testid=pause-row][data-scope=queue]")
+      .getByTestId("resume-pause")
+      .click();
+    await page.locator("[data-testid=pause-rows]", { hasText: "nothing is paused" }).waitFor();
+    await database.pool.query(
+      "update workflow_runs set status = 'TERMINATED', closed_at = now() where schedule_id = $1",
+      [scheduleId],
+    );
+    await database.pool.query(
+      "delete from tasks where run_id in (select id from workflow_runs where schedule_id = $1)",
+      [scheduleId],
+    );
+  }, 60_000);
+
   it("rejects a wrong api key on the sign in form", async () => {
     await page.goto(`${baseUrl}/ui/`);
     await page.getByTestId("api-key-input").fill("dee_wrong");

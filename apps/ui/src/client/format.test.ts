@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatConcurrency } from "./format.js";
+import { formatConcurrency, formatPauses } from "./format.js";
 
 describe("formatConcurrency", () => {
   it("says nothing for a run without a concurrency key", () => {
@@ -28,5 +28,31 @@ describe("formatConcurrency", () => {
     expect(formatConcurrency({ ...base, holdsSlot: false })).toBe(
       'uses concurrency key "c" (limit 1), holds no slot now',
     );
+  });
+});
+
+describe("formatPauses", () => {
+  const pause = {
+    queueName: null,
+    runId: null,
+    reason: null,
+    pausedAt: "2026-03-01T10:00:00.000Z",
+  };
+
+  it("says nothing for a run no pause holds back", () => {
+    expect(formatPauses(undefined)).toBeUndefined();
+    expect(formatPauses([])).toBeUndefined();
+  });
+
+  it("names every pause that holds a run back, its own first, with the reasons", () => {
+    const text = formatPauses([
+      { ...pause, scope: "run", runId: "r-1", reason: "investigating" },
+      { ...pause, scope: "queue", queueName: "default" },
+      { ...pause, scope: "namespace" },
+    ]);
+    expect(text).toMatch(
+      /^paused: this run \(investigating\), queue "default", the namespace since /,
+    );
+    expect(text).toContain("timers still fire");
   });
 });

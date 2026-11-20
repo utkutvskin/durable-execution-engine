@@ -1,4 +1,4 @@
-import type { RunConcurrency } from "./api.js";
+import type { Pause, RunConcurrency } from "./api.js";
 
 /**
  * Renders a millisecond offset from the start of a run, such as `+0 ms`,
@@ -53,4 +53,24 @@ export function formatConcurrency(concurrency: RunConcurrency | undefined): stri
     return `waiting for a slot of ${key}: ${String(concurrency.holders)} of ${String(concurrency.limit)} held by other runs`;
   }
   return concurrency.holdsSlot ? `holds a slot of ${key}` : `uses ${key}, holds no slot now`;
+}
+
+/**
+ * The hint the run page shows for a run that a pause holds back, or
+ * `undefined` when none does. Names every pause, the run's own first.
+ */
+export function formatPauses(paused: readonly Pause[] | undefined): string | undefined {
+  if (paused === undefined || paused.length === 0) {
+    return undefined;
+  }
+  const holders = paused.map((pause) => {
+    const what =
+      pause.scope === "run"
+        ? "this run"
+        : pause.scope === "queue"
+          ? `queue "${pause.queueName ?? ""}"`
+          : "the namespace";
+    return pause.reason === null ? what : `${what} (${pause.reason})`;
+  });
+  return `paused: ${holders.join(", ")} since ${formatTimestamp(paused[0]?.pausedAt ?? "")}; its tasks stay queued and timers still fire`;
 }

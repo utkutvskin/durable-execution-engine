@@ -36,6 +36,9 @@ export interface AddDeadLetterInput {
 }
 
 // @public
+export function admitStartOnClient(client: PoolClient, request: StartRequest, policies: StartPolicies, now: Date, codec?: Codec): Promise<StartAdmission>;
+
+// @public
 export function appendEventsOnClient(client: PoolClient, codec: Codec, runId: string, expectedSeq: number, events: readonly WorkflowEvent[]): Promise<StoredEvent[]>;
 
 // @public
@@ -65,6 +68,12 @@ export function awaitUpdateOutcome(pool: Pool, codec: Codec, runId: string, rece
     readonly updateId: string;
     readonly sequenceNumber: number;
 }, waitMs: number, wait?: UpdateWaitOptions): Promise<UpdateOutcome>;
+
+// @public
+export interface BackfillOptions {
+    // (undocumented)
+    readonly overlapPolicy?: OverlapPolicy;
+}
 
 // @public
 export const BUILT_IN_VISIBILITY_FIELDS: readonly string[];
@@ -403,6 +412,12 @@ export function createMetricsRegistry(): MetricsRegistry;
 export function createMonotonicClock(source: ClockSource): MonotonicClock;
 
 // @public
+export function createPauseControl(pool: Pool): PauseControl;
+
+// @public
+export function createPendingStartFirer(pool: Pool, options?: PendingStartFirerOptions): PendingStartFirer;
+
+// @public
 export function createPool(env: DatabaseUrlEnv, options?: CreatePoolOptions): Pool;
 
 // @public
@@ -615,6 +630,14 @@ export interface Deadlines {
     readonly fixed: readonly Deadline[];
     // (undocumented)
     readonly heartbeat?: Deadline;
+}
+
+// @public
+export interface DebounceStart {
+    // (undocumented)
+    readonly key: string;
+    // (undocumented)
+    readonly windowMs: number;
 }
 
 // @public
@@ -1195,6 +1218,11 @@ export class InvalidSleepDurationError extends RangeError {
 }
 
 // @public
+export class InvalidStartPolicyError extends RangeError {
+    constructor(message: string);
+}
+
+// @public
 export class InvalidTransitionError extends Error {
     constructor(from: string, attempted: string);
     // (undocumented)
@@ -1348,6 +1376,9 @@ export type LiveAdvance = {
 };
 
 // @public
+export function liveIdempotencyKeyCondition(nowParameter: number): string;
+
+// @public
 export interface LiveSession {
     advance(history: readonly WorkflowEvent[], triggeredAt?: Date): Promise<LiveAdvance>;
     readonly eventCount: number;
@@ -1443,6 +1474,9 @@ export const MAX_SEARCH_ATTRIBUTE_STRING_LENGTH = 256;
 
 // @public
 export const MAX_SEARCH_ATTRIBUTES = 32;
+
+// @public
+export const MAX_START_KEY_LENGTH = 256;
 
 // @public
 export const MAX_UPDATE_WAIT_MS = 60000;
@@ -1569,7 +1603,10 @@ export class NoOpenTransactionError extends Error {
 export const noopTracing: Tracing;
 
 // @public
-export type OverlapPolicy = "skip" | "buffer_one" | "allow_all";
+export const OVERLAP_POLICIES: readonly OverlapPolicy[];
+
+// @public
+export type OverlapPolicy = "skip" | "buffer_one" | "cancel_other" | "allow_all";
 
 // @public
 export const packageName = "@dee/core";
@@ -1628,6 +1665,57 @@ export function parseHistoryExport(raw: unknown, source?: string, reader?: Event
 export function parseTraceparent(value: string | null | undefined): ParsedTraceparent | undefined;
 
 // @public
+export interface PauseControl {
+    list(namespaceId: string): Promise<PauseRecord[]>;
+    pause(target: PauseTarget, reason?: string): Promise<PauseReceipt>;
+    pausesOfRun(namespaceId: string, runId: string): Promise<PauseRecord[]>;
+    resume(target: PauseTarget): Promise<boolean>;
+}
+
+// @public
+export interface PauseReceipt {
+    // (undocumented)
+    readonly created: boolean;
+    // (undocumented)
+    readonly pause: PauseRecord;
+}
+
+// @public
+export interface PauseRecord {
+    // (undocumented)
+    readonly id: string;
+    // (undocumented)
+    readonly namespaceId: string;
+    // (undocumented)
+    readonly pausedAt: Date;
+    // (undocumented)
+    readonly queueName: string | null;
+    // (undocumented)
+    readonly reason: string | null;
+    // (undocumented)
+    readonly runId: string | null;
+    // (undocumented)
+    readonly scope: PauseScope;
+}
+
+// @public
+export type PauseScope = "namespace" | "queue" | "run";
+
+// @public
+export type PauseTarget = {
+    readonly scope: "namespace";
+    readonly namespaceId: string;
+} | {
+    readonly scope: "queue";
+    readonly namespaceId: string;
+    readonly queueName: string;
+} | {
+    readonly scope: "run";
+    readonly namespaceId: string;
+    readonly runId: string;
+};
+
+// @public
 export class PayloadTooLargeError extends Error {
     constructor(actualBytes: number, maxBytes: number);
     // (undocumented)
@@ -1638,6 +1726,59 @@ export class PayloadTooLargeError extends Error {
 
 // @public
 export function pendingMigrations(pool: Pool, migrationsDir?: string, options?: MigrateOptions): Promise<string[]>;
+
+// @public
+export interface PendingRunOptions {
+    // (undocumented)
+    readonly executionTimeoutMs?: number | undefined;
+    // (undocumented)
+    readonly memo?: unknown;
+    // (undocumented)
+    readonly priority?: number | undefined;
+    // (undocumented)
+    readonly runTimeoutMs?: number | undefined;
+    // (undocumented)
+    readonly searchAttributes?: SearchAttributes | undefined;
+}
+
+// @public
+export interface PendingStart {
+    // (undocumented)
+    readonly fireAt: Date | null;
+    // (undocumented)
+    readonly key: string;
+    // (undocumented)
+    readonly kind: "debounce" | "singleton";
+    // (undocumented)
+    readonly runId: string;
+    // (undocumented)
+    readonly startCount: number;
+    // (undocumented)
+    readonly workflowType: string;
+}
+
+// @public
+export interface PendingStartFirer {
+    fireDue(): Promise<PendingStartReport>;
+}
+
+// @public
+export interface PendingStartFirerOptions {
+    // (undocumented)
+    readonly batchSize?: number;
+    // (undocumented)
+    readonly clock?: ClockSource;
+    // (undocumented)
+    readonly codec?: Codec;
+}
+
+// @public
+export interface PendingStartReport {
+    // (undocumented)
+    readonly debounced: readonly string[];
+    // (undocumented)
+    readonly singletons: readonly string[];
+}
 
 export { Pool }
 
@@ -1741,6 +1882,9 @@ export interface ReadinessResult {
     // (undocumented)
     readonly ready: boolean;
 }
+
+// @public
+export function readPendingStart(pool: Pool, namespaceId: string, runId: string): Promise<PendingStart | undefined>;
 
 // @public
 export function readRunChain(pool: Pool, firstRunId: string): Promise<ChainRun[]>;
@@ -1884,6 +2028,9 @@ export interface RecoveryMetricsSnapshot {
 
 // @public
 export function refreshProjection(pool: Pool, store: EventStore, runId: string): Promise<RunProjection>;
+
+// @public
+export function releaseExpiredIdempotencyKeyOnClient(client: PoolClient, namespaceId: string, idempotencyKey: string, now: Date): Promise<void>;
 
 // @public
 export interface ReplayableWorkflow {
@@ -2326,10 +2473,12 @@ export class ScheduleAlreadyExistsError extends Error {
 
 // @public
 export interface ScheduleManager {
-    backfill(id: string, from: Date, to: Date): Promise<ScheduleTickReport>;
+    backfill(id: string, from: Date, to: Date, options?: BackfillOptions): Promise<ScheduleTickReport>;
     catchUp(): Promise<ScheduleTickReport>;
     create(input: CreateScheduleInput): Promise<ScheduleRecord>;
     get(id: string): Promise<ScheduleRecord>;
+    list(namespaceId: string): Promise<ScheduleRecord[]>;
+    listTriggers(id: string, limit?: number): Promise<ScheduleTriggerRecord[]>;
     nextDueAt(): Promise<Date | undefined>;
     pause(id: string): Promise<ScheduleRecord>;
     resume(id: string): Promise<ScheduleRecord>;
@@ -2422,6 +2571,8 @@ export interface ScheduleTimerInput {
 // @public
 export interface ScheduleTrigger {
     // (undocumented)
+    readonly cancelledRunIds?: readonly string[];
+    // (undocumented)
     readonly outcome: TriggerOutcome;
     // (undocumented)
     readonly runId?: string;
@@ -2429,6 +2580,18 @@ export interface ScheduleTrigger {
     readonly scheduledFor: Date;
     // (undocumented)
     readonly scheduleId: string;
+}
+
+// @public
+export interface ScheduleTriggerRecord {
+    // (undocumented)
+    readonly createdAt: Date;
+    // (undocumented)
+    readonly outcome: TriggerOutcome;
+    // (undocumented)
+    readonly runId: string | null;
+    // (undocumented)
+    readonly scheduledFor: Date;
 }
 
 // @public
@@ -2578,6 +2741,26 @@ export interface SignalWorkflowInput extends EmbeddedOptions {
 export const silentLogger: Logger;
 
 // @public
+export class SingletonRunOpenError extends Error {
+    constructor(key: string, runId: string | undefined);
+    // (undocumented)
+    readonly key: string;
+    // (undocumented)
+    readonly runId: string | undefined;
+}
+
+// @public
+export interface SingletonStart {
+    // (undocumented)
+    readonly key: string;
+    // (undocumented)
+    readonly whenOpen?: SingletonWhenOpen;
+}
+
+// @public
+export type SingletonWhenOpen = "refuse" | "queue";
+
+// @public
 export interface StalledRun {
     // (undocumented)
     readonly namespaceId: string;
@@ -2596,6 +2779,15 @@ export interface StalledRunOptions {
 }
 
 // @public
+export type StartAdmission = {
+    readonly kind: "start";
+    readonly singletonKey?: string;
+} | {
+    readonly kind: "pending";
+    readonly pending: PendingStart;
+};
+
+// @public
 export interface StartChildCommand {
     // (undocumented)
     readonly childId: string;
@@ -2609,6 +2801,32 @@ export interface StartChildCommand {
     readonly runTimeoutMs?: number;
     // (undocumented)
     readonly type: "start_child";
+    // (undocumented)
+    readonly workflowType: string;
+}
+
+// @public
+export interface StartPolicies {
+    // (undocumented)
+    readonly debounce?: DebounceStart | undefined;
+    // (undocumented)
+    readonly idempotencyKey?: string | undefined;
+    // (undocumented)
+    readonly idempotencyTtlMs?: number | undefined;
+    // (undocumented)
+    readonly singleton?: SingletonStart | undefined;
+}
+
+// @public
+export interface StartRequest {
+    // (undocumented)
+    readonly input: unknown;
+    // (undocumented)
+    readonly namespaceId: string;
+    // (undocumented)
+    readonly options: PendingRunOptions;
+    // (undocumented)
+    readonly queueName: string;
     // (undocumented)
     readonly workflowType: string;
 }
@@ -3267,6 +3485,9 @@ export function validateSearchAttributes(value: unknown): SearchAttributes;
 export function validateSearchAttributeUpsert(value: unknown): SearchAttributeUpsert;
 
 // @public
+export function validateStartPolicies(policies: StartPolicies): void;
+
+// @public
 export function validateTimeoutMs(name: string, value: number | undefined): number | undefined;
 
 // @public
@@ -3745,6 +3966,15 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/observability/tracing.d.ts:42:5 - (ae-undocumented) Missing documentation for "setAttributes".
 // dist/observability/tracing.d.ts:47:5 - (ae-undocumented) Missing documentation for "end".
 // dist/observability/tracing.d.ts:55:5 - (ae-undocumented) Missing documentation for "startSpan".
+// dist/pause/pauses.d.ts:28:5 - (ae-undocumented) Missing documentation for "id".
+// dist/pause/pauses.d.ts:29:5 - (ae-undocumented) Missing documentation for "scope".
+// dist/pause/pauses.d.ts:30:5 - (ae-undocumented) Missing documentation for "namespaceId".
+// dist/pause/pauses.d.ts:31:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/pause/pauses.d.ts:32:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/pause/pauses.d.ts:33:5 - (ae-undocumented) Missing documentation for "reason".
+// dist/pause/pauses.d.ts:34:5 - (ae-undocumented) Missing documentation for "pausedAt".
+// dist/pause/pauses.d.ts:41:5 - (ae-undocumented) Missing documentation for "pause".
+// dist/pause/pauses.d.ts:42:5 - (ae-undocumented) Missing documentation for "created".
 // dist/queue/concurrency-keys.d.ts:13:5 - (ae-undocumented) Missing documentation for "key".
 // dist/queue/concurrency-keys.d.ts:14:5 - (ae-undocumented) Missing documentation for "limit".
 // dist/queue/concurrency-keys.d.ts:21:5 - (ae-undocumented) Missing documentation for "key".
@@ -3789,19 +4019,19 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/queue/task-queue.d.ts:39:5 - (ae-undocumented) Missing documentation for "taskType".
 // dist/queue/task-queue.d.ts:40:5 - (ae-undocumented) Missing documentation for "payload".
 // dist/queue/task-queue.d.ts:41:5 - (ae-undocumented) Missing documentation for "delayMs".
-// dist/queue/task-queue.d.ts:65:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/queue/task-queue.d.ts:66:5 - (ae-undocumented) Missing documentation for "visibilityTimeoutMs".
-// dist/queue/task-queue.d.ts:67:5 - (ae-undocumented) Missing documentation for "limit".
-// dist/queue/task-queue.d.ts:68:5 - (ae-undocumented) Missing documentation for "workerId".
-// dist/queue/task-queue.d.ts:69:5 - (ae-undocumented) Missing documentation for "workerVersion".
-// dist/queue/task-queue.d.ts:70:5 - (ae-undocumented) Missing documentation for "stickyFor".
-// dist/queue/task-queue.d.ts:71:5 - (ae-undocumented) Missing documentation for "taskTypes".
-// dist/queue/task-queue.d.ts:80:5 - (ae-undocumented) Missing documentation for "enqueue".
-// dist/queue/task-queue.d.ts:81:5 - (ae-undocumented) Missing documentation for "dequeue".
-// dist/queue/task-queue.d.ts:82:5 - (ae-undocumented) Missing documentation for "ack".
-// dist/queue/task-queue.d.ts:83:5 - (ae-undocumented) Missing documentation for "nack".
-// dist/queue/task-queue.d.ts:84:5 - (ae-undocumented) Missing documentation for "quarantine".
-// dist/queue/task-queue.d.ts:85:5 - (ae-undocumented) Missing documentation for "extend".
+// dist/queue/task-queue.d.ts:69:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/queue/task-queue.d.ts:70:5 - (ae-undocumented) Missing documentation for "visibilityTimeoutMs".
+// dist/queue/task-queue.d.ts:71:5 - (ae-undocumented) Missing documentation for "limit".
+// dist/queue/task-queue.d.ts:72:5 - (ae-undocumented) Missing documentation for "workerId".
+// dist/queue/task-queue.d.ts:73:5 - (ae-undocumented) Missing documentation for "workerVersion".
+// dist/queue/task-queue.d.ts:74:5 - (ae-undocumented) Missing documentation for "stickyFor".
+// dist/queue/task-queue.d.ts:75:5 - (ae-undocumented) Missing documentation for "taskTypes".
+// dist/queue/task-queue.d.ts:84:5 - (ae-undocumented) Missing documentation for "enqueue".
+// dist/queue/task-queue.d.ts:85:5 - (ae-undocumented) Missing documentation for "dequeue".
+// dist/queue/task-queue.d.ts:86:5 - (ae-undocumented) Missing documentation for "ack".
+// dist/queue/task-queue.d.ts:87:5 - (ae-undocumented) Missing documentation for "nack".
+// dist/queue/task-queue.d.ts:88:5 - (ae-undocumented) Missing documentation for "quarantine".
+// dist/queue/task-queue.d.ts:89:5 - (ae-undocumented) Missing documentation for "extend".
 // dist/quota/quota-store.d.ts:6:5 - (ae-undocumented) Missing documentation for "maxConcurrentRuns".
 // dist/quota/quota-store.d.ts:7:5 - (ae-undocumented) Missing documentation for "maxPendingTasks".
 // dist/quota/quota-store.d.ts:8:5 - (ae-undocumented) Missing documentation for "ratePerSecond".
@@ -3974,6 +4204,37 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/run/projection.d.ts:10:5 - (ae-undocumented) Missing documentation for "error".
 // dist/run/projection.d.ts:14:5 - (ae-undocumented) Missing documentation for "closedAt".
 // dist/run/projection.d.ts:15:5 - (ae-undocumented) Missing documentation for "lastSequenceNumber".
+// dist/run/start-policies.d.ts:12:5 - (ae-undocumented) Missing documentation for "key".
+// dist/run/start-policies.d.ts:13:5 - (ae-undocumented) Missing documentation for "windowMs".
+// dist/run/start-policies.d.ts:26:5 - (ae-undocumented) Missing documentation for "key".
+// dist/run/start-policies.d.ts:27:5 - (ae-undocumented) Missing documentation for "whenOpen".
+// dist/run/start-policies.d.ts:38:5 - (ae-undocumented) Missing documentation for "idempotencyKey".
+// dist/run/start-policies.d.ts:39:5 - (ae-undocumented) Missing documentation for "idempotencyTtlMs".
+// dist/run/start-policies.d.ts:40:5 - (ae-undocumented) Missing documentation for "debounce".
+// dist/run/start-policies.d.ts:41:5 - (ae-undocumented) Missing documentation for "singleton".
+// dist/run/start-policies.d.ts:47:5 - (ae-undocumented) Missing documentation for "runTimeoutMs".
+// dist/run/start-policies.d.ts:48:5 - (ae-undocumented) Missing documentation for "executionTimeoutMs".
+// dist/run/start-policies.d.ts:49:5 - (ae-undocumented) Missing documentation for "searchAttributes".
+// dist/run/start-policies.d.ts:50:5 - (ae-undocumented) Missing documentation for "memo".
+// dist/run/start-policies.d.ts:51:5 - (ae-undocumented) Missing documentation for "priority".
+// dist/run/start-policies.d.ts:60:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/run/start-policies.d.ts:61:5 - (ae-undocumented) Missing documentation for "kind".
+// dist/run/start-policies.d.ts:62:5 - (ae-undocumented) Missing documentation for "key".
+// dist/run/start-policies.d.ts:63:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/run/start-policies.d.ts:64:5 - (ae-undocumented) Missing documentation for "fireAt".
+// dist/run/start-policies.d.ts:65:5 - (ae-undocumented) Missing documentation for "startCount".
+// dist/run/start-policies.d.ts:84:5 - (ae-undocumented) Missing documentation for "key".
+// dist/run/start-policies.d.ts:85:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/run/start-policies.d.ts:108:5 - (ae-undocumented) Missing documentation for "namespaceId".
+// dist/run/start-policies.d.ts:109:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/run/start-policies.d.ts:110:5 - (ae-undocumented) Missing documentation for "input".
+// dist/run/start-policies.d.ts:111:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/run/start-policies.d.ts:112:5 - (ae-undocumented) Missing documentation for "options".
+// dist/run/start-policies.d.ts:142:5 - (ae-undocumented) Missing documentation for "debounced".
+// dist/run/start-policies.d.ts:143:5 - (ae-undocumented) Missing documentation for "singletons".
+// dist/run/start-policies.d.ts:150:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/run/start-policies.d.ts:151:5 - (ae-undocumented) Missing documentation for "codec".
+// dist/run/start-policies.d.ts:152:5 - (ae-undocumented) Missing documentation for "batchSize".
 // dist/schedules/cron.d.ts:12:5 - (ae-undocumented) Missing documentation for "expression".
 // dist/schedules/cron.d.ts:13:5 - (ae-undocumented) Missing documentation for "timeZone".
 // dist/schedules/cron.d.ts:14:5 - (ae-undocumented) Missing documentation for "minutes".
@@ -3983,42 +4244,48 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/schedules/cron.d.ts:18:5 - (ae-undocumented) Missing documentation for "daysOfWeek".
 // dist/schedules/cron.d.ts:19:5 - (ae-undocumented) Missing documentation for "restrictsDayOfMonth".
 // dist/schedules/cron.d.ts:20:5 - (ae-undocumented) Missing documentation for "restrictsDayOfWeek".
-// dist/schedules/schedule-manager.d.ts:29:5 - (ae-undocumented) Missing documentation for "id".
-// dist/schedules/schedule-manager.d.ts:30:5 - (ae-undocumented) Missing documentation for "namespaceId".
-// dist/schedules/schedule-manager.d.ts:31:5 - (ae-undocumented) Missing documentation for "name".
-// dist/schedules/schedule-manager.d.ts:32:5 - (ae-undocumented) Missing documentation for "cronExpression".
-// dist/schedules/schedule-manager.d.ts:33:5 - (ae-undocumented) Missing documentation for "timeZone".
-// dist/schedules/schedule-manager.d.ts:34:5 - (ae-undocumented) Missing documentation for "workflowType".
-// dist/schedules/schedule-manager.d.ts:35:5 - (ae-undocumented) Missing documentation for "input".
-// dist/schedules/schedule-manager.d.ts:36:5 - (ae-undocumented) Missing documentation for "overlapPolicy".
-// dist/schedules/schedule-manager.d.ts:37:5 - (ae-undocumented) Missing documentation for "state".
-// dist/schedules/schedule-manager.d.ts:38:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/schedules/schedule-manager.d.ts:39:5 - (ae-undocumented) Missing documentation for "catchUpPolicy".
-// dist/schedules/schedule-manager.d.ts:40:5 - (ae-undocumented) Missing documentation for "catchUpWindowMs".
-// dist/schedules/schedule-manager.d.ts:41:5 - (ae-undocumented) Missing documentation for "error".
-// dist/schedules/schedule-manager.d.ts:42:5 - (ae-undocumented) Missing documentation for "nextFireAt".
-// dist/schedules/schedule-manager.d.ts:43:5 - (ae-undocumented) Missing documentation for "lastFiredAt".
-// dist/schedules/schedule-manager.d.ts:44:5 - (ae-undocumented) Missing documentation for "bufferedFor".
-// dist/schedules/schedule-manager.d.ts:52:5 - (ae-undocumented) Missing documentation for "namespaceId".
-// dist/schedules/schedule-manager.d.ts:53:5 - (ae-undocumented) Missing documentation for "name".
-// dist/schedules/schedule-manager.d.ts:54:5 - (ae-undocumented) Missing documentation for "cronExpression".
-// dist/schedules/schedule-manager.d.ts:55:5 - (ae-undocumented) Missing documentation for "workflowType".
-// dist/schedules/schedule-manager.d.ts:56:5 - (ae-undocumented) Missing documentation for "input".
-// dist/schedules/schedule-manager.d.ts:57:5 - (ae-undocumented) Missing documentation for "timeZone".
-// dist/schedules/schedule-manager.d.ts:58:5 - (ae-undocumented) Missing documentation for "overlapPolicy".
-// dist/schedules/schedule-manager.d.ts:59:5 - (ae-undocumented) Missing documentation for "catchUpPolicy".
-// dist/schedules/schedule-manager.d.ts:60:5 - (ae-undocumented) Missing documentation for "catchUpWindowMs".
-// dist/schedules/schedule-manager.d.ts:61:5 - (ae-undocumented) Missing documentation for "startAt".
-// dist/schedules/schedule-manager.d.ts:68:5 - (ae-undocumented) Missing documentation for "scheduleId".
-// dist/schedules/schedule-manager.d.ts:69:5 - (ae-undocumented) Missing documentation for "scheduledFor".
-// dist/schedules/schedule-manager.d.ts:70:5 - (ae-undocumented) Missing documentation for "outcome".
-// dist/schedules/schedule-manager.d.ts:71:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/schedules/schedule-manager.d.ts:77:5 - (ae-undocumented) Missing documentation for "triggers".
-// dist/schedules/schedule-manager.d.ts:86:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/schedules/schedule-manager.d.ts:87:5 - (ae-undocumented) Missing documentation for "clock".
-// dist/schedules/schedule-manager.d.ts:88:5 - (ae-undocumented) Missing documentation for "codec".
-// dist/schedules/schedule-manager.d.ts:89:5 - (ae-undocumented) Missing documentation for "batchSize".
-// dist/schedules/schedule-manager.d.ts:90:5 - (ae-undocumented) Missing documentation for "tracing".
+// dist/schedules/schedule-manager.d.ts:35:5 - (ae-undocumented) Missing documentation for "id".
+// dist/schedules/schedule-manager.d.ts:36:5 - (ae-undocumented) Missing documentation for "namespaceId".
+// dist/schedules/schedule-manager.d.ts:37:5 - (ae-undocumented) Missing documentation for "name".
+// dist/schedules/schedule-manager.d.ts:38:5 - (ae-undocumented) Missing documentation for "cronExpression".
+// dist/schedules/schedule-manager.d.ts:39:5 - (ae-undocumented) Missing documentation for "timeZone".
+// dist/schedules/schedule-manager.d.ts:40:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/schedules/schedule-manager.d.ts:41:5 - (ae-undocumented) Missing documentation for "input".
+// dist/schedules/schedule-manager.d.ts:42:5 - (ae-undocumented) Missing documentation for "overlapPolicy".
+// dist/schedules/schedule-manager.d.ts:43:5 - (ae-undocumented) Missing documentation for "state".
+// dist/schedules/schedule-manager.d.ts:44:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/schedules/schedule-manager.d.ts:45:5 - (ae-undocumented) Missing documentation for "catchUpPolicy".
+// dist/schedules/schedule-manager.d.ts:46:5 - (ae-undocumented) Missing documentation for "catchUpWindowMs".
+// dist/schedules/schedule-manager.d.ts:47:5 - (ae-undocumented) Missing documentation for "error".
+// dist/schedules/schedule-manager.d.ts:48:5 - (ae-undocumented) Missing documentation for "nextFireAt".
+// dist/schedules/schedule-manager.d.ts:49:5 - (ae-undocumented) Missing documentation for "lastFiredAt".
+// dist/schedules/schedule-manager.d.ts:50:5 - (ae-undocumented) Missing documentation for "bufferedFor".
+// dist/schedules/schedule-manager.d.ts:58:5 - (ae-undocumented) Missing documentation for "namespaceId".
+// dist/schedules/schedule-manager.d.ts:59:5 - (ae-undocumented) Missing documentation for "name".
+// dist/schedules/schedule-manager.d.ts:60:5 - (ae-undocumented) Missing documentation for "cronExpression".
+// dist/schedules/schedule-manager.d.ts:61:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/schedules/schedule-manager.d.ts:62:5 - (ae-undocumented) Missing documentation for "input".
+// dist/schedules/schedule-manager.d.ts:63:5 - (ae-undocumented) Missing documentation for "timeZone".
+// dist/schedules/schedule-manager.d.ts:64:5 - (ae-undocumented) Missing documentation for "overlapPolicy".
+// dist/schedules/schedule-manager.d.ts:65:5 - (ae-undocumented) Missing documentation for "catchUpPolicy".
+// dist/schedules/schedule-manager.d.ts:66:5 - (ae-undocumented) Missing documentation for "catchUpWindowMs".
+// dist/schedules/schedule-manager.d.ts:67:5 - (ae-undocumented) Missing documentation for "startAt".
+// dist/schedules/schedule-manager.d.ts:75:5 - (ae-undocumented) Missing documentation for "scheduleId".
+// dist/schedules/schedule-manager.d.ts:76:5 - (ae-undocumented) Missing documentation for "scheduledFor".
+// dist/schedules/schedule-manager.d.ts:77:5 - (ae-undocumented) Missing documentation for "outcome".
+// dist/schedules/schedule-manager.d.ts:78:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/schedules/schedule-manager.d.ts:79:5 - (ae-undocumented) Missing documentation for "cancelledRunIds".
+// dist/schedules/schedule-manager.d.ts:86:5 - (ae-undocumented) Missing documentation for "scheduledFor".
+// dist/schedules/schedule-manager.d.ts:87:5 - (ae-undocumented) Missing documentation for "outcome".
+// dist/schedules/schedule-manager.d.ts:88:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/schedules/schedule-manager.d.ts:89:5 - (ae-undocumented) Missing documentation for "createdAt".
+// dist/schedules/schedule-manager.d.ts:97:5 - (ae-undocumented) Missing documentation for "overlapPolicy".
+// dist/schedules/schedule-manager.d.ts:103:5 - (ae-undocumented) Missing documentation for "triggers".
+// dist/schedules/schedule-manager.d.ts:112:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/schedules/schedule-manager.d.ts:113:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/schedules/schedule-manager.d.ts:114:5 - (ae-undocumented) Missing documentation for "codec".
+// dist/schedules/schedule-manager.d.ts:115:5 - (ae-undocumented) Missing documentation for "batchSize".
+// dist/schedules/schedule-manager.d.ts:116:5 - (ae-undocumented) Missing documentation for "tracing".
 // dist/signals/signal-service.d.ts:11:5 - (ae-undocumented) Missing documentation for "runId".
 // dist/signals/signal-service.d.ts:18:5 - (ae-undocumented) Missing documentation for "runId".
 // dist/signals/signal-service.d.ts:26:5 - (ae-undocumented) Missing documentation for "runId".
