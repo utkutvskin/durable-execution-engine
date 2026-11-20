@@ -162,6 +162,43 @@ function resolveTaskTypes(taskTypes: readonly TaskType[] | undefined): TaskType[
 }
 
 const DATABASE_NOW = "now()";
+const DEQUEUE_PARAMETERS = 9;
+
+interface HeldBack {
+  readonly laneFilter: string;
+  readonly runFilter: string;
+  readonly values: readonly string[][];
+}
+
+/**
+ * Reads the pauses that concern a dequeue of `queueName` and turns them into
+ * filters of the dequeue statement, numbered after its own parameters.
+ * Without a pause both filters are empty and the statement is the one of an
+ * engine without pauses: any extra predicate raises its estimated cost over
+ * Postgres' default `jit_above_cost`, and JIT compilation then adds about
+ * 100 ms to every poll.
+ */
+async function readHeldBack(pool: Pool, queueName: string): Promise<HeldBack> {
+  const pauses = await pool.query<{ scope: string; namespace_id: string; run_id: string | null }>(
+    `select scope, namespace_id, run_id from pauses
+     where scope in ('namespace', 'run') or (scope = 'queue' and queue_name = $1)`,
+    [queueName],
+  );
+  const namespaces = pauses.rows
+    .filter((row) => row.scope !== "run")
+    .map((row) => row.namespace_id);
+  const runs = pauses.rows.flatMap((row) => (row.run_id === null ? [] : [row.run_id]));
+  const values: string[][] = [];
+  const placeholder = (ids: string[]): string => {
+    values.push(ids);
+    return `$${String(DEQUEUE_PARAMETERS + values.length)}::uuid[]`;
+  };
+  return {
+    laneFilter: namespaces.length === 0 ? "" : `where n.id <> all (${placeholder(namespaces)})`,
+    runFilter: runs.length === 0 ? "" : `and tasks.run_id <> all (${placeholder(runs)})`,
+    values,
+  };
+}
 
 function at(placeholder: string): string {
   return `coalesce(${placeholder}::timestamptz, ${DATABASE_NOW})`;
@@ -217,6 +254,7 @@ export function createTaskQueue(
       assertPositiveInteger("visibilityTimeoutMs", dequeueOptions.visibilityTimeoutMs);
       assertPositiveInteger("limit", limit);
       const taskTypes = resolveTaskTypes(dequeueOptions.taskTypes);
+      const held = await readHeldBack(pool, dequeueOptions.queueName);
       const result = await pool.query<TaskRow>(
         `with lanes as (
            select n.id as namespace_id, kind.task_type,
@@ -226,13 +264,7 @@ export function createTaskQueue(
                       and served.task_type = kind.task_type and served.lease_seq is not null
                   ), 0) as turn
            from namespaces n cross join unnest($9::text[]) as kind (task_type)
-           where not exists (
-             select 1 from pauses held_back
-             where held_back.namespace_id = n.id and (
-               held_back.scope = 'namespace'
-               or (held_back.scope = 'queue' and held_back.queue_name = $1)
-             )
-           )
+           ${held.laneFilter}
          ),
          candidates as (
            select lane_task.*, lanes.turn,
@@ -254,10 +286,7 @@ export function createTaskQueue(
              where queue_name = $1 and namespace_id = lanes.namespace_id
                and task_type = lanes.task_type
                and state in ('PENDING', 'LEASED') and visible_at <= ${at("$2")}
-               and not exists (
-                 select 1 from pauses held_run
-                 where held_run.scope = 'run' and held_run.run_id = tasks.run_id
-               )
+               ${held.runFilter}
                and ($7::text is null or task_type <> 'WORKFLOW_TASK' or not exists (
                  select 1 from run_stickiness sticky
                  where sticky.run_id = tasks.run_id
@@ -406,6 +435,7 @@ export function createTaskQueue(
           dequeueOptions.stickyFor ?? null,
           poisonThreshold,
           taskTypes,
+          ...held.values,
         ],
       );
       return result.rows.map(toLeasedTask);

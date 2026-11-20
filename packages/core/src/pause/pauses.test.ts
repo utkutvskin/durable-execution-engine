@@ -238,6 +238,44 @@ describe("pause and resume", () => {
     expect(await pauses.resume({ scope: "run", namespaceId, runId: "not-a-uuid" })).toBe(false);
   });
 
+  it("keeps the dequeue statement under the JIT cost threshold with and without pauses", async () => {
+    const statements: { text: string; values: unknown[] }[] = [];
+    const recording = new Proxy(database.pool, {
+      get(target, property, receiver) {
+        if (property !== "query") {
+          return Reflect.get(target, property, receiver) as unknown;
+        }
+        return (text: string, values: unknown[]) => {
+          statements.push({ text, values });
+          return target.query(text, values);
+        };
+      },
+    });
+    const recordingQueue = createTaskQueue(recording, { clock });
+    const runId = await createRun();
+    await enqueueTasks(runId, 1);
+    const threshold = await database.pool.query<{ cost: string }>(
+      "select current_setting('jit_above_cost') as cost",
+    );
+
+    async function dequeueCost(): Promise<number> {
+      statements.length = 0;
+      await recordingQueue.dequeue({ queueName: QUEUE, visibilityTimeoutMs: 1_000 });
+      const dequeue = statements.find((statement) => statement.text.includes("with lanes"));
+      const plan = await database.pool.query<{
+        "QUERY PLAN": [{ Plan: { "Total Cost": number } }];
+      }>(`explain (format json) ${dequeue?.text ?? ""}`, dequeue?.values);
+      return plan.rows[0]?.["QUERY PLAN"][0].Plan["Total Cost"] ?? Number.POSITIVE_INFINITY;
+    }
+
+    const unpaused = await dequeueCost();
+    await pauses.pause({ scope: "namespace", namespaceId: otherNamespaceId });
+    await pauses.pause({ scope: "run", namespaceId, runId });
+    const paused = await dequeueCost();
+    expect(unpaused).toBeLessThan(Number(threshold.rows[0]?.cost));
+    expect(paused).toBeLessThan(Number(threshold.rows[0]?.cost));
+  });
+
   it("lists the pauses that hold back a run, its own first", async () => {
     const runId = await createRun();
     expect(await pauses.pausesOfRun(namespaceId, runId)).toEqual([]);
