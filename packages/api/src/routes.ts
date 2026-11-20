@@ -1,5 +1,9 @@
 import { z } from "zod";
 import {
+  InvalidScheduleError,
+  OVERLAP_POLICIES,
+  ScheduleAlreadyExistsError,
+  ScheduleNotFoundError,
   InvalidSearchAttributesError,
   InvalidStartPolicyError,
   MAX_START_KEY_LENGTH,
@@ -26,6 +30,7 @@ import {
   UnknownWorkflowTypeError,
   type RunService,
 } from "./run-service.ts";
+import { InvalidBackfillError, MAX_BACKFILL_TRIGGERS } from "./operations.ts";
 
 /**
  * What a route handler produces: a status code and a JSON body.
@@ -109,6 +114,18 @@ const runSummarySchema = z
   })
   .meta({ id: "RunSummary" });
 
+const pauseScopeSchema = z.enum(["namespace", "queue", "run"]);
+
+const pauseSchema = z
+  .object({
+    scope: pauseScopeSchema,
+    queueName: z.string().nullable(),
+    runId: z.uuid().nullable(),
+    reason: z.string().nullable(),
+    pausedAt: z.iso.datetime(),
+  })
+  .meta({ id: "Pause" });
+
 const runDescriptionSchema = runSummarySchema
   .extend({
     input: z.unknown(),
@@ -129,6 +146,10 @@ const runDescriptionSchema = runSummarySchema
         description:
           "Present when the run's workflow has a concurrency key: the key, its limit, how many runs hold a slot, whether this run holds one and whether it waits for one.",
       }),
+    paused: z.array(pauseSchema).optional().meta({
+      description:
+        "Present when a pause holds back the run's tasks: its own pause, its queue's and its namespace's, run first.",
+    }),
   })
   .meta({ id: "RunDescription" });
 
@@ -407,6 +428,97 @@ const cancelResponseSchema = z
 
 const MAX_IDEMPOTENCY_KEY_LENGTH = 255;
 
+const pauseRequestSchema = z
+  .object({
+    scope: pauseScopeSchema,
+    queueName: z.string().min(1).max(255).optional().meta({
+      description: "The queue of a queue pause, as tasks carry it. Defaults to the api's queue.",
+    }),
+    runId: z.uuid().optional().meta({ description: "The run of a run pause." }),
+    reason: z.string().max(1000).optional(),
+  })
+  .refine((request) => request.scope !== "run" || request.runId !== undefined, {
+    message: "a run pause needs a runId",
+    path: ["runId"],
+  })
+  .meta({ id: "PauseRequest" });
+
+const pauseResponseSchema = z
+  .object({ pause: pauseSchema, created: z.boolean() })
+  .meta({ id: "PauseResponse" });
+
+const resumeResponseSchema = z.object({ resumed: z.boolean() }).meta({ id: "ResumeResponse" });
+
+const pauseListSchema = z.object({ pauses: z.array(pauseSchema) }).meta({ id: "PauseList" });
+
+const overlapPolicySchema = z.enum(OVERLAP_POLICIES).meta({
+  description:
+    "What a trigger does while a run of the schedule is open: skip it, buffer the latest one, cancel the open run and start after it, or start anyway.",
+});
+
+const scheduleSchema = z
+  .object({
+    scheduleId: z.uuid(),
+    name: z.string(),
+    cronExpression: z.string(),
+    timeZone: z.string(),
+    workflowType: z.string(),
+    input: z.unknown(),
+    overlapPolicy: overlapPolicySchema,
+    catchUpPolicy: z.enum(["latest_only", "all"]),
+    catchUpWindowMs: z.number().int().nullable(),
+    state: z.enum(["ACTIVE", "PAUSED", "ERRORED"]),
+    error: z.string().nullable(),
+    queueName: z.string(),
+    nextFireAt: z.iso.datetime().nullable(),
+    lastFiredAt: z.iso.datetime().nullable(),
+    bufferedFor: z.iso.datetime().nullable(),
+  })
+  .meta({ id: "Schedule" });
+
+const createScheduleRequestSchema = z
+  .object({
+    name: z.string().min(1).max(255),
+    cronExpression: z.string().min(1).max(255),
+    workflowType: z.string().min(1).max(255),
+    input: z.unknown().optional(),
+    timeZone: z.string().min(1).max(64).optional(),
+    overlapPolicy: overlapPolicySchema.optional(),
+    catchUpPolicy: z.enum(["latest_only", "all"]).optional(),
+    catchUpWindowMs: z.number().int().positive().optional(),
+    startAt: z.iso.datetime().optional(),
+  })
+  .meta({ id: "CreateScheduleRequest" });
+
+const scheduleListSchema = z
+  .object({ schedules: z.array(scheduleSchema) })
+  .meta({ id: "ScheduleList" });
+
+const triggerSchema = z
+  .object({
+    scheduledFor: z.iso.datetime(),
+    outcome: z.enum(["STARTED", "SKIPPED", "BUFFERED"]),
+    runId: z.uuid().nullable(),
+    cancelledRunIds: z.array(z.uuid()).optional(),
+  })
+  .meta({ id: "ScheduleTrigger" });
+
+const triggerListSchema = z
+  .object({ triggers: z.array(triggerSchema) })
+  .meta({ id: "ScheduleTriggerList" });
+
+const triggerQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(MAX_PAGE_LIMIT).optional(),
+});
+
+const backfillRequestSchema = z
+  .object({
+    from: z.iso.datetime(),
+    to: z.iso.datetime(),
+    overlapPolicy: overlapPolicySchema.optional(),
+  })
+  .meta({ id: "BackfillRequest" });
+
 const errorResponse = (description: string): ResponseSpec => ({
   description,
   schema: errorResponseSchema,
@@ -424,6 +536,7 @@ const commonErrors = {
 } as const;
 
 const notFound = errorResponse("The run does not exist in the caller's namespace.");
+const scheduleNotFound = errorResponse("The schedule does not exist in the caller's namespace.");
 const deadLetterNotFound = errorResponse(
   "The dead letter does not exist in the caller's namespace or was requeued already.",
 );
@@ -461,6 +574,10 @@ function defineRoute<TBody = undefined, TQuery = undefined>(
 
 function deadLetterIdOf(request: RawRequest): string {
   return request.params["deadLetterId"] ?? "";
+}
+
+function scheduleIdOf(request: RawRequest): string {
+  return request.params["scheduleId"] ?? "";
 }
 
 function runIdOf(request: RawRequest): string {
@@ -906,6 +1023,196 @@ export function createRoutes(service: RunService): readonly Route[] {
         return { status: 200, body: receipt };
       },
     }),
+    ...createOperationRoutes(service),
+  ];
+}
+
+function createOperationRoutes(service: RunService): readonly Route[] {
+  return [
+    defineRoute({
+      method: "post",
+      path: "/v1/pauses",
+      operationId: "pause",
+      summary:
+        "Pause a run, a queue or the namespace. Held tasks stay queued and timers still fire into them.",
+      body: pauseRequestSchema,
+      responses: {
+        200: {
+          description: "It was paused already; the first pause stays.",
+          schema: pauseResponseSchema,
+        },
+        201: { description: "The pause was created.", schema: pauseResponseSchema },
+        ...commonErrors,
+        404: notFound,
+        409: errorResponse("The run is closed."),
+      },
+      async handle(request) {
+        const receipt = await service.pause(request.namespaceId, request.parsedBody);
+        return { status: receipt.created ? 201 : 200, body: receipt };
+      },
+    }),
+    defineRoute({
+      method: "post",
+      path: "/v1/pauses/resume",
+      operationId: "resume",
+      summary: "Resume a paused run, queue or namespace. The next poll leases its held tasks.",
+      body: pauseRequestSchema,
+      responses: {
+        200: {
+          description: "resumed is false when the target was not paused.",
+          schema: resumeResponseSchema,
+        },
+        ...commonErrors,
+      },
+      async handle(request) {
+        return {
+          status: 200,
+          body: await service.resume(request.namespaceId, request.parsedBody),
+        };
+      },
+    }),
+    defineRoute({
+      method: "get",
+      path: "/v1/pauses",
+      operationId: "listPauses",
+      summary: "List the namespace's pauses, oldest first.",
+      responses: {
+        200: { description: "The pauses.", schema: pauseListSchema },
+        ...commonErrors,
+      },
+      async handle(request) {
+        return { status: 200, body: { pauses: await service.listPauses(request.namespaceId) } };
+      },
+    }),
+    defineRoute({
+      method: "post",
+      path: "/v1/schedules",
+      operationId: "createSchedule",
+      summary: "Create a cron schedule that starts a run of a workflow type at every match.",
+      body: createScheduleRequestSchema,
+      responses: {
+        201: { description: "The schedule was created.", schema: scheduleSchema },
+        ...commonErrors,
+        409: errorResponse("A schedule with this name exists in the namespace."),
+      },
+      async handle(request) {
+        return {
+          status: 201,
+          body: await service.createSchedule(request.namespaceId, request.parsedBody),
+        };
+      },
+    }),
+    defineRoute({
+      method: "get",
+      path: "/v1/schedules",
+      operationId: "listSchedules",
+      summary: "List the namespace's schedules by name.",
+      responses: {
+        200: { description: "The schedules.", schema: scheduleListSchema },
+        ...commonErrors,
+      },
+      async handle(request) {
+        return {
+          status: 200,
+          body: { schedules: await service.listSchedules(request.namespaceId) },
+        };
+      },
+    }),
+    defineRoute({
+      method: "get",
+      path: "/v1/schedules/{scheduleId}",
+      operationId: "getSchedule",
+      summary: "Describe one schedule.",
+      responses: {
+        200: { description: "The schedule.", schema: scheduleSchema },
+        ...commonErrors,
+        404: scheduleNotFound,
+      },
+      async handle(request) {
+        return {
+          status: 200,
+          body: await service.getSchedule(request.namespaceId, scheduleIdOf(request)),
+        };
+      },
+    }),
+    defineRoute({
+      method: "get",
+      path: "/v1/schedules/{scheduleId}/triggers",
+      operationId: "listScheduleTriggers",
+      summary: "List the latest triggers of a schedule and what became of them, newest first.",
+      query: triggerQuerySchema,
+      responses: {
+        200: { description: "The triggers.", schema: triggerListSchema },
+        ...commonErrors,
+        404: scheduleNotFound,
+      },
+      async handle(request) {
+        const triggers = await service.listScheduleTriggers(
+          request.namespaceId,
+          scheduleIdOf(request),
+          request.parsedQuery.limit,
+        );
+        return { status: 200, body: { triggers } };
+      },
+    }),
+    defineRoute({
+      method: "post",
+      path: "/v1/schedules/{scheduleId}/pause",
+      operationId: "pauseSchedule",
+      summary: "Pause a schedule. It starts nothing, not even a buffered trigger, until resumed.",
+      responses: {
+        200: { description: "The paused schedule.", schema: scheduleSchema },
+        ...commonErrors,
+        404: scheduleNotFound,
+      },
+      async handle(request) {
+        return {
+          status: 200,
+          body: await service.pauseSchedule(request.namespaceId, scheduleIdOf(request)),
+        };
+      },
+    }),
+    defineRoute({
+      method: "post",
+      path: "/v1/schedules/{scheduleId}/resume",
+      operationId: "resumeSchedule",
+      summary:
+        "Resume a schedule from the next match after now. Missed triggers are not made up; backfill them.",
+      responses: {
+        200: { description: "The resumed schedule.", schema: scheduleSchema },
+        ...commonErrors,
+        404: scheduleNotFound,
+      },
+      async handle(request) {
+        return {
+          status: 200,
+          body: await service.resumeSchedule(request.namespaceId, scheduleIdOf(request)),
+        };
+      },
+    }),
+    defineRoute({
+      method: "post",
+      path: "/v1/schedules/{scheduleId}/backfill",
+      operationId: "backfillSchedule",
+      summary: `Handle every trigger in [from, to) once, at most ${String(MAX_BACKFILL_TRIGGERS)}. Repeating a backfill starts nothing new.`,
+      body: backfillRequestSchema,
+      responses: {
+        200: {
+          description: "The triggers this call handled; those handled before are left out.",
+          schema: triggerListSchema,
+        },
+        ...commonErrors,
+        404: scheduleNotFound,
+      },
+      async handle(request) {
+        const triggers = await service.backfillSchedule(
+          request.namespaceId,
+          scheduleIdOf(request),
+          request.parsedBody,
+        );
+        return { status: 200, body: { triggers } };
+      },
+    }),
   ];
 }
 
@@ -971,6 +1278,21 @@ export function toErrorResult(error: unknown): ErrorResult {
       status: 400,
       body: { error: { code: "invalid_search_attributes", message: error.message } },
     };
+  }
+  if (error instanceof ScheduleNotFoundError) {
+    return {
+      status: 404,
+      body: { error: { code: "not_found", message: "schedule not found" } },
+    };
+  }
+  if (error instanceof ScheduleAlreadyExistsError) {
+    return { status: 409, body: { error: { code: "schedule_exists", message: error.message } } };
+  }
+  if (error instanceof InvalidScheduleError) {
+    return { status: 400, body: { error: { code: "invalid_schedule", message: error.message } } };
+  }
+  if (error instanceof InvalidBackfillError) {
+    return { status: 400, body: { error: { code: "invalid_backfill", message: error.message } } };
   }
   if (error instanceof DeadLetterNotFoundError) {
     return {

@@ -11,6 +11,17 @@ export type { JsonObject, OpenApiOptions } from "./openapi.ts";
 export { validateOpenApiDocument } from "./openapi-validator.ts";
 export { createQuotaGuard } from "./quota-guard.ts";
 export type { QuotaGuard, QuotaGuardOptions, Rejection, RequestKind } from "./quota-guard.ts";
+export { InvalidBackfillError, MAX_BACKFILL_TRIGGERS, createOperations } from "./operations.ts";
+export type {
+  BackfillRequest,
+  CreateScheduleRequest,
+  Operations,
+  OperationsOptions,
+  PauseDescription,
+  PauseRequest,
+  ScheduleDescription,
+  TriggerDescription,
+} from "./operations.ts";
 export { createRoutes, toErrorResult } from "./routes.ts";
 export type { ErrorResult, RawRequest, ResponseSpec, Route, RouteResult } from "./routes.ts";
 export {

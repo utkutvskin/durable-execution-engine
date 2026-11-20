@@ -45,6 +45,7 @@ import {
   type PendingStart,
   type SingletonStart,
 } from "@dee/core";
+import { createOperations, type Operations, type PauseDescription } from "./operations.ts";
 
 /**
  * What `RunService.signalWithStart` sends: the run to start when no run
@@ -169,6 +170,8 @@ export interface RunDescription extends RunSummary {
   readonly lastSequenceNumber: number;
   readonly idempotencyKey: string | null;
   readonly concurrency?: RunConcurrencyState;
+  /** The pauses that hold back the run's tasks, its own first. Absent when none does. */
+  readonly paused?: readonly PauseDescription[];
 }
 
 /**
@@ -297,7 +300,7 @@ export interface HistoryEntry {
  * namespace id first and filters on it: a run of another namespace is
  * reported exactly like a run that does not exist.
  */
-export interface RunService {
+export interface RunService extends Operations {
   /**
    * Starts a run, or returns the run the same idempotency key started
    * before. Rejects with `IdempotencyConflictError` when the key was used
@@ -593,6 +596,7 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     }
   }
   const deadLetters = createDeadLetterQueue(pool);
+  const operations = createOperations(pool, { queueName: options.queueName, clock });
 
   async function assertOwned(namespaceId: string, runId: string): Promise<void> {
     if (!UUID_PATTERN.test(runId)) {
@@ -783,6 +787,8 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
   }
 
   return {
+    ...operations,
+
     async startRun(namespaceId: string, input: StartRunInput): Promise<StartRunResult> {
       if (input.debounce !== undefined || input.singleton?.whenOpen === "queue") {
         throw new InvalidStartPolicyError(
@@ -801,7 +807,12 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     async describeRun(namespaceId: string, runId: string): Promise<RunDescription> {
       const description = toDescription(await readRun(namespaceId, runId));
       const concurrency = await readRunConcurrency(pool, runId);
-      return concurrency === undefined ? description : { ...description, concurrency };
+      const paused = await operations.pausesOfRun(namespaceId, runId);
+      return {
+        ...description,
+        ...(concurrency === undefined ? {} : { concurrency }),
+        ...(paused.length === 0 ? {} : { paused }),
+      };
     },
 
     async listRuns(namespaceId: string, input: ListRunsInput): Promise<RunPage> {
