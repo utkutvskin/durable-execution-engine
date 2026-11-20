@@ -15,6 +15,8 @@ function fakeManager(catchUp: ScheduleManager["catchUp"]): ScheduleManager {
     nextDueAt: () => Promise.resolve(undefined),
     create: unused,
     get: unused,
+    list: unused,
+    listTriggers: unused,
     pause: unused,
     resume: unused,
     backfill: unused,
