@@ -240,8 +240,11 @@ describe("transactional workflow start, signal and cancel", () => {
     );
     expect(receipt.sequenceNumber).toBe(2);
     expect(await eventTypes(runId)).toEqual(["run_started", "signal_received"]);
-    const tasks = await engine.pool.query("select 1 from tasks where run_id = $1", [runId]);
-    expect(tasks.rowCount).toBe(2);
+    const tasks = await engine.pool.query(
+      "select 1 from tasks where run_id = $1 and state = 'PENDING'",
+      [runId],
+    );
+    expect(tasks.rowCount).toBe(1);
   });
 
   it("records a signal with a repeated signal id once", async () => {

@@ -280,7 +280,7 @@ describe("child runs", () => {
       type: "cancel_requested",
       reason: "parent run closed",
     });
-    expect(await pendingTaskReasons(cancelChild?.id ?? "")).toContain("cancel");
+    expect(await pendingTaskReasons(cancelChild?.id ?? "")).toHaveLength(1);
     expect(await status(terminateChild?.id ?? "")).toBe("TERMINATED");
     expect(await status(abandonChild?.id ?? "")).toBe("RUNNING");
     expect(await history(abandonChild?.id ?? "")).toHaveLength(1);

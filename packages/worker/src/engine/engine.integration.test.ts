@@ -486,6 +486,7 @@ describe("engine runtime against postgres", () => {
       },
     });
     const runId = await start("echo-flow");
+    const tasks = await queue.dequeue({ queueName: "default", visibilityTimeoutMs: 30_000 });
     for (let copy = 0; copy < 7; copy += 1) {
       await queue.enqueue({
         namespaceId,
@@ -494,12 +495,8 @@ describe("engine runtime against postgres", () => {
         taskType: "WORKFLOW_TASK",
         payload: { reason: "duplicate" },
       });
+      tasks.push(...(await queue.dequeue({ queueName: "default", visibilityTimeoutMs: 30_000 })));
     }
-    const tasks = await queue.dequeue({
-      queueName: "default",
-      visibilityTimeoutMs: 30_000,
-      limit: 8,
-    });
     expect(tasks).toHaveLength(8);
     const context = { signal: new AbortController().signal };
     const outcomes = await Promise.allSettled(tasks.map((task) => handler(task, context)));

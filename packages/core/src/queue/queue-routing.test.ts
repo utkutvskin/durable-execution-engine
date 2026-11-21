@@ -156,6 +156,7 @@ describe("routing by the run's queue", () => {
     });
 
     await Promise.all([timersA.tick(), timersB.tick()]);
+    await database.pool.query("update tasks set state = 'COMPLETED'");
     await interactions.signalRun(runA, "go");
     await interactions.signalRun(runB, "go");
     await database.pool.query("update tasks set state = 'COMPLETED'");

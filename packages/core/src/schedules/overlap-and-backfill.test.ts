@@ -122,11 +122,11 @@ describe("schedule overlap policies and backfill", () => {
     expect(second.triggers).toMatchObject([{ outcome: "BUFFERED", cancelledRunIds: [firstRunId] }]);
     const history = await createPostgresEventStore(database.pool).read(firstRunId);
     expect(history.map((stored) => stored.event.type)).toEqual(["run_started", "cancel_requested"]);
-    const cancelTask = await database.pool.query<{ payload: { reason: string } }>(
-      "select payload from tasks where run_id = $1 and payload->>'reason' <> 'schedule'",
+    const pendingDecisions = await database.pool.query(
+      "select 1 from tasks where run_id = $1 and task_type = 'WORKFLOW_TASK' and state = 'PENDING'",
       [firstRunId],
     );
-    expect(cancelTask.rows).toHaveLength(1);
+    expect(pendingDecisions.rows).toHaveLength(1);
     expect(await openRunCount(schedule.id)).toBe(1);
     expect((await schedules.tick()).triggers).toEqual([]);
 

@@ -79,8 +79,8 @@ describe("engine metrics", () => {
     const runId = await insertRun("RUNNING");
     await database.pool.query(
       `insert into tasks (namespace_id, run_id, queue_name, task_type, visible_at)
-       values ($1, $2, 'depth-q', 'WORKFLOW_TASK', $3), ($1, $2, 'depth-q', 'WORKFLOW_TASK', $3),
-              ($1, $2, 'depth-q', 'WORKFLOW_TASK', $4)`,
+       values ($1, $2, 'depth-q', 'STEP_TASK', $3), ($1, $2, 'depth-q', 'STEP_TASK', $3),
+              ($1, $2, 'depth-q', 'STEP_TASK', $4)`,
       [namespaceId, runId, new Date(now.getTime() - 1000), new Date(now.getTime() + 3_600_000)],
     );
     expect(await sample("dee_queue_depth", { queue: "depth-q" })).toBe(2);
@@ -104,7 +104,7 @@ describe("engine metrics", () => {
   it("counts distinct workers that hold a lease", async () => {
     const runId = await insertRun("RUNNING");
     const queue = createTaskQueue(database.pool);
-    const base = { namespaceId, runId, queueName: "workers-q", taskType: "WORKFLOW_TASK" } as const;
+    const base = { namespaceId, runId, queueName: "workers-q", taskType: "STEP_TASK" } as const;
     for (let index = 0; index < 3; index += 1) {
       await queue.enqueue(base);
     }

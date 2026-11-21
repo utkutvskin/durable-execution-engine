@@ -62,7 +62,7 @@ describe("pause and resume", () => {
           namespaceId: namespace,
           runId,
           queueName: QUEUE,
-          taskType: index % 2 === 0 ? "WORKFLOW_TASK" : "STEP_TASK",
+          taskType: index === 0 ? "WORKFLOW_TASK" : "STEP_TASK",
           payload: { index },
         }),
       );

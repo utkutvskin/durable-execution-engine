@@ -123,6 +123,15 @@ interface DueTimerRow {
 
 const DEFAULT_BATCH_SIZE = 100;
 
+async function readPendingWorkflowTaskId(client: PoolClient, runId: string): Promise<string> {
+  const pending = await client.query<{ id: string }>(
+    `select id from tasks
+     where run_id = $1 and task_type = 'WORKFLOW_TASK' and state = 'PENDING'`,
+    [runId],
+  );
+  return pending.rows[0]?.id ?? "";
+}
+
 function timeoutFiredTimer(timer: DueTimerRow, now: Date): FiredTimer {
   return {
     runId: timer.run_id,
@@ -216,6 +225,7 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
           timer.fire_at,
         ],
       );
+      const taskId = task.rows[0]?.id ?? (await readPendingWorkflowTaskId(client, timer.run_id));
       await client.query("commit");
       const span = tracing.startSpan(`timer ${timer.timer_id}`, {
         parent: runRow.traceparent,
@@ -233,7 +243,7 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
         fireAt: timer.fire_at,
         firedAt: now,
         lateMs: Math.max(0, now.getTime() - timer.fire_at.getTime()),
-        taskId: task.rows[0]?.id ?? "",
+        taskId,
       };
     } catch (error) {
       broken = !(await rollbackQuietly(client));

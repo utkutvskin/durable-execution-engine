@@ -83,7 +83,12 @@ export interface DequeueOptions {
 
 /**
  * A postgres-backed task queue. Dequeue uses `FOR UPDATE SKIP LOCKED`, so
- * concurrent consumers never receive the same delivery. `quarantine` parks a
+ * concurrent consumers never receive the same delivery. A run has at most
+ * one pending `WORKFLOW_TASK`: enqueueing another one while one is pending
+ * merges into it (it becomes visible at the earlier of the two times) and
+ * `enqueue` resolves the pending task's id, and a workflow task that goes
+ * back to pending while another one waits is completed instead, so a burst
+ * of step results causes one decision, not one per result. `quarantine` parks a
  * leased task for an operator with a reason, and resolves `false` when the
  * lease is no longer current.
  */
@@ -224,6 +229,18 @@ export function createTaskQueue(
   const poisonThreshold = options.poisonThreshold ?? DEFAULT_POISON_THRESHOLD;
   assertPositiveInteger("poisonThreshold", poisonThreshold);
 
+  async function readMergedTask(input: EnqueueInput): Promise<{ id: string } | undefined> {
+    if (input.taskType !== "WORKFLOW_TASK") {
+      return undefined;
+    }
+    const pending = await pool.query<{ id: string }>(
+      `select id from tasks
+       where run_id = $1 and task_type = 'WORKFLOW_TASK' and state = 'PENDING'`,
+      [input.runId],
+    );
+    return pending.rows[0];
+  }
+
   return {
     async enqueue(input: EnqueueInput): Promise<string> {
       const delayMs = input.delayMs ?? 0;
@@ -242,7 +259,7 @@ export function createTaskQueue(
           delayMs,
         ],
       );
-      const row = result.rows[0];
+      const row = result.rows[0] ?? (await readMergedTask(input));
       if (row === undefined) {
         throw new Error("task insert returned no row");
       }

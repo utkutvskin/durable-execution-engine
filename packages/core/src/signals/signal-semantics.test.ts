@@ -138,8 +138,11 @@ describe("signal semantics against postgres", () => {
       { type: "signal_received", signalName: "item", payload: 1, signalId: "pay-1" },
       { type: "signal_received", signalName: "item", payload: 2, signalId: "pay-2" },
     ]);
-    const tasks = await database.pool.query("select 1 from tasks where run_id = $1", [runId]);
-    expect(tasks.rowCount).toBe(2);
+    const tasks = await database.pool.query(
+      "select 1 from tasks where run_id = $1 and state = 'PENDING'",
+      [runId],
+    );
+    expect(tasks.rowCount).toBe(1);
   });
 
   it("applies a signal id once under 10 concurrent sends", async () => {
