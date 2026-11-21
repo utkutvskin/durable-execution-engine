@@ -4,8 +4,8 @@ import {
   noopTracing,
   type Tracing,
   RunNotFoundError,
-  appendEventsOnClient,
   applyRunTimeoutsOnClient,
+  insertRunStatement,
   createPostgresEventStore,
   createRunControl,
   createRunInteractions,
@@ -44,6 +44,7 @@ import {
   type DebounceStart,
   type PendingStart,
   type SingletonStart,
+  type InsertedRunRow,
 } from "@dee/core";
 import { createOperations, type Operations, type PauseDescription } from "./operations.ts";
 
@@ -651,6 +652,16 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     return { created: false, run: toDescription(row) };
   }
 
+  function isPlainStart(input: StartRunInput): boolean {
+    return (
+      input.idempotencyKey === undefined &&
+      input.debounce === undefined &&
+      input.singleton === undefined &&
+      input.runTimeoutMs === undefined &&
+      input.executionTimeoutMs === undefined
+    );
+  }
+
   async function insertRun(
     namespaceId: string,
     input: StartRunInput,
@@ -660,13 +671,43 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
       input.searchAttributes === undefined ? {} : validateSearchAttributes(input.searchAttributes);
     const memo = input.memo === undefined ? undefined : validateMemo(input.memo);
     const priority = validatePriority(input.priority);
-    const client = await pool.connect();
-    let broken = false;
     const span = tracing.startSpan("workflow.start", {
       parent: input.traceparent,
       kind: "server",
       attributes: { "dee.workflow.type": input.workflowType, "dee.namespace.id": namespaceId },
     });
+    const statementFor = (singletonKey: string | undefined): [string, unknown[]] =>
+      insertRunStatement(jsonCodec, {
+        namespaceId,
+        workflowType: input.workflowType,
+        input: input.input ?? null,
+        queueName: options.queueName,
+        idempotencyKey: input.idempotencyKey,
+        searchAttributes,
+        memo,
+        priority,
+        traceparent: span.traceparent ?? null,
+        singletonKey,
+        idempotencyExpiresAt:
+          input.idempotencyTtlMs === undefined
+            ? undefined
+            : new Date(now.getTime() + input.idempotencyTtlMs),
+      });
+    if (isPlainStart(input)) {
+      try {
+        const inserted = await pool.query<InsertedRunRow>(...statementFor(undefined));
+        const runId = inserted.rows[0]?.id ?? "";
+        span.setAttributes({ "dee.run.id": runId });
+        span.end();
+        return { runId };
+      } catch (error) {
+        span.recordError(error);
+        span.end();
+        throw error;
+      }
+    }
+    const client = await pool.connect();
+    let broken = false;
     try {
       await client.query("begin");
       const admission = await admitStartOnClient(
@@ -693,30 +734,7 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
         span.end();
         return { pending: admission.pending };
       }
-      const inserted = await client.query<{ id: string }>(
-        `insert into workflow_runs
-           (namespace_id, workflow_type, input, idempotency_key, traceparent, queue_name,
-            search_attributes, memo, priority, singleton_key, idempotency_expires_at)
-         values ($1, $2, $3::jsonb, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11)
-         on conflict (namespace_id, idempotency_key) where idempotency_key is not null
-         do nothing
-         returning id`,
-        [
-          namespaceId,
-          input.workflowType,
-          JSON.stringify(input.input ?? null),
-          input.idempotencyKey ?? null,
-          span.traceparent ?? null,
-          options.queueName,
-          JSON.stringify(searchAttributes),
-          memo === undefined ? null : JSON.stringify(memo),
-          priority,
-          admission.singletonKey ?? null,
-          input.idempotencyTtlMs === undefined
-            ? null
-            : new Date(now.getTime() + input.idempotencyTtlMs),
-        ],
-      );
+      const inserted = await client.query<InsertedRunRow>(...statementFor(admission.singletonKey));
       const runId = inserted.rows[0]?.id;
       if (runId === undefined) {
         await client.query("rollback");
@@ -728,20 +746,6 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
         runTimeoutMs: input.runTimeoutMs,
         executionTimeoutMs: input.executionTimeoutMs,
       });
-      await appendEventsOnClient(client, jsonCodec, runId, 0, [
-        {
-          type: "run_started",
-          workflowType: input.workflowType,
-          input: input.input ?? null,
-          ...(Object.keys(searchAttributes).length === 0 ? {} : { searchAttributes }),
-          ...(memo === undefined ? {} : { memo }),
-        },
-      ]);
-      await client.query(
-        `insert into tasks (namespace_id, run_id, queue_name, task_type, payload)
-         values ($1, $2, $3, 'WORKFLOW_TASK', $4::jsonb)`,
-        [namespaceId, runId, options.queueName, JSON.stringify({ reason: "start" })],
-      );
       await client.query("commit");
       span.setAttributes({ "dee.run.id": runId });
       span.end();

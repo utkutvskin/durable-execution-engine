@@ -1,20 +1,17 @@
 import type { Pool, PoolClient } from "pg";
-import { withClient, withTransaction } from "../db/transaction.ts";
+import { withClient } from "../db/transaction.ts";
 import { enqueueStepTaskOnClient } from "../queue/step-task-enqueue.ts";
 import { systemClock, type ClockSource } from "../workflow/sources.ts";
 import { jsonCodec, type Codec } from "../event-store/codec.ts";
-import {
-  appendEventsOnClient,
-  readCurrentSequenceOnClient,
-  type StoredEvent,
-} from "../event-store/event-store.ts";
-import { closeRunIfTerminal } from "../cancellation/close-run.ts";
+import { decodeStoredEvent, toConcurrencyError } from "../event-store/event-store.ts";
+import { CURRENT_EVENT_VERSION } from "../event-store/event-version.ts";
+import { applyRunProjectionOnClient } from "../cancellation/close-run.ts";
 import { lockEventAddressOnClient, registerEventWaitOnClient } from "../events/external-events.ts";
 import { createContinuedRunOnClient } from "../continuation/continued-run.ts";
 import { applySearchAttributeUpsertOnClient } from "../visibility/search-attribute-store.ts";
 import { createChildRunOnClient } from "../children/child-runs.ts";
-import { lockRunWithParent } from "../children/run-locks.ts";
-import { isTerminalState, type RunState } from "../run/state-machine.ts";
+import { foldUnfoldedProjection } from "../run/projection-store.ts";
+import type { RunProjection } from "../run/projection.ts";
 import { insertTimerOnClient } from "../timers/timer-scheduler.ts";
 import { noopTracing, type TraceSpan, type Tracing } from "../observability/tracing.ts";
 import {
@@ -83,6 +80,40 @@ export interface RecordedWorkflowTaskResult {
 }
 
 /**
+ * The step task `completeStepTask` settles: its id, run and current lease.
+ */
+export interface SettledStepTask {
+  readonly id: string;
+  readonly runId: string;
+  readonly leaseToken: string;
+}
+
+/**
+ * What `completeStepTask` does besides the ack. `result` is recorded as
+ * `recordStepResult` records it (left out, nothing is recorded). With
+ * `followUpQueue`, a `WORKFLOW_TASK` with `followUpPayload` is enqueued on
+ * that queue for the run, unless the run is closed. `now` is the time the
+ * task rows are stamped with; without it the database's time is used.
+ */
+export interface CompleteStepTaskInput {
+  readonly result?: Omit<RecordStepResultInput, "runId">;
+  readonly followUpQueue?: string;
+  readonly followUpPayload?: unknown;
+  readonly now?: Date;
+}
+
+/**
+ * The result of `completeStepTask`: what `recordStepResult` would have
+ * returned (`recorded` is false and `outcome` undefined when nothing was to
+ * be recorded) and whether the lease was still current, so the ack applied.
+ */
+export interface CompletedStepTask {
+  readonly recorded: boolean;
+  readonly outcome: StepOutcome | undefined;
+  readonly acked: boolean;
+}
+
+/**
  * Records step results and workflow task decisions exactly once, however
  * many times the same task is delivered.
  */
@@ -98,6 +129,15 @@ export interface ResultRecorder {
    * starting its own, and the caller commits or rolls back.
    */
   recordStepResult(input: RecordStepResultInput, client?: PoolClient): Promise<RecordedStepResult>;
+
+  /**
+   * Settles a step task in one statement: records `input.result` with the
+   * rules of `recordStepResult`, enqueues the run's follow-up workflow task
+   * and acks `task`, in that order and atomically. A recorded result whose
+   * ack finds the lease gone stays recorded, as it would with three separate
+   * calls.
+   */
+  completeStepTask(task: SettledStepTask, input: CompleteStepTaskInput): Promise<CompletedStepTask>;
 
   /**
    * Appends a workflow task's decision events and marks the task key as
@@ -134,19 +174,6 @@ const CLOSING_EVENT_TYPES: ReadonlySet<WorkflowEvent["type"]> = new Set([
   "run_terminated",
   "run_continued_as_new",
 ]);
-
-async function lockRunStatus(client: PoolClient, runId: string): Promise<RunState | undefined> {
-  const locked = await lockRunWithParent(client, runId);
-  return locked?.status as RunState | undefined;
-}
-
-async function lockRunStatusOnly(client: PoolClient, runId: string): Promise<RunState | undefined> {
-  const result = await client.query<{ status: RunState }>(
-    "select status from workflow_runs where id = $1 for update",
-    [runId],
-  );
-  return result.rows[0]?.status;
-}
 
 async function readNamespaceId(client: PoolClient, runId: string): Promise<string> {
   const result = await client.query<{ namespace_id: string }>(
@@ -188,6 +215,113 @@ function toOutcome(row: StepResultRow): StepOutcome {
   return { status: "completed", result: row.result };
 }
 
+interface StepResultFunctionRow {
+  recorded: boolean;
+  run_closed: boolean;
+  stored_result: unknown;
+  stored_error: SerializedError | null;
+  acked: boolean;
+}
+
+const RECORD_STEP_RESULT_SQL = `select recorded, run_closed, stored_result, stored_error, acked
+   from record_step_result(
+     $1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, $9::uuid, $10::uuid, $11, $12::jsonb, $13
+   )`;
+
+function stepResultValues(
+  codec: Codec,
+  runId: string,
+  result: Omit<RecordStepResultInput, "runId"> | undefined,
+  settle: {
+    readonly taskId: string | null;
+    readonly leaseToken: string | null;
+    readonly followUpQueue: string | null;
+    readonly followUpPayload: unknown;
+    readonly now: Date | null;
+  },
+): unknown[] {
+  const event = result === undefined ? undefined : toStepEvent({ ...result, runId });
+  const outcome = result?.outcome;
+  return [
+    runId,
+    result?.stepId ?? null,
+    result?.attemptKey ?? null,
+    outcome?.status === "completed" ? JSON.stringify(outcome.result ?? null) : null,
+    outcome?.status === "failed" ? JSON.stringify(outcome.error) : null,
+    event?.type ?? null,
+    event === undefined ? null : codec.encode(event),
+    CURRENT_EVENT_VERSION,
+    settle.taskId,
+    settle.leaseToken,
+    settle.followUpQueue,
+    settle.followUpQueue === null ? null : JSON.stringify(settle.followUpPayload ?? {}),
+    settle.now,
+  ];
+}
+
+function storedOutcome(row: StepResultFunctionRow, given: StepOutcome): StepOutcome {
+  if (row.recorded || row.run_closed) {
+    return given;
+  }
+  return toOutcome({ result: row.stored_result, error: row.stored_error });
+}
+
+const SIDE_EFFECT_EVENT_TYPES: ReadonlySet<WorkflowEvent["type"]> = new Set([
+  "child_started",
+  "search_attributes_upserted",
+  "run_continued_as_new",
+  "timer_started",
+  "event_wait_started",
+]);
+
+interface WorkflowTaskRow {
+  outcome: "recorded" | "duplicate" | "closed";
+  first_sequence_number: string;
+  last_sequence_number: string;
+  traceparent: string | null;
+  namespace_id: string | null;
+  run_status: string | null;
+  run_input: unknown;
+  run_result: unknown;
+  run_error: { name: string; message: string } | null;
+  run_closed_at: Date | null;
+  projected_sequence_number: string | null;
+  unfolded_sequence_numbers: string[] | null;
+  unfolded_payloads: string[] | null;
+  unfolded_versions: number[] | null;
+  unfolded_created_at: Date[] | null;
+}
+
+const RECORD_WORKFLOW_TASK_SQL = `select outcome, first_sequence_number, last_sequence_number, traceparent,
+          namespace_id, run_status, run_input, run_result, run_error, run_closed_at,
+          projected_sequence_number, unfolded_sequence_numbers, unfolded_payloads,
+          unfolded_versions, unfolded_created_at
+   from record_workflow_task($1, $2, $3, $4::text[], $5::text[], $6, $7)`;
+
+function unfoldedProjectionOf(codec: Codec, row: WorkflowTaskRow): RunProjection {
+  const sequences = row.unfolded_sequence_numbers ?? [];
+  const payloads = row.unfolded_payloads ?? [];
+  const versions = row.unfolded_versions ?? [];
+  const createdAt = row.unfolded_created_at ?? [];
+  return foldUnfoldedProjection({
+    status: row.run_status ?? "RUNNING",
+    input: row.run_input,
+    result: row.run_result,
+    error: row.run_error,
+    closedAt: row.run_closed_at,
+    lastSequenceNumber: Number(row.projected_sequence_number ?? "0"),
+    events: sequences.map((sequence, index) =>
+      decodeStoredEvent(
+        codec,
+        Number(sequence),
+        payloads[index] ?? "null",
+        createdAt[index] ?? new Date(0),
+        versions[index] ?? CURRENT_EVENT_VERSION,
+      ),
+    ),
+  });
+}
+
 /**
  * Options for `createResultRecorder`. `queueName` is the queue the first
  * workflow task of each child run goes to; recording a `child_started` event
@@ -224,51 +358,113 @@ export function createResultRecorder(
       input: RecordStepResultInput,
       joined?: PoolClient,
     ): Promise<RecordedStepResult> {
-      const event = toStepEvent(input);
-      const write = async (client: PoolClient): Promise<RecordedStepResult> => {
-        const status = await lockRunStatusOnly(client, input.runId);
-        if (status !== undefined && isTerminalState(status)) {
-          return { recorded: false, outcome: input.outcome };
-        }
-        const existing = await client.query<StepResultRow>(
-          "select result, error from step_results where run_id = $1 and step_id = $2",
-          [input.runId, input.stepId],
-        );
-        const first = existing.rows[0];
-        if (first !== undefined) {
-          return { recorded: false, outcome: toOutcome(first) };
-        }
-        await client.query(
-          `insert into step_results (run_id, step_id, attempt_key, result, error)
-           values ($1, $2, $3, $4::jsonb, $5::jsonb)`,
-          [
-            input.runId,
-            input.stepId,
-            input.attemptKey,
-            input.outcome.status === "completed"
-              ? JSON.stringify(input.outcome.result ?? null)
-              : null,
-            input.outcome.status === "failed" ? JSON.stringify(input.outcome.error) : null,
-          ],
-        );
-        const currentSeq = await readCurrentSequenceOnClient(client, input.runId);
-        await appendEventsOnClient(client, codec, input.runId, currentSeq, [event]);
-        return { recorded: true, outcome: input.outcome };
+      const values = stepResultValues(codec, input.runId, input, {
+        taskId: null,
+        leaseToken: null,
+        followUpQueue: null,
+        followUpPayload: undefined,
+        now: null,
+      });
+      const result = await (joined ?? pool).query<StepResultFunctionRow>(
+        RECORD_STEP_RESULT_SQL,
+        values,
+      );
+      const row = result.rows[0];
+      if (row === undefined) {
+        throw new Error(`recording step "${input.stepId}" of run "${input.runId}" returned no row`);
+      }
+      return { recorded: row.recorded, outcome: storedOutcome(row, input.outcome) };
+    },
+
+    async completeStepTask(
+      task: SettledStepTask,
+      input: CompleteStepTaskInput,
+    ): Promise<CompletedStepTask> {
+      const values = stepResultValues(codec, task.runId, input.result, {
+        taskId: task.id,
+        leaseToken: task.leaseToken,
+        followUpQueue: input.followUpQueue ?? null,
+        followUpPayload: input.followUpPayload,
+        now: input.now ?? null,
+      });
+      const result = await pool.query<StepResultFunctionRow>(RECORD_STEP_RESULT_SQL, values);
+      const row = result.rows[0];
+      if (row === undefined) {
+        throw new Error(`settling step task "${task.id}" returned no row`);
+      }
+      return {
+        recorded: row.recorded,
+        outcome: input.result === undefined ? undefined : storedOutcome(row, input.result.outcome),
+        acked: row.acked,
       };
-      return joined === undefined ? withTransaction(pool, write) : write(joined);
     },
 
     async recordWorkflowTaskResult(
       input: RecordWorkflowTaskResultInput,
     ): Promise<RecordedWorkflowTaskResult> {
       const events = input.events.map((event) => workflowEventSchema.parse(event));
+      const waits = events.filter(
+        (event): event is Extract<WorkflowEvent, { type: "event_wait_started" }> =>
+          event.type === "event_wait_started",
+      );
+      const closing = events.some((event) => CLOSING_EVENT_TYPES.has(event.type));
+      const needsTransaction =
+        closing ||
+        events.some(
+          (event) =>
+            SIDE_EFFECT_EVENT_TYPES.has(event.type) ||
+            (event.type === "step_scheduled" && recorderOptions.queueName !== undefined),
+        );
+      const values = [
+        input.runId,
+        input.taskKey,
+        input.expectedSeq,
+        events.map((event) => event.type),
+        events.map((event) => codec.encode(event)),
+        CURRENT_EVENT_VERSION,
+        closing,
+      ];
+      const recordOn = async (client: Pool | PoolClient): Promise<WorkflowTaskRow> => {
+        try {
+          const result = await client.query<WorkflowTaskRow>(RECORD_WORKFLOW_TASK_SQL, values);
+          const row = result.rows[0];
+          if (row === undefined) {
+            throw new Error(`recording workflow task of run "${input.runId}" returned no row`);
+          }
+          return row;
+        } catch (error) {
+          throw toConcurrencyError(error, input.runId, input.expectedSeq);
+        }
+      };
+      const finish = (
+        row: WorkflowTaskRow,
+        pendingSpans: readonly TraceSpan[],
+      ): RecordedWorkflowTaskResult => {
+        const firstSequenceNumber = Number(row.first_sequence_number);
+        const lastSequenceNumber = Number(row.last_sequence_number);
+        if (row.outcome !== "recorded") {
+          return { recorded: false, firstSequenceNumber, lastSequenceNumber };
+        }
+        const taskSpan = tracing.startSpan("workflow.task", {
+          parent: row.traceparent,
+          attributes: {
+            "dee.run.id": input.runId,
+            "dee.task.key": input.taskKey,
+            "dee.events.count": events.length,
+          },
+        });
+        taskSpan.end();
+        for (const span of pendingSpans) {
+          span.end();
+        }
+        return { recorded: true, firstSequenceNumber, lastSequenceNumber };
+      };
+      if (!needsTransaction) {
+        return finish(await recordOn(pool), []);
+      }
       return withClient(pool, async (client) => {
         const pendingSpans: TraceSpan[] = [];
         await client.query("begin");
-        const waits = events.filter(
-          (event): event is Extract<WorkflowEvent, { type: "event_wait_started" }> =>
-            event.type === "event_wait_started",
-        );
         if (waits.length > 0) {
           const namespaceId = await readNamespaceId(client, input.runId);
           const addresses = [
@@ -280,47 +476,15 @@ export function createResultRecorder(
             await lockEventAddressOnClient(client, namespaceId, eventName, key);
           }
         }
-        const status = await lockRunStatus(client, input.runId);
-        const runTrace = await client.query<{ traceparent: string | null }>(
-          "select traceparent from workflow_runs where id = $1",
-          [input.runId],
-        );
-        const traceparent = runTrace.rows[0]?.traceparent ?? null;
-        const existing = await client.query<{ first: string; last: string }>(
-          `select first_sequence_number as first, last_sequence_number as last
-           from workflow_task_results where run_id = $1 and task_key = $2`,
-          [input.runId, input.taskKey],
-        );
-        const previous = existing.rows[0];
-        if (previous !== undefined) {
+        const row = await recordOn(client);
+        if (row.outcome !== "recorded") {
           await client.query("commit");
-          return {
-            recorded: false,
-            firstSequenceNumber: Number(previous.first),
-            lastSequenceNumber: Number(previous.last),
-          };
+          return finish(row, []);
         }
-        if (status !== undefined && isTerminalState(status)) {
-          await client.query("commit");
-          return {
-            recorded: false,
-            firstSequenceNumber: input.expectedSeq + 1,
-            lastSequenceNumber: input.expectedSeq,
-          };
-        }
-        const stored: StoredEvent[] = await appendEventsOnClient(
-          client,
-          codec,
-          input.runId,
-          input.expectedSeq,
-          events,
-        );
+        const traceparent = row.traceparent;
+        const namespaceId = row.namespace_id ?? "";
         for (const event of events) {
           if (event.type === "child_started") {
-            const namespace = await client.query<{ namespace_id: string }>(
-              "select namespace_id from workflow_runs where id = $1",
-              [input.runId],
-            );
             if (recorderOptions.queueName === undefined) {
               throw new Error("recording a child workflow needs a queueName");
             }
@@ -337,7 +501,7 @@ export function createResultRecorder(
               codec,
               {
                 runId: input.runId,
-                namespaceId: namespace.rows[0]?.namespace_id ?? "",
+                namespaceId,
                 queueName: recorderOptions.queueName,
                 traceparent: childSpan.traceparent ?? traceparent,
                 now: clock.now(),
@@ -356,7 +520,7 @@ export function createResultRecorder(
           }
           if (event.type === "step_scheduled" && recorderOptions.queueName !== undefined) {
             await enqueueStepTaskOnClient(client, {
-              namespaceId: await readNamespaceId(client, input.runId),
+              namespaceId,
               runId: input.runId,
               queueName: recorderOptions.queueName,
               stepId: event.stepId,
@@ -373,34 +537,19 @@ export function createResultRecorder(
             });
           }
         }
-        if (events.some((event) => CLOSING_EVENT_TYPES.has(event.type))) {
-          await closeRunIfTerminal(client, codec, input.runId);
+        if (closing) {
+          await applyRunProjectionOnClient(
+            client,
+            codec,
+            input.runId,
+            unfoldedProjectionOf(codec, row),
+          );
         }
         for (const wait of waits) {
           await registerEventWaitOnClient(client, codec, input.runId, wait, clock.now());
         }
-        const firstSequenceNumber = input.expectedSeq + 1;
-        const lastSequenceNumber = input.expectedSeq + stored.length;
-        await client.query(
-          `insert into workflow_task_results
-             (run_id, task_key, first_sequence_number, last_sequence_number)
-           values ($1, $2, $3, $4)`,
-          [input.runId, input.taskKey, firstSequenceNumber, lastSequenceNumber],
-        );
         await client.query("commit");
-        const taskSpan = tracing.startSpan("workflow.task", {
-          parent: traceparent,
-          attributes: {
-            "dee.run.id": input.runId,
-            "dee.task.key": input.taskKey,
-            "dee.events.count": stored.length,
-          },
-        });
-        taskSpan.end();
-        for (const span of pendingSpans) {
-          span.end();
-        }
-        return { recorded: true, firstSequenceNumber, lastSequenceNumber };
+        return finish(row, pendingSpans);
       });
     },
   };

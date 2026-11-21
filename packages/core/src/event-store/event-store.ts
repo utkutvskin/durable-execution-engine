@@ -3,7 +3,6 @@ import { jsonCodec, type Codec } from "./codec.ts";
 import { ConcurrencyError } from "./errors.ts";
 import { workflowEventSchema, type WorkflowEvent } from "./events.ts";
 import { CURRENT_EVENT_VERSION, readVersionedEvent } from "./event-version.ts";
-import { rollbackQuietly } from "../db/transaction.ts";
 
 /**
  * A single event as stored in and returned from the event log: the
@@ -23,6 +22,25 @@ interface StoredEventRow {
   readonly payload: string;
   readonly created_at: Date;
   readonly event_version: number;
+}
+
+/**
+ * Decodes one stored event from its encoded `payload`, its sequence number,
+ * write time and event format `version`.
+ */
+export function decodeStoredEvent(
+  codec: Codec,
+  sequenceNumber: number,
+  payload: string,
+  createdAt: Date,
+  version: number,
+): StoredEvent {
+  return toStoredEvent(codec, {
+    sequence_number: String(sequenceNumber),
+    payload,
+    created_at: createdAt,
+    event_version: version,
+  });
 }
 
 function toStoredEvent(codec: Codec, row: StoredEventRow): StoredEvent {
@@ -88,41 +106,61 @@ async function readCurrentSequence(client: PoolClient, runId: string): Promise<n
 }
 
 /**
- * Appends already validated `events` to `runId` on `client`, inside a
- * transaction the caller owns. Same sequence rules as `EventStore.append`,
- * but it never begins, commits or rolls back, so a caller can make the
- * append atomic with writes of its own.
+ * The SQLSTATE `append_run_events` and `record_workflow_task` raise when the
+ * run's current sequence number is not the one the caller expected. The
+ * error's `detail` holds the current sequence number.
  */
-export async function appendEventsOnClient(
-  client: PoolClient,
+export const STALE_SEQUENCE_SQLSTATE = "DEE01";
+
+/**
+ * Turns a database error raised for a stale `expectedSeq` (see
+ * `STALE_SEQUENCE_SQLSTATE`) into a `ConcurrencyError`, and returns any
+ * other error unchanged.
+ */
+export function toConcurrencyError(error: unknown, runId: string, expectedSeq: number): unknown {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return error;
+  }
+  const { code } = error as { code?: unknown };
+  if (code === STALE_SEQUENCE_SQLSTATE) {
+    const detail: unknown = "detail" in error ? (error as { detail?: unknown }).detail : undefined;
+    const actual = typeof detail === "string" ? Number(detail) : Number.NaN;
+    return new ConcurrencyError(runId, expectedSeq, Number.isNaN(actual) ? undefined : actual);
+  }
+  return error;
+}
+
+interface AppendedRow {
+  readonly sequence_number: string;
+  readonly created_at: Date;
+}
+
+function appendStatement(
   codec: Codec,
   runId: string,
   expectedSeq: number,
   events: readonly WorkflowEvent[],
-): Promise<StoredEvent[]> {
-  const currentSeq = await readCurrentSequence(client, runId);
-  if (currentSeq !== expectedSeq) {
-    throw new ConcurrencyError(runId, expectedSeq, currentSeq);
-  }
-  if (events.length === 0) {
-    return [];
-  }
-  const result = await client.query<{ sequence_number: string; created_at: Date }>(
-    `insert into run_events (run_id, sequence_number, event_type, payload, event_version)
-     select $1, batch.sequence_number, batch.event_type, batch.payload::jsonb, $5
-     from unnest($2::bigint[], $3::text[], $4::text[])
-       as batch (sequence_number, event_type, payload)
-     returning sequence_number, created_at`,
+): [string, unknown[]] {
+  return [
+    "select sequence_number, created_at from append_run_events($1, $2, $3::text[], $4::text[], $5)",
     [
       runId,
-      events.map((_, offset) => expectedSeq + offset + 1),
+      expectedSeq,
       events.map((event) => event.type),
       events.map((event) => codec.encode(event)),
       CURRENT_EVENT_VERSION,
     ],
-  );
+  ];
+}
+
+function toStoredEvents(
+  runId: string,
+  expectedSeq: number,
+  events: readonly WorkflowEvent[],
+  rows: readonly AppendedRow[],
+): StoredEvent[] {
   const createdAtBySequence = new Map(
-    result.rows.map((row) => [Number(row.sequence_number), row.created_at]),
+    rows.map((row) => [Number(row.sequence_number), row.created_at]),
   );
   return events.map((event, offset) => {
     const sequenceNumber = expectedSeq + offset + 1;
@@ -132,6 +170,29 @@ export async function appendEventsOnClient(
     }
     return { sequenceNumber, event, createdAt, version: CURRENT_EVENT_VERSION };
   });
+}
+
+/**
+ * Appends already validated `events` to `runId` on `client`, inside a
+ * transaction the caller owns. Same sequence rules as `EventStore.append`,
+ * but it never begins, commits or rolls back, so a caller can make the
+ * append atomic with writes of its own. The check and the insert are one
+ * statement (`append_run_events`).
+ */
+export async function appendEventsOnClient(
+  client: PoolClient,
+  codec: Codec,
+  runId: string,
+  expectedSeq: number,
+  events: readonly WorkflowEvent[],
+): Promise<StoredEvent[]> {
+  const [sql, values] = appendStatement(codec, runId, expectedSeq, events);
+  try {
+    const result = await client.query<AppendedRow>(sql, values);
+    return toStoredEvents(runId, expectedSeq, events, result.rows);
+  } catch (error) {
+    throw toConcurrencyError(error, runId, expectedSeq);
+  }
 }
 
 /**
@@ -168,7 +229,7 @@ export async function readEventsOnClient(
 /**
  * Creates an `EventStore` backed by the `run_events` table reachable
  * through `pool`. Optimistic concurrency is enforced by checking the
- * current sequence number inside the same transaction as the insert, with
+ * current sequence number in the same statement as the insert, with
  * the table's `(run_id, sequence_number)` unique constraint as the final
  * guard against a race that check alone cannot see.
  */
@@ -183,32 +244,15 @@ export function createPostgresEventStore(pool: Pool, codec: Codec = jsonCodec): 
         return [];
       }
       const validatedEvents = events.map((event) => workflowEventSchema.parse(event));
-
-      const client = await pool.connect();
-
-      let broken = false;
+      const [sql, values] = appendStatement(codec, runId, expectedSeq, validatedEvents);
       try {
-        await client.query("begin");
-        const stored = await appendEventsOnClient(
-          client,
-          codec,
-          runId,
-          expectedSeq,
-          validatedEvents,
-        );
-        await client.query("commit");
-        return stored;
+        const result = await pool.query<AppendedRow>(sql, values);
+        return toStoredEvents(runId, expectedSeq, validatedEvents, result.rows);
       } catch (error) {
-        broken = !(await rollbackQuietly(client));
-        if (error instanceof ConcurrencyError) {
-          throw error;
-        }
         if (isUniqueViolation(error)) {
           throw new ConcurrencyError(runId, expectedSeq);
         }
-        throw error;
-      } finally {
-        client.release(broken);
+        throw toConcurrencyError(error, runId, expectedSeq);
       }
     },
 

@@ -137,7 +137,7 @@ describe("createPostgresEventStore", () => {
     expect(history[0]?.sequenceNumber).toBe(1);
   });
 
-  it("writes a batch of 25 events with a single insert statement", async () => {
+  it("writes a batch of 25 events and checks the sequence in a single statement", async () => {
     const statements: string[] = [];
     const client = await database.pool.connect();
     const originalQuery = client.query.bind(client) as (...args: unknown[]) => unknown;
@@ -161,7 +161,8 @@ describe("createPostgresEventStore", () => {
     } finally {
       client.release();
     }
-    expect(statements.filter((sql) => sql.includes("insert into run_events"))).toHaveLength(1);
+    expect(statements.filter((sql) => sql !== "begin" && sql !== "commit")).toHaveLength(1);
+    expect(statements.filter((sql) => sql.includes("append_run_events"))).toHaveLength(1);
   });
 
   it("keeps every event of a large batch in order with its own payload", async () => {

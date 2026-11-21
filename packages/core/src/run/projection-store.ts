@@ -1,6 +1,10 @@
 import type { Pool, PoolClient } from "pg";
 import type { Codec } from "../event-store/codec.ts";
-import { readEventsOnClient, type EventStore } from "../event-store/event-store.ts";
+import {
+  readEventsOnClient,
+  type EventStore,
+  type StoredEvent,
+} from "../event-store/event-store.ts";
 import { readSnapshotOnClient } from "../compaction/snapshot.ts";
 import { RUN_STATES, type RunState } from "./state-machine.ts";
 import { createInitialProjection, foldRunEvents, type RunProjection } from "./projection.ts";
@@ -125,16 +129,31 @@ async function foldInto(
 
 /**
  * Brings `runId`'s `workflow_runs` row up to date by folding only the
- * events after its `last_sequence_number` onto its stored state. An event
+ * events after its `last_sequence_number` onto its stored state. A row
+ * that is already up to date costs one read and is not written. An event
  * that is invalid for the run's current state, such as anything after a
  * terminal event, rejects with `InvalidTransitionError` and leaves the row
  * untouched.
  */
-export function refreshProjection(
+export async function refreshProjection(
   pool: Pool,
   store: EventStore,
   runId: string,
 ): Promise<RunProjection> {
+  const current = await pool.query<RunRow & { has_newer: boolean }>(
+    `select status, input, result, error, closed_at, last_sequence_number,
+            exists (
+              select 1 from run_events
+              where run_events.run_id = workflow_runs.id
+                and run_events.sequence_number > workflow_runs.last_sequence_number
+            ) as has_newer
+     from workflow_runs where id = $1`,
+    [runId],
+  );
+  const row = current.rows[0];
+  if (row !== undefined && !row.has_newer) {
+    return projectionFromRow(row);
+  }
   return foldInto(pool, store, runId, projectionFromRow);
 }
 
@@ -165,10 +184,52 @@ export async function refreshProjectionOnClient(
   codec: Codec,
   runId: string,
 ): Promise<RunProjection> {
+  const next = await foldProjectionOnClient(client, codec, runId);
+  await writeProjection(client, runId, next);
+  return next;
+}
+
+/**
+ * Reads `runId`'s stored projection under its row lock and folds the events
+ * after it, in the caller's transaction, without writing the result. The
+ * caller writes it (see `refreshProjectionOnClient`).
+ */
+export async function foldProjectionOnClient(
+  client: PoolClient,
+  codec: Codec,
+  runId: string,
+): Promise<RunProjection> {
   const row = await lockRunRow(client, runId);
   const start = projectionFromRow(row);
   const events = await readEventsOnClient(client, codec, runId, start.lastSequenceNumber);
-  const next = foldRunEvents(events, start);
-  await writeProjection(client, runId, next);
-  return next;
+  return foldRunEvents(events, start);
+}
+
+/**
+ * The stored projection columns of a run as `record_workflow_task` returns
+ * them, and the events after them.
+ */
+export interface UnfoldedProjection {
+  readonly status: string;
+  readonly input: unknown;
+  readonly result: unknown;
+  readonly error: { name: string; message: string } | null;
+  readonly closedAt: Date | null;
+  readonly lastSequenceNumber: number;
+  readonly events: readonly StoredEvent[];
+}
+
+/**
+ * Folds the events of `unfolded` onto its stored projection.
+ */
+export function foldUnfoldedProjection(unfolded: UnfoldedProjection): RunProjection {
+  const start: RunProjection = {
+    state: toRunState(unfolded.status),
+    input: unfolded.input,
+    result: unfolded.result,
+    error: unfolded.error,
+    closedAt: unfolded.closedAt,
+    lastSequenceNumber: unfolded.lastSequenceNumber,
+  };
+  return foldRunEvents(unfolded.events, start);
 }

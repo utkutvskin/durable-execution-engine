@@ -2,7 +2,7 @@ import type { PoolClient } from "pg";
 import type { Codec } from "../event-store/codec.ts";
 import { appendEventsOnClient, readCurrentSequenceOnClient } from "../event-store/event-store.ts";
 import type { WorkflowEvent } from "../event-store/events.ts";
-import { refreshProjectionOnClient } from "../run/projection-store.ts";
+import { foldProjectionOnClient } from "../run/projection-store.ts";
 import type { RunProjection } from "../run/projection.ts";
 import { isTerminalState, type RunState } from "../run/state-machine.ts";
 import { requestCancellationOnClient } from "./request-cancellation.ts";
@@ -147,6 +147,51 @@ async function applyParentClosePolicies(
   }
 }
 
+interface ClosedRunRow {
+  parent_linked: boolean;
+  open_children: boolean;
+}
+
+/**
+ * Writes `projection`, the run's projection folded up to its last event, in
+ * the caller's transaction, and settles what a close implies (see
+ * `closeRunIfTerminal`). The projection write, the withdrawal of the run's
+ * waiting tasks and the check for a parent link and open children are one
+ * statement (`close_run`); the parent and the children are only touched when
+ * that check finds them. The caller must hold the run row lock, and its
+ * parent's first (see `lockRunWithParent`). Returns the run's state.
+ */
+export async function applyRunProjectionOnClient(
+  client: PoolClient,
+  codec: Codec,
+  runId: string,
+  projection: RunProjection,
+): Promise<RunState> {
+  const closed = await client.query<ClosedRunRow>(
+    `select parent_linked, open_children
+     from close_run($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6, $7)`,
+    [
+      runId,
+      projection.state,
+      JSON.stringify(projection.input),
+      JSON.stringify(projection.result),
+      projection.error === null ? null : JSON.stringify(projection.error),
+      projection.closedAt,
+      projection.lastSequenceNumber,
+    ],
+  );
+  const row = closed.rows[0];
+  if (isTerminalState(projection.state)) {
+    if (row?.parent_linked === true) {
+      await notifyParent(client, codec, runId, projection);
+    }
+    if (row?.open_children === true) {
+      await applyParentClosePolicies(client, codec, runId);
+    }
+  }
+  return projection.state;
+}
+
 /**
  * Brings the run's projection up to date inside the caller's transaction
  * and, when the run is now terminal, withdraws every task still waiting for
@@ -162,15 +207,6 @@ export async function closeRunIfTerminal(
   codec: Codec,
   runId: string,
 ): Promise<RunState> {
-  const projection = await refreshProjectionOnClient(client, codec, runId);
-  if (isTerminalState(projection.state)) {
-    await client.query(
-      `update tasks set state = 'COMPLETED', updated_at = now()
-       where run_id = $1 and state = 'PENDING'`,
-      [runId],
-    );
-    await notifyParent(client, codec, runId, projection);
-    await applyParentClosePolicies(client, codec, runId);
-  }
-  return projection.state;
+  const projection = await foldProjectionOnClient(client, codec, runId);
+  return applyRunProjectionOnClient(client, codec, runId, projection);
 }

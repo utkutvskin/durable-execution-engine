@@ -250,11 +250,33 @@ export interface CompiledVisibilityQuery {
 export function compileVisibilityQuery(query: string, firstParameter?: number): CompiledVisibilityQuery;
 
 // @public
+export interface CompletedStepTask {
+    // (undocumented)
+    readonly acked: boolean;
+    // (undocumented)
+    readonly outcome: StepOutcome | undefined;
+    // (undocumented)
+    readonly recorded: boolean;
+}
+
+// @public
 export interface CompleteRunCommand {
     // (undocumented)
     readonly result: unknown;
     // (undocumented)
     readonly type: "complete_run";
+}
+
+// @public
+export interface CompleteStepTaskInput {
+    // (undocumented)
+    readonly followUpPayload?: unknown;
+    // (undocumented)
+    readonly followUpQueue?: string;
+    // (undocumented)
+    readonly now?: Date;
+    // (undocumented)
+    readonly result?: Omit<RecordStepResultInput, "runId">;
 }
 
 // @public
@@ -1170,6 +1192,56 @@ export class IdempotencyKeyConflictError extends Error {
     // (undocumented)
     readonly runId: string;
 }
+
+// @public
+export interface InsertedRunRow {
+    // (undocumented)
+    readonly id: string;
+    // (undocumented)
+    readonly started_at: Date;
+}
+
+// @public
+export interface InsertRunFields extends InsertRunInput {
+    // (undocumented)
+    readonly priority: number;
+    // (undocumented)
+    readonly searchAttributes: SearchAttributes;
+    // (undocumented)
+    readonly traceparent: string | null;
+}
+
+// @public
+export interface InsertRunInput {
+    // (undocumented)
+    readonly executionTimeoutMs?: number | undefined;
+    readonly idempotencyExpiresAt?: Date | undefined;
+    // (undocumented)
+    readonly idempotencyKey?: string | undefined;
+    // (undocumented)
+    readonly input: unknown;
+    // (undocumented)
+    readonly memo?: unknown;
+    // (undocumented)
+    readonly namespaceId: string;
+    // (undocumented)
+    readonly priority?: number | undefined;
+    // (undocumented)
+    readonly queueName: string;
+    readonly runId?: string | undefined;
+    // (undocumented)
+    readonly runTimeoutMs?: number | undefined;
+    // (undocumented)
+    readonly searchAttributes?: SearchAttributes | undefined;
+    readonly singletonKey?: string | undefined;
+    // (undocumented)
+    readonly taskReason?: string | undefined;
+    // (undocumented)
+    readonly workflowType: string;
+}
+
+// @public
+export function insertRunStatement(codec: Codec, fields: InsertRunFields): [string, unknown[]];
 
 // @public
 export function insertTimerOnClient(client: PoolClient, input: ScheduleTimerInput): Promise<boolean>;
@@ -2154,6 +2226,7 @@ export function resolveRetryPolicy(partial?: Partial<RetryPolicy>): RetryPolicy;
 
 // @public
 export interface ResultRecorder {
+    completeStepTask(task: SettledStepTask, input: CompleteStepTaskInput): Promise<CompletedStepTask>;
     recordStepResult(input: RecordStepResultInput, client?: PoolClient): Promise<RecordedStepResult>;
     recordWorkflowTaskResult(input: RecordWorkflowTaskResultInput): Promise<RecordedWorkflowTaskResult>;
 }
@@ -2662,6 +2735,16 @@ export interface SerializedError {
 export function serializeError(reason: unknown): SerializedError;
 
 // @public
+export interface SettledStepTask {
+    // (undocumented)
+    readonly id: string;
+    // (undocumented)
+    readonly leaseToken: string;
+    // (undocumented)
+    readonly runId: string;
+}
+
+// @public
 export interface SharedRateLimiter {
     take(bucket: string, rule: RateLimitRule): Promise<RateLimitDecision>;
 }
@@ -2941,6 +3024,14 @@ export const stepFailedEventSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
+export interface StepFollowUp {
+    // (undocumented)
+    readonly clock?: ClockSource;
+    // (undocumented)
+    readonly queueName: string;
+}
+
+// @public
 export type StepHandler<TInput = unknown, TResult = unknown> = (input: TInput, context: StepContext) => TResult | Promise<TResult>;
 
 // @public
@@ -3054,6 +3145,8 @@ export interface StepTaskProcessorOptions {
     readonly clock?: ClockSource;
     // (undocumented)
     readonly deadLetters: DeadLetterQueue;
+    // (undocumented)
+    readonly followUp?: StepFollowUp;
     // (undocumented)
     readonly heartbeats?: HeartbeatStore;
     // (undocumented)
@@ -3902,9 +3995,19 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/idempotency/recorder.d.ts:57:5 - (ae-undocumented) Missing documentation for "recorded".
 // dist/idempotency/recorder.d.ts:58:5 - (ae-undocumented) Missing documentation for "firstSequenceNumber".
 // dist/idempotency/recorder.d.ts:59:5 - (ae-undocumented) Missing documentation for "lastSequenceNumber".
-// dist/idempotency/recorder.d.ts:105:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/idempotency/recorder.d.ts:106:5 - (ae-undocumented) Missing documentation for "tracing".
-// dist/idempotency/recorder.d.ts:107:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/idempotency/recorder.d.ts:65:5 - (ae-undocumented) Missing documentation for "id".
+// dist/idempotency/recorder.d.ts:66:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/idempotency/recorder.d.ts:67:5 - (ae-undocumented) Missing documentation for "leaseToken".
+// dist/idempotency/recorder.d.ts:77:5 - (ae-undocumented) Missing documentation for "result".
+// dist/idempotency/recorder.d.ts:78:5 - (ae-undocumented) Missing documentation for "followUpQueue".
+// dist/idempotency/recorder.d.ts:79:5 - (ae-undocumented) Missing documentation for "followUpPayload".
+// dist/idempotency/recorder.d.ts:80:5 - (ae-undocumented) Missing documentation for "now".
+// dist/idempotency/recorder.d.ts:88:5 - (ae-undocumented) Missing documentation for "recorded".
+// dist/idempotency/recorder.d.ts:89:5 - (ae-undocumented) Missing documentation for "outcome".
+// dist/idempotency/recorder.d.ts:90:5 - (ae-undocumented) Missing documentation for "acked".
+// dist/idempotency/recorder.d.ts:144:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/idempotency/recorder.d.ts:145:5 - (ae-undocumented) Missing documentation for "tracing".
+// dist/idempotency/recorder.d.ts:146:5 - (ae-undocumented) Missing documentation for "clock".
 // dist/invariants/invariant-checker.d.ts:16:5 - (ae-undocumented) Missing documentation for "invariant".
 // dist/invariants/invariant-checker.d.ts:17:5 - (ae-undocumented) Missing documentation for "runId".
 // dist/invariants/invariant-checker.d.ts:18:5 - (ae-undocumented) Missing documentation for "taskId".
@@ -4175,18 +4278,21 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/retry/retry-policy.d.ts:15:5 - (ae-undocumented) Missing documentation for "maxAttempts".
 // dist/retry/retry-policy.d.ts:16:5 - (ae-undocumented) Missing documentation for "jitter".
 // dist/retry/retry-policy.d.ts:17:5 - (ae-undocumented) Missing documentation for "nonRetryableErrorNames".
-// dist/retry/step-task-processor.d.ts:62:5 - (ae-undocumented) Missing documentation for "pool".
-// dist/retry/step-task-processor.d.ts:63:5 - (ae-undocumented) Missing documentation for "queue".
-// dist/retry/step-task-processor.d.ts:64:5 - (ae-undocumented) Missing documentation for "recorder".
-// dist/retry/step-task-processor.d.ts:65:5 - (ae-undocumented) Missing documentation for "attempts".
-// dist/retry/step-task-processor.d.ts:66:5 - (ae-undocumented) Missing documentation for "deadLetters".
-// dist/retry/step-task-processor.d.ts:67:5 - (ae-undocumented) Missing documentation for "lookup".
-// dist/retry/step-task-processor.d.ts:68:5 - (ae-undocumented) Missing documentation for "clock".
-// dist/retry/step-task-processor.d.ts:69:5 - (ae-undocumented) Missing documentation for "random".
-// dist/retry/step-task-processor.d.ts:70:5 - (ae-undocumented) Missing documentation for "timers".
-// dist/retry/step-task-processor.d.ts:71:5 - (ae-undocumented) Missing documentation for "tracing".
-// dist/retry/step-task-processor.d.ts:72:5 - (ae-undocumented) Missing documentation for "heartbeats".
-// dist/retry/step-task-processor.d.ts:73:5 - (ae-undocumented) Missing documentation for "beforeSettle".
+// dist/retry/step-task-processor.d.ts:67:5 - (ae-undocumented) Missing documentation for "pool".
+// dist/retry/step-task-processor.d.ts:68:5 - (ae-undocumented) Missing documentation for "queue".
+// dist/retry/step-task-processor.d.ts:69:5 - (ae-undocumented) Missing documentation for "recorder".
+// dist/retry/step-task-processor.d.ts:70:5 - (ae-undocumented) Missing documentation for "attempts".
+// dist/retry/step-task-processor.d.ts:71:5 - (ae-undocumented) Missing documentation for "deadLetters".
+// dist/retry/step-task-processor.d.ts:72:5 - (ae-undocumented) Missing documentation for "lookup".
+// dist/retry/step-task-processor.d.ts:73:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/retry/step-task-processor.d.ts:74:5 - (ae-undocumented) Missing documentation for "random".
+// dist/retry/step-task-processor.d.ts:75:5 - (ae-undocumented) Missing documentation for "timers".
+// dist/retry/step-task-processor.d.ts:76:5 - (ae-undocumented) Missing documentation for "tracing".
+// dist/retry/step-task-processor.d.ts:77:5 - (ae-undocumented) Missing documentation for "heartbeats".
+// dist/retry/step-task-processor.d.ts:78:5 - (ae-undocumented) Missing documentation for "beforeSettle".
+// dist/retry/step-task-processor.d.ts:79:5 - (ae-undocumented) Missing documentation for "followUp".
+// dist/retry/step-task-processor.d.ts:86:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/retry/step-task-processor.d.ts:87:5 - (ae-undocumented) Missing documentation for "clock".
 // dist/retry/timeout.d.ts:8:5 - (ae-undocumented) Missing documentation for "setTimeout".
 // dist/retry/timeout.d.ts:9:5 - (ae-undocumented) Missing documentation for "clearTimeout".
 // dist/retry/timeout.d.ts:16:5 - (ae-undocumented) Missing documentation for "timeoutMs".
@@ -4197,6 +4303,22 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/retry/timeout.d.ts:50:5 - (ae-undocumented) Missing documentation for "heartbeat".
 // dist/run/errors.d.ts:9:5 - (ae-undocumented) Missing documentation for "from".
 // dist/run/errors.d.ts:10:5 - (ae-undocumented) Missing documentation for "attempted".
+// dist/run/insert-run.d.ts:10:5 - (ae-undocumented) Missing documentation for "namespaceId".
+// dist/run/insert-run.d.ts:11:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/run/insert-run.d.ts:12:5 - (ae-undocumented) Missing documentation for "input".
+// dist/run/insert-run.d.ts:13:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/run/insert-run.d.ts:14:5 - (ae-undocumented) Missing documentation for "idempotencyKey".
+// dist/run/insert-run.d.ts:15:5 - (ae-undocumented) Missing documentation for "runTimeoutMs".
+// dist/run/insert-run.d.ts:16:5 - (ae-undocumented) Missing documentation for "executionTimeoutMs".
+// dist/run/insert-run.d.ts:17:5 - (ae-undocumented) Missing documentation for "taskReason".
+// dist/run/insert-run.d.ts:18:5 - (ae-undocumented) Missing documentation for "searchAttributes".
+// dist/run/insert-run.d.ts:19:5 - (ae-undocumented) Missing documentation for "memo".
+// dist/run/insert-run.d.ts:20:5 - (ae-undocumented) Missing documentation for "priority".
+// dist/run/insert-run.d.ts:32:5 - (ae-undocumented) Missing documentation for "id".
+// dist/run/insert-run.d.ts:33:5 - (ae-undocumented) Missing documentation for "started_at".
+// dist/run/insert-run.d.ts:41:5 - (ae-undocumented) Missing documentation for "searchAttributes".
+// dist/run/insert-run.d.ts:42:5 - (ae-undocumented) Missing documentation for "priority".
+// dist/run/insert-run.d.ts:43:5 - (ae-undocumented) Missing documentation for "traceparent".
 // dist/run/priority.d.ts:17:5 - (ae-undocumented) Missing documentation for "priority".
 // dist/run/projection.d.ts:7:5 - (ae-undocumented) Missing documentation for "state".
 // dist/run/projection.d.ts:8:5 - (ae-undocumented) Missing documentation for "input".

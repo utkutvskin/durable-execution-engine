@@ -1,7 +1,7 @@
 import type { Pool } from "pg";
 import { z } from "zod";
 import { noopTracing, type TraceSpan, type Tracing } from "../observability/tracing.ts";
-import type { ResultRecorder } from "../idempotency/recorder.ts";
+import type { RecordStepResultInput, ResultRecorder } from "../idempotency/recorder.ts";
 import type { LeasedTask, TaskQueue } from "../queue/task-queue.ts";
 import type { StepDefinition } from "../workflow/define-step.ts";
 import { serializeError, type SerializedError } from "../workflow/error-serialization.ts";
@@ -73,6 +73,11 @@ export type StepTaskOutcome =
  * runs once a completed, failed or already recorded outcome is stored and
  * before the task is acked, which is where a worker enqueues the run's next
  * workflow task so the run never stands without an open task.
+ *
+ * `followUp` replaces `beforeSettle` and the separate ack: the result, the
+ * run's next `WORKFLOW_TASK` on `followUp.queueName` and the ack are written
+ * in one statement (see `ResultRecorder.completeStepTask`). Its `clock`
+ * stamps the task rows, the database's time is used without it.
  */
 export interface StepTaskProcessorOptions {
   readonly pool: Pool;
@@ -87,6 +92,16 @@ export interface StepTaskProcessorOptions {
   readonly tracing?: Tracing;
   readonly heartbeats?: HeartbeatStore;
   readonly beforeSettle?: (task: LeasedTask) => Promise<void>;
+  readonly followUp?: StepFollowUp;
+}
+
+/**
+ * Where `StepTaskProcessorOptions.followUp` enqueues a run's next workflow
+ * task once a step task is settled.
+ */
+export interface StepFollowUp {
+  readonly queueName: string;
+  readonly clock?: ClockSource;
 }
 
 /**
@@ -322,6 +337,28 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
     return new Date(new Date(scheduledAt).getTime() + timeoutMs);
   }
 
+  async function settleStep(
+    task: LeasedTask,
+    result: Omit<RecordStepResultInput, "runId"> | undefined,
+  ): Promise<{ readonly recorded: boolean; readonly acked: boolean }> {
+    const followUp = options.followUp;
+    if (followUp !== undefined) {
+      return options.recorder.completeStepTask(task, {
+        ...(result === undefined ? {} : { result }),
+        followUpQueue: followUp.queueName,
+        followUpPayload: { reason: "step_completed" },
+        ...(followUp.clock === undefined ? {} : { now: followUp.clock.now() }),
+      });
+    }
+    const recorded =
+      result === undefined
+        ? { recorded: false }
+        : await options.recorder.recordStepResult({ ...result, runId: task.runId });
+    await options.beforeSettle?.(task);
+    const acked = await options.queue.ack(task.id, task.leaseToken);
+    return { recorded: recorded.recorded, acked };
+  }
+
   return {
     async process(task: LeasedTask, context: StepTaskContext = {}): Promise<StepTaskOutcome> {
       const payload = stepTaskPayloadSchema.parse(task.payload);
@@ -332,8 +369,7 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
         return { status: "lease_lost" };
       }
       if (await hasRecordedResult(runId, stepId)) {
-        await options.beforeSettle?.(task);
-        await options.queue.ack(task.id, task.leaseToken);
+        await settleStep(task, undefined);
         return { status: "already_recorded" };
       }
 
@@ -345,14 +381,11 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
 
       const failStep = async (error: SerializedError): Promise<StepTaskOutcome> => {
         await options.attempts.recordFailure({ runId, stepId, attempt, error, retryAt: null });
-        const recorded = await options.recorder.recordStepResult({
-          runId,
+        const recorded = await settleStep(task, {
           stepId,
           attemptKey: `attempt-${String(attempt)}`,
           outcome: { status: "failed", error },
         });
-        await options.beforeSettle?.(task);
-        await options.queue.ack(task.id, task.leaseToken);
         return recorded.recorded ? { status: "failed", attempt } : { status: "already_recorded" };
       };
 
@@ -454,15 +487,12 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
       }
       writer.close();
       await writer.flush();
-      const recorded = await options.recorder.recordStepResult({
-        runId,
+      const recorded = await settleStep(task, {
         stepId,
         attemptKey: `attempt-${String(attempt)}`,
         outcome: { status: "completed", result },
       });
-      await options.beforeSettle?.(task);
-      const acked = await options.queue.ack(task.id, task.leaseToken);
-      if (!acked) {
+      if (!recorded.acked) {
         return { status: "lease_lost" };
       }
       return recorded.recorded ? { status: "completed", attempt } : { status: "already_recorded" };

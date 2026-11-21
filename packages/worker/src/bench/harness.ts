@@ -7,6 +7,7 @@ import {
   refreshProjection,
   type EventStore,
   type Pool,
+  type ResultRecorder,
   type TaskQueue,
 } from "@dee/core";
 import { createIsolatedDatabase } from "../../../core/src/db/test-harness.ts";
@@ -93,7 +94,11 @@ export interface BenchmarkResult {
   readonly append: AppendPhaseResult;
 }
 
-interface BenchContext {
+/**
+ * What one benchmark run works with: the pool, an event store and a task
+ * queue over it, and the namespace its runs belong to.
+ */
+export interface BenchContext {
   readonly pool: Pool;
   readonly store: EventStore;
   readonly queue: TaskQueue;
@@ -111,7 +116,12 @@ async function createRunRow(context: BenchContext): Promise<string> {
   return run.rows[0]?.id ?? "";
 }
 
-async function startRun(
+/**
+ * Starts one benchmark run: the run row, its `run_started` event and one
+ * `step_scheduled` per step, and a step task on `queueName` that carries the
+ * whole run.
+ */
+export async function startBenchRun(
   context: BenchContext,
   queueName: string,
   stepsPerRun: number,
@@ -138,6 +148,36 @@ async function startRun(
   return runId;
 }
 
+/**
+ * Completes one benchmark run the way a worker does in the end-to-end
+ * phase: records each step's result, records the `run_completed` decision
+ * and refreshes the projection. The task itself is acked by the worker.
+ */
+export async function completeBenchRun(
+  context: BenchContext,
+  recorder: ResultRecorder,
+  runId: string,
+  taskPayload: unknown,
+): Promise<void> {
+  const payload = taskPayload as { steps: number };
+  for (let step = 1; step <= payload.steps; step += 1) {
+    await recorder.recordStepResult({
+      runId,
+      stepId: `step-${String(step)}`,
+      attemptKey: `step-${String(step)}#1`,
+      outcome: { status: "completed", result: step },
+    });
+  }
+  const history = await context.store.read(runId);
+  await recorder.recordWorkflowTaskResult({
+    runId,
+    taskKey: "finish",
+    expectedSeq: history.at(-1)?.sequenceNumber ?? 0,
+    events: [{ type: "run_completed", result: payload.steps }],
+  });
+  await refreshProjection(context.pool, context.store, runId);
+}
+
 async function runPool<T>(
   total: number,
   concurrency: number,
@@ -162,7 +202,7 @@ async function measureStartPhase(
   const began = performance.now();
   await runPool(config.runs, config.startConcurrency, async () => {
     const submitted = performance.now();
-    await startRun(context, START_QUEUE, config.stepsPerRun);
+    await startBenchRun(context, START_QUEUE, config.stepsPerRun);
     latencies.push(performance.now() - submitted);
   });
   const elapsedMs = performance.now() - began;
@@ -199,23 +239,7 @@ async function measureEndToEnd(
       shutdownTimeoutMs: 5_000,
       identity: createWorkerIdentity({ version: `bench-${String(index)}` }),
       handler: async (task) => {
-        const payload = task.payload as { steps: number };
-        for (let step = 1; step <= payload.steps; step += 1) {
-          await recorder.recordStepResult({
-            runId: task.runId,
-            stepId: `step-${String(step)}`,
-            attemptKey: `step-${String(step)}#1`,
-            outcome: { status: "completed", result: step },
-          });
-        }
-        const history = await context.store.read(task.runId);
-        await recorder.recordWorkflowTaskResult({
-          runId: task.runId,
-          taskKey: "finish",
-          expectedSeq: history.at(-1)?.sequenceNumber ?? 0,
-          events: [{ type: "run_completed", result: payload.steps }],
-        });
-        await refreshProjection(context.pool, context.store, task.runId);
+        await completeBenchRun(context, recorder, task.runId, task.payload);
         const submitted = submittedAt.get(task.runId);
         if (submitted !== undefined) {
           latencies.push(performance.now() - submitted);
@@ -234,7 +258,7 @@ async function measureEndToEnd(
   });
   await runPool(config.runs, config.startConcurrency, async () => {
     const submitted = performance.now();
-    await startRun(context, WORK_QUEUE, config.stepsPerRun, (runId) => {
+    await startBenchRun(context, WORK_QUEUE, config.stepsPerRun, (runId) => {
       submittedAt.set(runId, submitted);
     });
   });

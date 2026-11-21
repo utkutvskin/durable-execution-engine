@@ -92,6 +92,8 @@ export {
 } from "./run/projection.ts";
 export type { RunProjection } from "./run/projection.ts";
 export { rebuildProjection, refreshProjection } from "./run/projection-store.ts";
+export { insertRunStatement } from "./run/insert-run.ts";
+export type { InsertRunFields, InsertRunInput, InsertedRunRow } from "./run/insert-run.ts";
 export { defineQuery, defineSignal } from "./workflow/define-signal.ts";
 export type { QueryDefinition, SignalDefinition } from "./workflow/define-signal.ts";
 export { defineStep } from "./workflow/define-step.ts";
@@ -151,6 +153,9 @@ export type {
 } from "./queue/task-queue.ts";
 export { createResultRecorder } from "./idempotency/recorder.ts";
 export type {
+  CompleteStepTaskInput,
+  CompletedStepTask,
+  SettledStepTask,
   RecordStepResultInput,
   RecordWorkflowTaskResultInput,
   RecordedStepResult,
@@ -226,6 +231,7 @@ export type {
   StepTaskPayload,
   StepTaskProcessor,
   StepTaskProcessorOptions,
+  StepFollowUp,
 } from "./retry/step-task-processor.ts";
 export { createMonotonicClock } from "./timers/monotonic-clock.ts";
 export type { MonotonicClock } from "./timers/monotonic-clock.ts";

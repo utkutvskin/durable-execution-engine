@@ -205,7 +205,10 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
     random,
     ...(options.stepTimers === undefined ? {} : { timers: options.stepTimers }),
     ...(options.tracing === undefined ? {} : { tracing: options.tracing }),
-    beforeSettle: enqueueFollowUp,
+    followUp: {
+      queueName: options.queueName,
+      ...(options.clock === undefined ? {} : { clock: options.clock }),
+    },
   });
 
   async function enqueueFollowUp(task: LeasedTask): Promise<void> {
