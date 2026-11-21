@@ -159,6 +159,14 @@ A pause holds back work without losing it. `createPauseControl` writes a row to 
 
 A schedule's overlap policy decides what a trigger does while a run of the schedule is open. `skip` drops it, `buffer_one` keeps only the latest and starts it when the run closes, `allow_all` starts it anyway, and `cancel_other` requests cancellation of the open runs in the trigger's transaction and buffers the trigger like `buffer_one`, so the new run starts only after the cancelled one closed. Every trigger is a row of `schedule_triggers` keyed by schedule and instant, written in the transaction that handles it while the schedule row is locked, which is why a backfill of a range, repeated or run by three callers at once, handles each instant once. A backfill can override the overlap policy, so `allow_all` starts every hour of a range even for a schedule that skips. Pausing a schedule stops its ticks and its buffered trigger; a backfill still works on a paused schedule.
 
+## Statements per run
+
+Throughput on one Postgres is bounded by the number of statements a run costs, so the hot paths are SQL functions called as one statement each: `insert_run` writes a run with its `run_started` event and first workflow task, `append_run_events` checks the sequence and appends, `record_step_result` records a step's result and, for the engine, also enqueues the run's next workflow task and acks the step task, `record_workflow_task` records a decision with its idempotency and sequence checks, and `close_run` writes the closing projection and withdraws the run's waiting tasks. A decision without side effects needs no transaction; one that closes the run is two calls in one transaction. The three-step run of the benchmark costs 14 statements (`docs/BENCHMARKS.md`).
+
+A run has at most one pending workflow task. A workflow task is only a request to decide from the whole history, so when one is already waiting, a new request merges into it instead of queueing a second decision: twenty steps finishing at once cause one replay. A waiting task that was already delivered once is replaced rather than merged, because its key may already hold a recorded decision, and a redelivery of it would decide nothing.
+
+A worker sends the acks and the heartbeats of the tasks that finish or beat in the same turn of the event loop as one statement each. A heartbeat moves `lease_extended_until`, a column no index covers, so Postgres can write it as a HOT update without touching the indexes of `tasks`; a lease ends at the later of that column and the `visible_at` the dequeue set.
+
 ## Guarantees and limits
 
 | The engine guarantees                                             | The engine does not guarantee                         |

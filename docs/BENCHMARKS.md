@@ -146,8 +146,43 @@ Execution Time: 33.291 ms
 
 Equality on an attribute (`@>`) is served by the GIN index; an ordering on an attribute is not indexed and is evaluated while walking the namespace or status index newest first, so its cost grows with how many runs it has to skip before it fills a page: `amount > 998` matches one run in 1,000 and reads about 51,000. A query that matches nothing with only such a filter reads the whole namespace; that is the case to watch, and typed expression indexes per attribute are the fix (`docs/DEFERRED.md`). The test `visibility-queries.integration.test.ts` (20,000 runs) fails when any of these queries reads `workflow_runs` sequentially, when attribute equality stops using the GIN index or the range stops using the status index.
 
+## Fewer statements per run
+
+Day 28 left the saturated system bound by the number of statements per run. By day 52 the benchmark's three-step run cost 55 statements: the run row, an append in its own transaction (`begin`, the sequence read, the insert, `commit`) and the task; the pause read and the dequeue; eight per step result (`begin`, the run lock, the result check, the result insert, the sequence read twice, the event insert, `commit`); the history read; fifteen to record and close the run; six to refresh the projection, and the ack. The hot paths are now SQL functions called as one statement each (migration 0030, ADR-0063), and the same run costs 14:
+
+| Part of the run                             | Before |  After |
+| ------------------------------------------- | -----: | -----: |
+| Start (run row, events, task)               |      6 |      3 |
+| Pause read and dequeue                      |      2 |      2 |
+| Three step results                          |     24 |      3 |
+| History read                                |      1 |      1 |
+| Record `run_completed` and close the run    |     15 |      4 |
+| Refresh the projection (already up to date) |      6 |      1 |
+| Ack                                         |      1 |      1 |
+| **Total**                                   | **55** | **14** |
+
+`packages/worker/src/bench/statements.integration.test.ts` runs exactly that run through the harness's own `startBenchRun` and `completeBenchRun` on a pool that records every statement and fails above 15. A second test counts a three-step workflow on the real engine, started through the run service, with its polls left out: 150 statements before and 86 after, including one tick of the engine's loops and its shutdown; it fails above 90. What the engine still spends is in `docs/DEFERRED.md`.
+
+Each figure is the median of 5 runs of the default benchmark (400 runs of 3 steps), measured on the same machine before and after, with nothing else running:
+
+| Measure                     |      Before |      After |     Change |
+| --------------------------- | ----------: | ---------: | ---------: |
+| Runs started per second     |         964 |      1,254 |       +30% |
+| Steps completed per second  |         592 |      1,070 |       +81% |
+| Events appended per second  |      29,412 |     57,342 |       +95% |
+| Start a run, p50 / p99 (ms) | 13.6 / 74.5 | 9.7 / 70.2 | -29% / -6% |
+| Run end to end p50 (ms)     |         864 |        463 |       -46% |
+| Run end to end p95 (ms)     |       1,332 |        592 |       -56% |
+| Run end to end p99 (ms)     |       1,372 |        602 |       -56% |
+| Append 10 events, p50 (ms)  |         4.7 |        2.6 |       -45% |
+| Append 10 events, p95 (ms)  |         8.1 |        4.8 |       -41% |
+| Append 10 events, p99 (ms)  |        16.0 |        6.1 |       -62% |
+
+Over the 5 runs of each side the steps per second ranged from 554 to 663 before and from 995 to 1,130 after, so the ranges do not overlap. The append rows improved because an append is one statement instead of four, the end-to-end rows because a run costs a quarter of the statements. The start rows improved less: the benchmark's start still writes the run row, its events and its task in three statements, while the engine's own start (`insert_run`) is one.
+
+Three more changes of the same day are not exercised by this benchmark, which records results directly and never heartbeats: a run has at most one pending workflow task, so a fan-out of step results causes one decision instead of one per result (migration 0031); a worker sends the acks and the heartbeats of one event loop turn as one statement each; and a heartbeat writes `lease_extended_until`, a column no index covers, so it is a HOT update (migration 0032; `lease-heartbeat.test.ts` reads `n_tup_hot_upd` and sees 10 HOT updates for 10 heartbeats and none for 10 updates of `visible_at`). The same migration gives `tasks`, `timers` and `run_stickiness` a lower `fillfactor`, so a page has room for the new version of a row, and autovacuum thresholds that vacuum these small, hot tables after a few hundred dead rows instead of after a fifth of the table.
+
 ## What to try next
 
-- `recordStepResult` reads the current sequence twice (once itself, once inside `appendEventsOnClient`). A variant that appends at the tail in one call saves one statement per step, about 5% of the statements of a run.
-- A run that starts and completes three steps costs about 47 statements, a quarter of them `begin` and `commit`. Folding the lock, the existing-result check and the insert of `recordWorkflowTaskResult` into fewer statements is the largest remaining lever for the end-to-end figures.
+- The engine's own three-step run still costs 86 statements, most of them reads before a step and markers after a decision. Folding those (`docs/DEFERRED.md`, day 53) is the next lever for the engine, where this benchmark's path is down to 14.
 - The numbers here have one process and a local database. A run with workers on separate machines and a remote Postgres would show whether the round trip count or the database becomes the limit first.
