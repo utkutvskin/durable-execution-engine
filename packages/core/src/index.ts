@@ -145,6 +145,7 @@ export { createWorkflowRegistry } from "./workflow/workflow-registry.ts";
 export type { WorkflowDefinition, WorkflowRegistry } from "./workflow/workflow-registry.ts";
 export { TASK_TYPES, createTaskQueue, taskQueueName } from "./queue/task-queue.ts";
 export type {
+  LeaseRef,
   DequeueOptions,
   EnqueueInput,
   LeasedTask,

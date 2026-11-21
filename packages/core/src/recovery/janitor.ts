@@ -210,6 +210,7 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
       `with expired as (
          select id, leased_by, leased_by_version from tasks
          where state = 'LEASED' and visible_at <= ${DB_NOW}
+           and (lease_extended_until is null or lease_extended_until <= ${DB_NOW})
          for update skip locked
        )
        update tasks
@@ -219,7 +220,7 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
            quarantined_at = case when tasks.reclaim_count + 1 >= $2 then ${DB_NOW} end,
            quarantine_reason = case when tasks.reclaim_count + 1 >= $2
              then 'lease lost ' || (tasks.reclaim_count + 1)::text || ' times' end,
-           visible_at = ${DB_NOW}, updated_at = ${DB_NOW}
+           visible_at = ${DB_NOW}, lease_extended_until = null, updated_at = ${DB_NOW}
        from expired
        where tasks.id = expired.id
        returning tasks.id, tasks.run_id, tasks.queue_name, tasks.attempts, tasks.state,

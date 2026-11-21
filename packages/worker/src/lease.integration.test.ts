@@ -54,6 +54,11 @@ describe("worker lease against postgres", () => {
         extensions += 1;
         return held;
       },
+      async extendMany(leases, timeoutMs) {
+        const held = (await queue.extendMany?.(leases, timeoutMs)) ?? [];
+        extensions += leases.length;
+        return held;
+      },
     };
     const common = {
       queueName: "default/long",

@@ -89,6 +89,8 @@ export function hotQueries(
       sql: `select id from tasks
             where queue_name = $1 and namespace_id = $3 and task_type = 'STEP_TASK'
               and state in ('PENDING', 'LEASED') and visible_at <= $2
+              and (state = 'PENDING' or lease_extended_until is null
+                   or lease_extended_until <= $2)
             order by priority desc, visible_at, created_at, id
             limit 8
             for update skip locked`,
@@ -116,6 +118,7 @@ export function hotQueries(
       table: "tasks",
       sql: `select id, leased_by, leased_by_version from tasks
             where state = 'LEASED' and visible_at <= $1
+              and (lease_extended_until is null or lease_extended_until <= $1)
             for update skip locked`,
       params: [now],
     },

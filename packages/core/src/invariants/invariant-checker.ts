@@ -476,7 +476,8 @@ export function createInvariantChecker(pool: Pool, store: EventStore): Invariant
        union all
        select tasks.id, tasks.run_id, 'step', tasks.step_concurrency_key from tasks
        where tasks.state = 'LEASED' and tasks.step_concurrency_key is not null
-         and tasks.visible_at > coalesce($2::timestamptz, now())
+         and greatest(tasks.visible_at, coalesce(tasks.lease_extended_until, tasks.visible_at))
+             > coalesce($2::timestamptz, now())
          and ($1::uuid[] is null or tasks.run_id = any($1::uuid[]))
          and not exists (
            select 1 from concurrency_slots held

@@ -6,6 +6,7 @@ import {
   ShutdownTimeoutError,
   TaskReleasedError,
 } from "./errors.ts";
+import { createLeaseBatcher } from "./lease-batcher.ts";
 import { systemTimers, type Timers } from "./timers.ts";
 
 /**
@@ -265,10 +266,13 @@ function resolveOptions(options: WorkerOptions): ResolvedOptions {
  *
  * When a heartbeat finds the lease gone, the task's signal is aborted and
  * the worker neither acks nor nacks it. An empty queue is polled with
- * exponential backoff.
+ * exponential backoff. The acks and the heartbeats of tasks that finish or
+ * beat in the same turn of the event loop go to the queue as one batch each
+ * (see `createLeaseBatcher`).
  */
 export function createWorker(options: WorkerOptions): Worker {
   const config = resolveOptions(options);
+  const leases = createLeaseBatcher(config.queue, config.visibilityTimeoutMs);
   const inFlight = new Map<string, RunningTask>();
   let state: "idle" | "running" | "stopping" | "stopped" = "idle";
   let loop: Promise<void> | undefined;
@@ -308,11 +312,10 @@ export function createWorker(options: WorkerOptions): Worker {
     running.heartbeat = undefined;
     let leaseHeld: boolean;
     try {
-      leaseHeld = await config.queue.extend(
-        running.task.id,
-        running.task.leaseToken,
-        config.visibilityTimeoutMs,
-      );
+      leaseHeld = await leases.extend({
+        taskId: running.task.id,
+        leaseToken: running.task.leaseToken,
+      });
       if (leaseHeld) {
         running.leaseConfirmedAt = config.clock.now().getTime();
       }
@@ -374,7 +377,7 @@ export function createWorker(options: WorkerOptions): Worker {
       if (failure !== undefined) {
         await settleFailure(running, failure.error);
       } else {
-        await config.queue.ack(running.task.id, running.task.leaseToken);
+        await leases.ack({ taskId: running.task.id, leaseToken: running.task.leaseToken });
       }
     } catch (error) {
       config.onError(error);

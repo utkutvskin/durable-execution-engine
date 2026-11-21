@@ -96,9 +96,22 @@ export interface TaskQueue {
   enqueue(input: EnqueueInput): Promise<string>;
   dequeue(options: DequeueOptions): Promise<LeasedTask[]>;
   ack(taskId: string, leaseToken: string): Promise<boolean>;
+  /** Acks every lease in one statement; resolves one `ack` result per lease, in order. */
+  ackMany?(leases: readonly LeaseRef[]): Promise<boolean[]>;
+  /** Extends every lease in one statement; resolves one `extend` result per lease, in order. */
+  extendMany?(leases: readonly LeaseRef[], visibilityTimeoutMs: number): Promise<boolean[]>;
   nack(taskId: string, leaseToken: string, delayMs?: number): Promise<boolean>;
   quarantine(taskId: string, leaseToken: string, reason: string): Promise<boolean>;
   extend(taskId: string, leaseToken: string, visibilityTimeoutMs: number): Promise<boolean>;
+}
+
+/**
+ * One lease `TaskQueue.ackMany` and `TaskQueue.extendMany` act on: a task and
+ * the lease token of the delivery holding it.
+ */
+export interface LeaseRef {
+  readonly taskId: string;
+  readonly leaseToken: string;
 }
 
 /**
@@ -219,6 +232,11 @@ function at(placeholder: string): string {
  * current and the change applied, and `false` when it was not (the task was
  * already acked, or redelivered to another consumer after its visibility
  * timeout). `extend` also resolves `false` once the lease has expired.
+ *
+ * A lease ends at the later of the `visible_at` the dequeue set and the
+ * `lease_extended_until` its heartbeats move forward. The heartbeat writes
+ * only that column, which no index covers, so Postgres can apply it as a
+ * HOT update without touching the indexes of `tasks`.
  */
 export function createTaskQueue(
   pool: Pool,
@@ -228,6 +246,57 @@ export function createTaskQueue(
   const instant = (): Date | null => clock?.now() ?? null;
   const poisonThreshold = options.poisonThreshold ?? DEFAULT_POISON_THRESHOLD;
   assertPositiveInteger("poisonThreshold", poisonThreshold);
+
+  async function settleLeases(
+    leases: readonly LeaseRef[],
+    sql: string,
+    extra: readonly unknown[],
+  ): Promise<boolean[]> {
+    if (leases.length === 0) {
+      return [];
+    }
+    const result = await pool.query<{ id: string; lease_token: string }>(sql, [
+      leases.map((lease) => lease.taskId),
+      leases.map((lease) => lease.leaseToken),
+      instant(),
+      ...extra,
+    ]);
+    const settled = new Set(result.rows.map((row) => `${row.id}/${row.lease_token}`));
+    return leases.map((lease) => settled.has(`${lease.taskId}/${lease.leaseToken}`));
+  }
+
+  function ackLeases(leases: readonly LeaseRef[]): Promise<boolean[]> {
+    return settleLeases(
+      leases,
+      `update tasks set state = 'COMPLETED', lease_token = null, leased_by = null,
+           leased_by_version = null, updated_at = ${at("$3")}
+       from unnest($1::uuid[], $2::uuid[]) as settled (id, lease_token)
+       where tasks.id = settled.id and tasks.lease_token = settled.lease_token
+         and tasks.state = 'LEASED'
+       returning settled.id, settled.lease_token`,
+      [],
+    );
+  }
+
+  function extendLeases(
+    leases: readonly LeaseRef[],
+    visibilityTimeoutMs: number,
+  ): Promise<boolean[]> {
+    assertPositiveInteger("visibilityTimeoutMs", visibilityTimeoutMs);
+    return settleLeases(
+      leases,
+      `update tasks
+       set lease_extended_until = ${at("$3")} + $4 * interval '1 millisecond',
+           updated_at = ${at("$3")}
+       from unnest($1::uuid[], $2::uuid[]) as beat (id, lease_token)
+       where tasks.id = beat.id and tasks.lease_token = beat.lease_token
+         and tasks.state = 'LEASED'
+         and greatest(tasks.visible_at, coalesce(tasks.lease_extended_until, tasks.visible_at))
+             > ${at("$3")}
+       returning beat.id, beat.lease_token`,
+      [visibilityTimeoutMs],
+    );
+  }
 
   async function readMergedTask(input: EnqueueInput): Promise<{ id: string } | undefined> {
     if (input.taskType !== "WORKFLOW_TASK") {
@@ -303,6 +372,8 @@ export function createTaskQueue(
              where queue_name = $1 and namespace_id = lanes.namespace_id
                and task_type = lanes.task_type
                and state in ('PENDING', 'LEASED') and visible_at <= ${at("$2")}
+               and (state = 'PENDING' or lease_extended_until is null
+                    or lease_extended_until <= ${at("$2")})
                ${held.runFilter}
                and ($7::text is null or task_type <> 'WORKFLOW_TASK' or not exists (
                  select 1 from run_stickiness sticky
@@ -425,6 +496,7 @@ export function createTaskQueue(
                leased_by_version = $6,
                leased_at = ${at("$2")},
                visible_at = ${at("$2")} + $3 * interval '1 millisecond',
+               lease_extended_until = null,
                updated_at = ${at("$2")}
            from next
            where tasks.id = next.id and not next.poisoned
@@ -459,13 +531,12 @@ export function createTaskQueue(
     },
 
     async ack(taskId: string, leaseToken: string): Promise<boolean> {
-      const result = await pool.query(
-        `update tasks set state = 'COMPLETED', lease_token = null, leased_by = null,
-             leased_by_version = null, updated_at = ${at("$3")}
-         where id = $1 and lease_token = $2 and state = 'LEASED'`,
-        [taskId, leaseToken, instant()],
-      );
-      return result.rowCount === 1;
+      const [acked] = await ackLeases([{ taskId, leaseToken }]);
+      return acked ?? false;
+    },
+
+    ackMany(leases: readonly LeaseRef[]): Promise<boolean[]> {
+      return ackLeases(leases);
     },
 
     async nack(taskId: string, leaseToken: string, delayMs = 0): Promise<boolean> {
@@ -497,14 +568,12 @@ export function createTaskQueue(
       leaseToken: string,
       visibilityTimeoutMs: number,
     ): Promise<boolean> {
-      assertPositiveInteger("visibilityTimeoutMs", visibilityTimeoutMs);
-      const result = await pool.query(
-        `update tasks
-         set visible_at = ${at("$3")} + $4 * interval '1 millisecond', updated_at = ${at("$3")}
-         where id = $1 and lease_token = $2 and state = 'LEASED' and visible_at > ${at("$3")}`,
-        [taskId, leaseToken, instant(), visibilityTimeoutMs],
-      );
-      return result.rowCount === 1;
+      const [extended] = await extendLeases([{ taskId, leaseToken }], visibilityTimeoutMs);
+      return extended ?? false;
+    },
+
+    extendMany(leases: readonly LeaseRef[], visibilityTimeoutMs: number): Promise<boolean[]> {
+      return extendLeases(leases, visibilityTimeoutMs);
     },
   };
 }

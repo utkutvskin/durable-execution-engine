@@ -156,7 +156,12 @@ describe("one pending workflow task per run", () => {
   });
 
   it("folds the duplicate pending workflow tasks of an older schema into the earliest one", async () => {
-    await migrateDown(database.pool, undefined, 1);
+    for (;;) {
+      const reverted = await migrateDown(database.pool, undefined, 1);
+      if (reverted.includes("0031_one_pending_workflow_task") || reverted.length === 0) {
+        break;
+      }
+    }
     try {
       await database.pool.query(
         `insert into tasks (namespace_id, run_id, queue_name, task_type, visible_at)

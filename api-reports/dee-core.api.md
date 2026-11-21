@@ -1424,6 +1424,14 @@ export interface LeasedTask {
 }
 
 // @public
+export interface LeaseRef {
+    // (undocumented)
+    readonly leaseToken: string;
+    // (undocumented)
+    readonly taskId: string;
+}
+
+// @public
 export interface ListDeadLettersOptions {
     // (undocumented)
     readonly afterId?: string;
@@ -3279,12 +3287,14 @@ export type TaskOutcome = "completed" | "failed";
 export interface TaskQueue {
     // (undocumented)
     ack(taskId: string, leaseToken: string): Promise<boolean>;
+    ackMany?(leases: readonly LeaseRef[]): Promise<boolean[]>;
     // (undocumented)
     dequeue(options: DequeueOptions): Promise<LeasedTask[]>;
     // (undocumented)
     enqueue(input: EnqueueInput): Promise<string>;
     // (undocumented)
     extend(taskId: string, leaseToken: string, visibilityTimeoutMs: number): Promise<boolean>;
+    extendMany?(leases: readonly LeaseRef[], visibilityTimeoutMs: number): Promise<boolean[]>;
     // (undocumented)
     nack(taskId: string, leaseToken: string, delayMs?: number): Promise<boolean>;
     // (undocumented)
@@ -4129,12 +4139,14 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/queue/task-queue.d.ts:73:5 - (ae-undocumented) Missing documentation for "workerVersion".
 // dist/queue/task-queue.d.ts:74:5 - (ae-undocumented) Missing documentation for "stickyFor".
 // dist/queue/task-queue.d.ts:75:5 - (ae-undocumented) Missing documentation for "taskTypes".
-// dist/queue/task-queue.d.ts:84:5 - (ae-undocumented) Missing documentation for "enqueue".
-// dist/queue/task-queue.d.ts:85:5 - (ae-undocumented) Missing documentation for "dequeue".
-// dist/queue/task-queue.d.ts:86:5 - (ae-undocumented) Missing documentation for "ack".
-// dist/queue/task-queue.d.ts:87:5 - (ae-undocumented) Missing documentation for "nack".
-// dist/queue/task-queue.d.ts:88:5 - (ae-undocumented) Missing documentation for "quarantine".
-// dist/queue/task-queue.d.ts:89:5 - (ae-undocumented) Missing documentation for "extend".
+// dist/queue/task-queue.d.ts:89:5 - (ae-undocumented) Missing documentation for "enqueue".
+// dist/queue/task-queue.d.ts:90:5 - (ae-undocumented) Missing documentation for "dequeue".
+// dist/queue/task-queue.d.ts:91:5 - (ae-undocumented) Missing documentation for "ack".
+// dist/queue/task-queue.d.ts:96:5 - (ae-undocumented) Missing documentation for "nack".
+// dist/queue/task-queue.d.ts:97:5 - (ae-undocumented) Missing documentation for "quarantine".
+// dist/queue/task-queue.d.ts:98:5 - (ae-undocumented) Missing documentation for "extend".
+// dist/queue/task-queue.d.ts:105:5 - (ae-undocumented) Missing documentation for "taskId".
+// dist/queue/task-queue.d.ts:106:5 - (ae-undocumented) Missing documentation for "leaseToken".
 // dist/quota/quota-store.d.ts:6:5 - (ae-undocumented) Missing documentation for "maxConcurrentRuns".
 // dist/quota/quota-store.d.ts:7:5 - (ae-undocumented) Missing documentation for "maxPendingTasks".
 // dist/quota/quota-store.d.ts:8:5 - (ae-undocumented) Missing documentation for "ratePerSecond".
