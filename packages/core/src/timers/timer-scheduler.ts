@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from "pg";
-import { appendEventsOnClient, readCurrentSequenceOnClient } from "../event-store/event-store.ts";
+import { CURRENT_EVENT_VERSION } from "../event-store/event-version.ts";
 import { jsonCodec, type Codec } from "../event-store/codec.ts";
 import { systemClock, type ClockSource } from "../workflow/sources.ts";
 import { noopTracing, type Tracing } from "../observability/tracing.ts";
@@ -75,10 +75,12 @@ export interface TimerScheduler {
 
   /**
    * Fires up to `batchSize` due timers, earliest `fireAt` first (ties by
-   * id). Each firing is one transaction: it appends `timer_fired` to the
-   * run's log, marks the timer fired and enqueues a `WORKFLOW_TASK` whose
-   * `visible_at` is the timer's `fireAt`, so tasks are delivered in the
-   * order the timers came due. Concurrent ticks never fire a timer twice.
+   * id), as one batch in one transaction: it appends a `timer_fired` per
+   * timer to its run's log, marks the timers fired and enqueues one
+   * `WORKFLOW_TASK` per run whose `visible_at` is the earliest `fireAt`,
+   * so tasks are delivered in the order the timers came due. A due run
+   * timeout timer is fired in a transaction of its own. Concurrent ticks
+   * never fire a timer twice.
    */
   tick(): Promise<TickReport>;
 
@@ -123,13 +125,52 @@ interface DueTimerRow {
 
 const DEFAULT_BATCH_SIZE = 100;
 
-async function readPendingWorkflowTaskId(client: PoolClient, runId: string): Promise<string> {
-  const pending = await client.query<{ id: string }>(
-    `select id from tasks
-     where run_id = $1 and task_type = 'WORKFLOW_TASK' and state = 'PENDING'`,
-    [runId],
+interface LockedRunRow {
+  id: string;
+  namespace_id: string;
+  status: string;
+  traceparent: string | null;
+  queue_name: string;
+  current_seq: string;
+}
+
+interface BatchOutcome {
+  readonly fired: readonly FiredTimer[];
+  readonly cancelled: number;
+  readonly traces: readonly {
+    readonly timer: DueTimerRow;
+    readonly traceparent: string | null | undefined;
+  }[];
+}
+
+async function enqueueTimerTasks(
+  client: PoolClient,
+  timers: readonly DueTimerRow[],
+  runsById: ReadonlyMap<string, LockedRunRow>,
+): Promise<Map<string, string>> {
+  if (timers.length === 0) {
+    return new Map();
+  }
+  await client.query(
+    `insert into tasks (namespace_id, run_id, queue_name, task_type, payload, visible_at)
+     select batch.namespace_id, batch.run_id, batch.queue_name, 'WORKFLOW_TASK',
+            batch.payload::jsonb, batch.visible_at
+     from unnest($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::timestamptz[])
+       as batch (namespace_id, run_id, queue_name, payload, visible_at)`,
+    [
+      timers.map((timer) => runsById.get(timer.run_id)?.namespace_id ?? null),
+      timers.map((timer) => timer.run_id),
+      timers.map((timer) => runsById.get(timer.run_id)?.queue_name ?? null),
+      timers.map((timer) => JSON.stringify({ reason: "timer_fired", timerId: timer.timer_id })),
+      timers.map((timer) => timer.fire_at),
+    ],
   );
-  return pending.rows[0]?.id ?? "";
+  const pending = await client.query<{ id: string; run_id: string }>(
+    `select id, run_id from tasks
+     where run_id = any($1::uuid[]) and task_type = 'WORKFLOW_TASK' and state = 'PENDING'`,
+    [timers.map((timer) => timer.run_id)],
+  );
+  return new Map(pending.rows.map((row) => [row.run_id, row.id]));
 }
 
 function timeoutFiredTimer(timer: DueTimerRow, now: Date): FiredTimer {
@@ -157,7 +198,96 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
     throw new RangeError(`batchSize must be a positive integer, got ${String(batchSize)}`);
   }
 
-  async function fireNext(now: Date): Promise<FiredTimer | "cancelled" | undefined> {
+  async function fireTimeout(
+    client: PoolClient,
+    timer: DueTimerRow,
+    now: Date,
+  ): Promise<FiredTimer | "cancelled"> {
+    const closed = await timeOutRunOnClient(client, codec, timer.run_id, timer.timer_id);
+    await client.query("update timers set state = $3, fired_at = $2 where id = $1", [
+      timer.id,
+      now,
+      closed ? "FIRED" : "CANCELLED",
+    ]);
+    return closed ? timeoutFiredTimer(timer, now) : "cancelled";
+  }
+
+  async function fireWorkflowTimers(
+    client: PoolClient,
+    timers: readonly DueTimerRow[],
+    now: Date,
+  ): Promise<BatchOutcome> {
+    const runIds = [...new Set(timers.map((timer) => timer.run_id))].sort();
+    const runs = await client.query<LockedRunRow>(
+      `select r.id, r.namespace_id, r.status, r.traceparent, r.queue_name,
+              greatest(
+                coalesce((select max(e.sequence_number) from run_events e where e.run_id = r.id), 0),
+                coalesce((select s.last_sequence_number from run_snapshots s where s.run_id = r.id), 0)
+              ) as current_seq
+       from workflow_runs r
+       where r.id = any($1::uuid[])
+       order by r.id
+       for update of r`,
+      [runIds],
+    );
+    const runsById = new Map(runs.rows.map((run) => [run.id, run]));
+    const live = timers.filter((timer) => runsById.get(timer.run_id)?.status === "RUNNING");
+    const dead = timers.filter((timer) => runsById.get(timer.run_id)?.status !== "RUNNING");
+    const nextSeq = new Map(runs.rows.map((run) => [run.id, Number(run.current_seq)]));
+    const sequences = live.map((timer) => {
+      const sequence = (nextSeq.get(timer.run_id) ?? 0) + 1;
+      nextSeq.set(timer.run_id, sequence);
+      return sequence;
+    });
+    if (live.length > 0) {
+      await client.query(
+        `insert into run_events (run_id, sequence_number, event_type, payload, event_version)
+         select batch.run_id, batch.sequence_number, 'timer_fired', batch.payload::jsonb, $4
+         from unnest($1::uuid[], $2::bigint[], $3::text[])
+           as batch (run_id, sequence_number, payload)`,
+        [
+          live.map((timer) => timer.run_id),
+          sequences,
+          live.map((timer) => codec.encode({ type: "timer_fired", timerId: timer.timer_id })),
+          CURRENT_EVENT_VERSION,
+        ],
+      );
+    }
+    await client.query(
+      `update timers set state = batch.state, fired_at = $3
+       from unnest($1::uuid[], $2::text[]) as batch (id, state)
+       where timers.id = batch.id`,
+      [
+        [...live, ...dead].map((timer) => timer.id),
+        [...live.map(() => "FIRED"), ...dead.map(() => "CANCELLED")],
+        now,
+      ],
+    );
+    const firstByRun = new Map<string, DueTimerRow>();
+    live.forEach((timer) => {
+      if (!firstByRun.has(timer.run_id)) {
+        firstByRun.set(timer.run_id, timer);
+      }
+    });
+    const taskIds = await enqueueTimerTasks(client, [...firstByRun.values()], runsById);
+    return {
+      fired: live.map((timer) => ({
+        runId: timer.run_id,
+        timerId: timer.timer_id,
+        fireAt: timer.fire_at,
+        firedAt: now,
+        lateMs: Math.max(0, now.getTime() - timer.fire_at.getTime()),
+        taskId: taskIds.get(timer.run_id) ?? "",
+      })),
+      cancelled: dead.length,
+      traces: live.map((timer) => ({
+        timer,
+        traceparent: runsById.get(timer.run_id)?.traceparent,
+      })),
+    };
+  }
+
+  async function fireBatch(now: Date, limit: number): Promise<BatchOutcome | undefined> {
     const client = await pool.connect();
     let broken = false;
     try {
@@ -168,83 +298,41 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
          join workflow_runs r on r.id = timers.run_id
          where timers.state = 'PENDING' and timers.fire_at <= $1 and r.queue_name = $2
          order by timers.fire_at, timers.id
-         limit 1
+         limit $3
          for update of timers skip locked`,
-        [now, options.queueName],
+        [now, options.queueName, limit],
       );
-      const timer = due.rows[0];
-      if (timer === undefined) {
+      const first = due.rows[0];
+      if (first === undefined) {
         await client.query("commit");
         return undefined;
       }
-      if (isTimeoutTimerId(timer.timer_id)) {
-        const closed = await timeOutRunOnClient(client, codec, timer.run_id, timer.timer_id);
-        await client.query("update timers set state = $3, fired_at = $2 where id = $1", [
-          timer.id,
-          now,
-          closed ? "FIRED" : "CANCELLED",
-        ]);
-        await client.query("commit");
-        return closed ? timeoutFiredTimer(timer, now) : "cancelled";
+      let outcome: BatchOutcome;
+      if (isTimeoutTimerId(first.timer_id)) {
+        const fired = await fireTimeout(client, first, now);
+        outcome =
+          fired === "cancelled"
+            ? { fired: [], cancelled: 1, traces: [] }
+            : { fired: [fired], cancelled: 0, traces: [] };
+      } else {
+        const cut = due.rows.findIndex((timer) => isTimeoutTimerId(timer.timer_id));
+        const batch = cut < 0 ? due.rows : due.rows.slice(0, cut);
+        outcome = await fireWorkflowTimers(client, batch, now);
       }
-      const run = await client.query<{
-        namespace_id: string;
-        status: string;
-        traceparent: string | null;
-        queue_name: string;
-      }>(
-        "select namespace_id, status, traceparent, queue_name from workflow_runs where id = $1 for update",
-        [timer.run_id],
-      );
-      const runRow = run.rows[0];
-      if (runRow?.status !== "RUNNING") {
-        await client.query("update timers set state = 'CANCELLED', fired_at = $2 where id = $1", [
-          timer.id,
-          now,
-        ]);
-        await client.query("commit");
-        return "cancelled";
-      }
-      const currentSeq = await readCurrentSequenceOnClient(client, timer.run_id);
-      await appendEventsOnClient(client, codec, timer.run_id, currentSeq, [
-        { type: "timer_fired", timerId: timer.timer_id },
-      ]);
-      await client.query("update timers set state = 'FIRED', fired_at = $2 where id = $1", [
-        timer.id,
-        now,
-      ]);
-      const task = await client.query<{ id: string }>(
-        `insert into tasks (namespace_id, run_id, queue_name, task_type, payload, visible_at)
-         values ($1, $2, $3, 'WORKFLOW_TASK', $4::jsonb, $5)
-         returning id`,
-        [
-          runRow.namespace_id,
-          timer.run_id,
-          runRow.queue_name,
-          JSON.stringify({ reason: "timer_fired", timerId: timer.timer_id }),
-          timer.fire_at,
-        ],
-      );
-      const taskId = task.rows[0]?.id ?? (await readPendingWorkflowTaskId(client, timer.run_id));
       await client.query("commit");
-      const span = tracing.startSpan(`timer ${timer.timer_id}`, {
-        parent: runRow.traceparent,
-        startTime: timer.created_at,
-        attributes: {
-          "dee.run.id": timer.run_id,
-          "dee.timer.id": timer.timer_id,
-          "dee.timer.late_ms": Math.max(0, now.getTime() - timer.fire_at.getTime()),
-        },
+      outcome.traces.forEach(({ timer, traceparent }) => {
+        const span = tracing.startSpan(`timer ${timer.timer_id}`, {
+          parent: traceparent ?? null,
+          startTime: timer.created_at,
+          attributes: {
+            "dee.run.id": timer.run_id,
+            "dee.timer.id": timer.timer_id,
+            "dee.timer.late_ms": Math.max(0, now.getTime() - timer.fire_at.getTime()),
+          },
+        });
+        span.end(now);
       });
-      span.end(now);
-      return {
-        runId: timer.run_id,
-        timerId: timer.timer_id,
-        fireAt: timer.fire_at,
-        firedAt: now,
-        lateMs: Math.max(0, now.getTime() - timer.fire_at.getTime()),
-        taskId,
-      };
+      return outcome;
     } catch (error) {
       broken = !(await rollbackQuietly(client));
       throw error;
@@ -258,15 +346,12 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
     const fired: FiredTimer[] = [];
     let cancelled = 0;
     while (fired.length + cancelled < batchSize) {
-      const outcome = await fireNext(now);
+      const outcome = await fireBatch(now, batchSize - fired.length - cancelled);
       if (outcome === undefined) {
         break;
       }
-      if (outcome === "cancelled") {
-        cancelled += 1;
-      } else {
-        fired.push(outcome);
-      }
+      fired.push(...outcome.fired);
+      cancelled += outcome.cancelled;
     }
     return { fired, cancelled };
   }
