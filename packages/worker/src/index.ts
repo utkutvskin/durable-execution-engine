@@ -47,5 +47,7 @@ export { startCompactorLoop } from "./compactor-loop.ts";
 export type { CompactorLoop, CompactorLoopOptions } from "./compactor-loop.ts";
 export { WAKEUP_CHANNEL, startWakeupListener } from "./wakeup-listener.ts";
 export type { WakeupListener, WakeupListenerOptions } from "./wakeup-listener.ts";
+export { DEFAULT_LEADER_LEASE_MS, startLeaderElection } from "./leader-election.ts";
+export type { LeaderElection, LeaderElectionOptions } from "./leader-election.ts";
 export { startOpsServer } from "./ops-server.ts";
 export type { OpsServer, OpsServerOptions } from "./ops-server.ts";

@@ -23,6 +23,7 @@ import {
 import { startCompactorLoop, type CompactorLoop } from "../compactor-loop.ts";
 import { createWorkerIdentity } from "../identity.ts";
 import { startJanitorLoop, type JanitorLoop } from "../janitor-loop.ts";
+import { startLeaderElection, type LeaderElection } from "../leader-election.ts";
 import { startWakeupListener, type WakeupListener } from "../wakeup-listener.ts";
 import { startScheduleLoop, type ScheduleLoop } from "../schedule-loop.ts";
 import { startTimerLoop, type TimerLoop } from "../timer-loop.ts";
@@ -61,13 +62,20 @@ import {
  * shared through Postgres by every engine on the queue. The schedule loop
  * also fires due debounced starts and queued singleton starts.
  *
+ * The timer, schedule, janitor and compactor loops run on one engine per
+ * queue and schema, elected through a session advisory lock
+ * (`leaderElection`, default true; see `startLeaderElection`). Every engine
+ * tries to take the lock once per `leaderLeaseMs` (default 1000), so a
+ * killed leader is replaced within two lease periods. `isLeader` tells
+ * whether this engine runs them.
+ *
  * `wakeups` (default false) listens for the notification the `tasks`
  * insert trigger sends when the producing session has `dee.notify_wakeups`
  * on (`createPool({ notifyWakeups: true })`), and polls at once instead of
  * waiting out the empty-poll backoff; a decision that recorded events also
  * wakes this engine's step pool directly. Polling stays the fallback.
  *
- * The listener holds one dedicated session outside
+ * The election and the listener each hold one dedicated session outside
  * the pool, opened with the pool's settings or at `sessionConnectionString`,
  * which must reach Postgres without a transaction-mode pooler in between.
  */
@@ -93,6 +101,8 @@ export interface EngineOptions {
   readonly poisonThreshold?: number;
   readonly stickyRouting?: boolean;
   readonly compaction?: CompactionOptions;
+  readonly leaderElection?: boolean;
+  readonly leaderLeaseMs?: number;
   readonly wakeups?: boolean;
   readonly sessionConnectionString?: string;
   readonly clock?: ClockSource;
@@ -131,6 +141,8 @@ export interface Engine {
   readonly schedules: ScheduleManager;
   readonly metrics: EngineMetrics;
   readonly recovery: RecoveryMetrics;
+  /** Whether this engine runs the queue's timer, schedule, janitor and compactor loops. */
+  readonly isLeader: boolean;
   decisionTotals(): DecisionTotals;
   /** Stops the loops, then drains the worker. */
   stop(): Promise<StopResult>;
@@ -289,7 +301,20 @@ export function startEngine(options: EngineOptions): Engine {
       ? {}
       : { connectionString: options.sessionConnectionString },
   );
-  startLoops();
+  const election: LeaderElection | undefined =
+    options.leaderElection === false
+      ? undefined
+      : startLeaderElection({
+          connect,
+          key: queueName,
+          ...(options.leaderLeaseMs === undefined ? {} : { leasePeriodMs: options.leaderLeaseMs }),
+          onElected: startLoops,
+          onDeposed: stopLoops,
+          onError,
+        });
+  if (election === undefined) {
+    startLoops();
+  }
   const listener: WakeupListener | undefined =
     options.wakeups === true
       ? startWakeupListener({
@@ -313,9 +338,12 @@ export function startEngine(options: EngineOptions): Engine {
     schedules,
     metrics,
     recovery: janitor.metrics,
+    get isLeader(): boolean {
+      return election === undefined ? true : election.isLeader;
+    },
     decisionTotals: () => ({ ...totals }),
     async stop(): Promise<StopResult> {
-      await listener?.stop();
+      await Promise.all([election?.stop(), listener?.stop()]);
       await stopLoops();
       const results = await Promise.all(workers.map((worker) => worker.stop()));
       const result: StopResult = {

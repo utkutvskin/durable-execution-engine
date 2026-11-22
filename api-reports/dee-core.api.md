@@ -451,6 +451,8 @@ export interface CreatePoolOptions {
     // (undocumented)
     readonly max?: number;
     // (undocumented)
+    readonly notifyWakeups?: boolean;
+    // (undocumented)
     readonly onError?: (error: Error) => void;
     // (undocumented)
     readonly schema?: string;
@@ -508,6 +510,9 @@ export interface CreateScheduleInput {
 
 // @public
 export function createScheduleManager(pool: Pool, options: ScheduleManagerOptions): ScheduleManager;
+
+// @public
+export function createSessionConnector(pool: Pool, options?: SessionConnectorOptions): SessionConnector;
 
 // @public
 export function createSharedRateLimiter(pool: Pool, options?: {
@@ -2743,6 +2748,23 @@ export interface SerializedError {
 export function serializeError(reason: unknown): SerializedError;
 
 // @public
+export interface SessionConnection {
+    close(): Promise<void>;
+    onLost(listener: (error: unknown) => void): void;
+    onNotification(listener: (channel: string, payload: string) => void): void;
+    query<Row>(sql: string, values?: readonly unknown[]): Promise<readonly Row[]>;
+}
+
+// @public
+export type SessionConnector = () => Promise<SessionConnection>;
+
+// @public
+export interface SessionConnectorOptions {
+    // (undocumented)
+    readonly connectionString?: string;
+}
+
+// @public
 export interface SettledStepTask {
     // (undocumented)
     readonly id: string;
@@ -3907,11 +3929,13 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/db/migrator.d.ts:8:5 - (ae-undocumented) Missing documentation for "up".
 // dist/db/migrator.d.ts:9:5 - (ae-undocumented) Missing documentation for "down".
 // dist/db/migrator.d.ts:30:5 - (ae-undocumented) Missing documentation for "schema".
-// dist/db/pool.d.ts:18:5 - (ae-undocumented) Missing documentation for "schema".
-// dist/db/pool.d.ts:19:5 - (ae-undocumented) Missing documentation for "max".
-// dist/db/pool.d.ts:20:5 - (ae-undocumented) Missing documentation for "idleTimeoutMillis".
-// dist/db/pool.d.ts:21:5 - (ae-undocumented) Missing documentation for "acquireTimeoutMillis".
-// dist/db/pool.d.ts:22:5 - (ae-undocumented) Missing documentation for "onError".
+// dist/db/pool.d.ts:21:5 - (ae-undocumented) Missing documentation for "schema".
+// dist/db/pool.d.ts:22:5 - (ae-undocumented) Missing documentation for "max".
+// dist/db/pool.d.ts:23:5 - (ae-undocumented) Missing documentation for "idleTimeoutMillis".
+// dist/db/pool.d.ts:24:5 - (ae-undocumented) Missing documentation for "acquireTimeoutMillis".
+// dist/db/pool.d.ts:25:5 - (ae-undocumented) Missing documentation for "notifyWakeups".
+// dist/db/pool.d.ts:26:5 - (ae-undocumented) Missing documentation for "onError".
+// dist/db/session.d.ts:32:5 - (ae-undocumented) Missing documentation for "connectionString".
 // dist/demo/demo-types.d.ts:6:5 - (ae-undocumented) Missing documentation for "runId".
 // dist/demo/demo-types.d.ts:7:5 - (ae-undocumented) Missing documentation for "workflowType".
 // dist/demo/demo-types.d.ts:8:5 - (ae-undocumented) Missing documentation for "status".
