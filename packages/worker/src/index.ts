@@ -45,5 +45,7 @@ export { DEFAULT_QUEUE_NAME, startEngine } from "./engine/runtime.ts";
 export type { CompactionOptions, DecisionTotals, Engine, EngineOptions } from "./engine/runtime.ts";
 export { startCompactorLoop } from "./compactor-loop.ts";
 export type { CompactorLoop, CompactorLoopOptions } from "./compactor-loop.ts";
+export { WAKEUP_CHANNEL, startWakeupListener } from "./wakeup-listener.ts";
+export type { WakeupListener, WakeupListenerOptions } from "./wakeup-listener.ts";
 export { startOpsServer } from "./ops-server.ts";
 export type { OpsServer, OpsServerOptions } from "./ops-server.ts";

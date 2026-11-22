@@ -17,14 +17,26 @@ export const DEFAULT_ACQUIRE_TIMEOUT_MS = 30_000;
  * `setTimeout` while they run. `acquireTimeoutMillis` is how long
  * `pool.connect()` may wait for a free connection before it fails; it
  * defaults to `DEFAULT_ACQUIRE_TIMEOUT_MS`, so an exhausted pool raises an
- * error instead of waiting forever.
+ * error instead of waiting forever. `notifyWakeups` turns on
+ * `dee.notify_wakeups` for every connection, so each transaction that
+ * enqueues tasks sends one wake-up notification per queue (see
+ * `EngineOptions.wakeups`).
  */
 export interface CreatePoolOptions {
   readonly schema?: string;
   readonly max?: number;
   readonly idleTimeoutMillis?: number;
   readonly acquireTimeoutMillis?: number;
+  readonly notifyWakeups?: boolean;
   readonly onError?: (error: Error) => void;
+}
+
+function sessionSettings(options: CreatePoolOptions): string | undefined {
+  const settings = [
+    ...(options.schema === undefined ? [] : [`-c search_path=${options.schema}`]),
+    ...(options.notifyWakeups === true ? ["-c dee.notify_wakeups=on"] : []),
+  ];
+  return settings.length === 0 ? undefined : settings.join(" ");
 }
 
 /**
@@ -32,9 +44,10 @@ export interface CreatePoolOptions {
  * only talk to the queue and the event store need no direct `pg` dependency.
  */
 export function createPool(env: DatabaseUrlEnv, options: CreatePoolOptions = {}): Pool {
+  const settings = sessionSettings(options);
   const pool = new PoolConstructor({
     connectionString: resolveDatabaseUrl(env),
-    ...(options.schema === undefined ? {} : { options: `-c search_path=${options.schema}` }),
+    ...(settings === undefined ? {} : { options: settings }),
     connectionTimeoutMillis: options.acquireTimeoutMillis ?? DEFAULT_ACQUIRE_TIMEOUT_MS,
     ...(options.max === undefined ? {} : { max: options.max }),
     ...(options.idleTimeoutMillis === undefined

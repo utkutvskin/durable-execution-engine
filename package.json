@@ -22,6 +22,7 @@
     "bench:explain": "node --conditions=development ./packages/worker/src/bench/run-explain.ts",
     "bench:visibility": "node --conditions=development ./packages/worker/src/bench/run-visibility-bench.ts",
     "bench": "node --conditions=development ./packages/worker/src/bench/run-bench.ts",
+    "bench:wakeup": "node --conditions=development ./packages/worker/src/bench/run-wakeup-bench.ts",
     "migrate:up": "pnpm --filter @dee/core run migrate:up",
     "migrate:down": "pnpm --filter @dee/core run migrate:down",
     "example:payment": "node packages/cli/bin/wf.js example payment-saga",

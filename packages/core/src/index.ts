@@ -169,6 +169,8 @@ export { rollbackQuietly, withClient, withTransaction } from "./db/transaction.t
 export { enqueueStepTaskOnClient } from "./queue/step-task-enqueue.ts";
 export type { StepTaskEnqueueInput } from "./queue/step-task-enqueue.ts";
 export type { CreatePoolOptions } from "./db/pool.ts";
+export { createSessionConnector } from "./db/session.ts";
+export type { SessionConnection, SessionConnector, SessionConnectorOptions } from "./db/session.ts";
 export {
   DEFAULT_POISON_THRESHOLD,
   MAX_RECOVERY_BACKOFF_MS,

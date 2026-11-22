@@ -140,6 +140,14 @@ export interface Worker {
    */
   stop(): Promise<StopResult>;
 
+  /**
+   * Polls now instead of waiting out the current empty-poll backoff, and
+   * resets that backoff. A call during a poll makes the next wait end at
+   * once, so a wake-up that raced a poll is not lost. Does nothing unless
+   * the worker is running.
+   */
+  wake(): void;
+
   /** The number of tasks currently running. */
   readonly activeCount: number;
 }
@@ -277,6 +285,8 @@ export function createWorker(options: WorkerOptions): Worker {
   let state: "idle" | "running" | "stopping" | "stopped" = "idle";
   let loop: Promise<void> | undefined;
   let wake: (() => void) | undefined;
+  let nudged = false;
+  let pollDelay = config.pollIntervalMs;
   let stopping: Promise<StopResult> | undefined;
 
   function isRunning(): boolean {
@@ -284,6 +294,10 @@ export function createWorker(options: WorkerOptions): Worker {
   }
 
   function waitForWake(delayMs?: number): Promise<void> {
+    if (nudged && delayMs !== undefined) {
+      nudged = false;
+      return Promise.resolve();
+    }
     return new Promise<void>((resolve) => {
       let handle: unknown;
       const done = (): void => {
@@ -448,7 +462,6 @@ export function createWorker(options: WorkerOptions): Worker {
   }
 
   async function pollLoop(): Promise<void> {
-    let delay = config.pollIntervalMs;
     while (isRunning()) {
       const free = config.concurrency - inFlight.size;
       if (free <= 0) {
@@ -480,12 +493,13 @@ export function createWorker(options: WorkerOptions): Worker {
         return;
       }
       if (tasks.length > 0) {
-        delay = config.pollIntervalMs;
+        pollDelay = config.pollIntervalMs;
         tasks.forEach(launch);
         continue;
       }
-      await waitForWake(delay);
-      delay = Math.min(delay * 2, config.maxPollIntervalMs);
+      const waited = pollDelay;
+      pollDelay = Math.min(pollDelay * 2, config.maxPollIntervalMs);
+      await waitForWake(waited);
     }
   }
 
@@ -549,6 +563,18 @@ export function createWorker(options: WorkerOptions): Worker {
     stop(): Promise<StopResult> {
       stopping ??= shutDown();
       return stopping;
+    },
+
+    wake(): void {
+      if (!isRunning()) {
+        return;
+      }
+      pollDelay = config.pollIntervalMs;
+      if (wake === undefined) {
+        nudged = true;
+        return;
+      }
+      wake();
     },
 
     get activeCount(): number {

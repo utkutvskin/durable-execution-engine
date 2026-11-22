@@ -6,6 +6,7 @@ import {
   createStickyRouter,
   createScheduleManager,
   createTaskQueue,
+  createSessionConnector,
   createTimerScheduler,
   systemClock,
   type ClockSource,
@@ -22,6 +23,7 @@ import {
 import { startCompactorLoop, type CompactorLoop } from "../compactor-loop.ts";
 import { createWorkerIdentity } from "../identity.ts";
 import { startJanitorLoop, type JanitorLoop } from "../janitor-loop.ts";
+import { startWakeupListener, type WakeupListener } from "../wakeup-listener.ts";
 import { startScheduleLoop, type ScheduleLoop } from "../schedule-loop.ts";
 import { startTimerLoop, type TimerLoop } from "../timer-loop.ts";
 import { createWorker, type NackBackoff, type StopResult, type Worker } from "../worker.ts";
@@ -58,6 +60,16 @@ import {
  * `queueRateLimit` caps the steps started from the engine's queue per period,
  * shared through Postgres by every engine on the queue. The schedule loop
  * also fires due debounced starts and queued singleton starts.
+ *
+ * `wakeups` (default false) listens for the notification the `tasks`
+ * insert trigger sends when the producing session has `dee.notify_wakeups`
+ * on (`createPool({ notifyWakeups: true })`), and polls at once instead of
+ * waiting out the empty-poll backoff; a decision that recorded events also
+ * wakes this engine's step pool directly. Polling stays the fallback.
+ *
+ * The listener holds one dedicated session outside
+ * the pool, opened with the pool's settings or at `sessionConnectionString`,
+ * which must reach Postgres without a transaction-mode pooler in between.
  */
 export interface EngineOptions {
   readonly pool: Pool;
@@ -81,6 +93,8 @@ export interface EngineOptions {
   readonly poisonThreshold?: number;
   readonly stickyRouting?: boolean;
   readonly compaction?: CompactionOptions;
+  readonly wakeups?: boolean;
+  readonly sessionConnectionString?: string;
   readonly clock?: ClockSource;
   readonly random?: RandomSource;
   readonly tracing?: Tracing;
@@ -120,6 +134,13 @@ export interface Engine {
   decisionTotals(): DecisionTotals;
   /** Stops the loops, then drains the worker. */
   stop(): Promise<StopResult>;
+}
+
+interface BackgroundLoops {
+  readonly timer: TimerLoop;
+  readonly schedule: ScheduleLoop;
+  readonly janitor: JanitorLoop;
+  readonly compactor: CompactorLoop | undefined;
 }
 
 /**
@@ -171,6 +192,9 @@ export function startEngine(options: EngineOptions): Engine {
       } else if (decision.source === "replay") {
         totals.replay += 1;
       }
+      if (options.wakeups === true && decision.recordedEvents > 0) {
+        stepPool.wake();
+      }
       options.onDecision?.(decision);
     },
     onError,
@@ -203,41 +227,82 @@ export function startEngine(options: EngineOptions): Engine {
       ...(options.clock === undefined ? {} : { clock: options.clock }),
       onError,
     });
+  const stepPool = createPool("STEP_TASK", options.stepConcurrency ?? concurrency);
   const workers: readonly Worker[] = [
     createPool("WORKFLOW_TASK", options.workflowConcurrency ?? concurrency),
-    createPool("STEP_TASK", options.stepConcurrency ?? concurrency),
+    stepPool,
   ];
-  const timerLoop: TimerLoop = startTimerLoop({
-    scheduler: createTimerScheduler(options.pool, { queueName, ...clockOption }),
-    intervalMs: loopIntervalMs,
-    onError,
-  });
-  const scheduleLoop: ScheduleLoop = startScheduleLoop({
-    manager: schedules,
-    pendingStarts: createPendingStartFirer(options.pool, clockOption),
-    intervalMs: loopIntervalMs,
-    onError,
-  });
-  const janitorLoop: JanitorLoop = startJanitorLoop({
-    janitor,
-    intervalMs: loopIntervalMs,
-    stalledRuns: { queueName, graceMs: options.stalledRunGraceMs ?? 60_000 },
-    onError,
-  });
-  const compactorLoop: CompactorLoop | undefined =
+  const timerScheduler = createTimerScheduler(options.pool, { queueName, ...clockOption });
+  const pendingStarts = createPendingStartFirer(options.pool, clockOption);
+  const compactor =
     options.compaction === undefined
       ? undefined
-      : startCompactorLoop({
-          compactor: createHistoryCompactor(options.pool, {
-            clock: options.clock ?? systemClock,
-            policy: options.compaction.policy,
-          }),
-          intervalMs: options.compaction.intervalMs,
-          ...(options.compaction.batchSize === undefined
-            ? {}
-            : { batchSize: options.compaction.batchSize }),
-          onError,
+      : createHistoryCompactor(options.pool, {
+          clock: options.clock ?? systemClock,
+          policy: options.compaction.policy,
         });
+  let running: BackgroundLoops | undefined;
+  const startLoops = (): void => {
+    running ??= {
+      timer: startTimerLoop({ scheduler: timerScheduler, intervalMs: loopIntervalMs, onError }),
+      schedule: startScheduleLoop({
+        manager: schedules,
+        pendingStarts,
+        intervalMs: loopIntervalMs,
+        onError,
+      }),
+      janitor: startJanitorLoop({
+        janitor,
+        intervalMs: loopIntervalMs,
+        stalledRuns: { queueName, graceMs: options.stalledRunGraceMs ?? 60_000 },
+        onError,
+      }),
+      compactor:
+        compactor === undefined || options.compaction === undefined
+          ? undefined
+          : startCompactorLoop({
+              compactor,
+              intervalMs: options.compaction.intervalMs,
+              ...(options.compaction.batchSize === undefined
+                ? {}
+                : { batchSize: options.compaction.batchSize }),
+              onError,
+            }),
+    };
+  };
+  const stopLoops = async (): Promise<void> => {
+    const loops = running;
+    running = undefined;
+    if (loops === undefined) {
+      return;
+    }
+    await Promise.all([
+      loops.timer.stop(),
+      loops.schedule.stop(),
+      loops.janitor.stop(),
+      loops.compactor?.stop(),
+    ]);
+  };
+  const connect = createSessionConnector(
+    options.pool,
+    options.sessionConnectionString === undefined
+      ? {}
+      : { connectionString: options.sessionConnectionString },
+  );
+  startLoops();
+  const listener: WakeupListener | undefined =
+    options.wakeups === true
+      ? startWakeupListener({
+          connect,
+          queueName,
+          onWake: () => {
+            workers.forEach((worker) => {
+              worker.wake();
+            });
+          },
+          onError,
+        })
+      : undefined;
   workers.forEach((worker) => {
     worker.start();
   });
@@ -250,12 +315,8 @@ export function startEngine(options: EngineOptions): Engine {
     recovery: janitor.metrics,
     decisionTotals: () => ({ ...totals }),
     async stop(): Promise<StopResult> {
-      await Promise.all([
-        timerLoop.stop(),
-        scheduleLoop.stop(),
-        janitorLoop.stop(),
-        compactorLoop?.stop(),
-      ]);
+      await listener?.stop();
+      await stopLoops();
       const results = await Promise.all(workers.map((worker) => worker.stop()));
       const result: StopResult = {
         completed: results.reduce((total, entry) => total + entry.completed, 0),
