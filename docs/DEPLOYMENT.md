@@ -63,9 +63,26 @@ Your module imports `@dee/core`. Place it inside `/app` (for example under `/app
 - **Backups.** The database is the system of record. Use your usual Postgres backup (base backup plus WAL archiving for point in time recovery). A restore to a point in time is consistent for the engine: runs resume from their events, and tasks, timers and schedules are in the same database. Work done by steps after that point, in other systems, will be done again, which is why steps must be idempotent.
 - **Retention.** Event history grows. Closed runs are compacted into a snapshot by the history compactor (`docs/DECISIONS.md` ADR-0029). Turn it on in a worker with `--compact-interval <seconds>`; `--compact-retention` (default one week) is how long a closed run keeps its full history. One worker is enough, but a second one running it does no harm. A compacted run cannot be queried (`RunHistoryCompactedError`).
 
+## Session connections, PgBouncer and wake-ups
+
+An engine (`startEngine`, and so `wf worker` and `wf serve`) holds up to two connections of its own besides its pool:
+
+- **The leader election session.** The timer, schedule, janitor and compactor loops of a queue run on one engine at a time. Every engine tries `pg_try_advisory_lock` on a dedicated session once per `leaderLeaseMs` (default 1000 ms); the one that holds the lock runs the loops and checks once per period that its session is alive. The lock is a session lock, so it is released the moment the leader's connection closes: a killed leader is replaced within two lease periods, and a leader whose session is lost stops its loops at once. Turn it off with `leaderElection: false`, and every engine runs the loops as before.
+- **The wake-up session**, only with `wakeups: true`. It runs `LISTEN dee_wakeup` and wakes the engine's workers when a task is enqueued on its queue, so an idle engine starts work in milliseconds instead of after its poll backoff (up to 500 ms per hop). Polling stays on as the fallback: a lost notification costs latency, never a task.
+
+Both sessions are opened outside the pool, with the pool's settings, so they take no pool slot. Count them against `max_connections`: two more per engine with wake-ups, one without.
+
+**Wake-ups are sent only by sessions that ask for them.** The `tasks` insert trigger notifies once per transaction and queue when the inserting session has `dee.notify_wakeups` set to `on`, and does nothing otherwise, so the commit of a busy database does not pay for notifications nobody listens to. Turn it on for every process that enqueues work (the API, the workers, an embedding service): `createPool(env, { notifyWakeups: true })`, or for every session at once with `alter database <name> set dee.notify_wakeups = on` (or `alter role ... set`). Notifications are delivered to every listening session of the database, and each listener keeps those of its own schema and queue.
+
+**PgBouncer in transaction mode** hands each transaction to any server connection, so session state does not survive between transactions. That breaks the two sessions above: a session advisory lock would stay on a server connection other clients then use, and a `LISTEN` would be lost. It does not break the pool, because the engine keeps no session state on pooled connections (its advisory locks there are transaction scoped). With PgBouncer in transaction mode:
+
+- point the pool at PgBouncer and pass `sessionConnectionString` to `startEngine` with a URL that reaches Postgres directly (or a PgBouncer pool in session mode), so the election and the listener get real sessions;
+- set `search_path` the same way on both, because the lock and the notifications are scoped to the schema the session sees;
+- `options` startup parameters such as `-c dee.notify_wakeups=on` are refused by PgBouncer unless they are in `ignore_startup_parameters`, so set `dee.notify_wakeups` with `alter database` or `alter role` instead.
+
 ## Scaling
 
-- **More capacity for steps:** run more `wf worker` processes. Tasks are leased with `for update skip locked`, so workers do not block each other, and the timer, schedule and janitor loops are safe in many processes.
+- **More capacity for steps:** run more `wf worker` processes. Tasks are leased with `for update skip locked`, so workers do not block each other. The timer, schedule, janitor and compactor loops run on one elected engine per queue (see "Session connections" below), so adding workers adds no background work.
 - **More API capacity:** run more `wf serve` processes behind a load balancer. The API is stateless. The per namespace rate limit is held in each process's memory, so the effective rate is the sum over processes (ADR-0033).
 - **Sticky execution:** a worker keeps live workflows in memory. After each decision that leaves a run open it claims the run in Postgres (`run_stickiness`, 60 seconds by default), and the other workers skip that run's workflow tasks until the claim expires or is released; a claim is released when the run closes and when the worker stops. With 3 workers 100 percent of the decisions after a run's first came from the cache in `pnpm run bench:sticky`, against 58 percent without the claims (`docs/BENCHMARKS.md`). A worker that disappears costs one full replay on the next worker after the claim expires, not an error.
 - **Limits of one database:** measured on one 4 core machine, about 700 steps per second end to end and about 1,000 runs started per second (`docs/BENCHMARKS.md`). Beyond that the engine does not shard.

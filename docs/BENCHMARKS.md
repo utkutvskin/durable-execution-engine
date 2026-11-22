@@ -182,6 +182,23 @@ Over the 5 runs of each side the steps per second ranged from 554 to 663 before 
 
 Three more changes of the same day are not exercised by this benchmark, which records results directly and never heartbeats: a run has at most one pending workflow task, so a fan-out of step results causes one decision instead of one per result (migration 0031); a worker sends the acks and the heartbeats of one event loop turn as one statement each; and a heartbeat writes `lease_extended_until`, a column no index covers, so it is a HOT update (migration 0032; `lease-heartbeat.test.ts` reads `n_tup_hot_upd` and sees 10 HOT updates for 10 heartbeats and none for 10 updates of `visible_at`). The same migration gives `tasks`, `timers` and `run_stickiness` a lower `fillfactor`, so a page has room for the new version of a row, and autovacuum thresholds that vacuum these small, hot tables after a few hundred dead rows instead of after a fifth of the table.
 
+## Wake-ups on an idle queue
+
+An idle worker waits out its empty-poll backoff before it looks again: the engine polls after 50 ms, doubles the wait after every empty poll and stops at 500 ms. A run started on an idle engine waits for two of those polls, one for its first workflow task and one for the step task that decision enqueues. With `wakeups: true` (ADR-0064) the engine listens for the notification the `tasks` insert trigger sends when the inserting session has `dee.notify_wakeups` on, and its workers poll at once; a decision that recorded events also wakes the engine's own step pool.
+
+`pnpm run bench:wakeup` starts one-step runs through the run service on an engine with the default poll settings, one at a time, waits 1.5 s before each start so the workers have backed off to 500 ms, and measures from the start call to the step handler starting. 40 samples per side (`BENCH_WAKEUP_SAMPLES`, `BENCH_WAKEUP_IDLE_MS`), same machine:
+
+| Wake-ups      | p50 (ms) | p95 (ms) | Max (ms) |
+| ------------- | -------: | -------: | -------: |
+| off (polling) |    519.8 |    715.9 |    792.6 |
+| on            |     14.3 |     22.3 |     31.8 |
+
+A second run gave 723.1 / 729.5 / 793.0 without and 13.7 / 19.2 / 26.0 with wake-ups. What remains is the work itself: about 2 ms for the start, 6 ms to lease and decide the workflow task, and 5 to 8 ms to lease the step task and call its handler. `packages/worker/src/bench/wakeup-latency.integration.test.ts` measures 20 samples with wake-ups on an engine polling every 500 ms and fails when the p50 is 20 ms or more; a second test checks that the same engine without wake-ups is slower than that.
+
+## 10,000 timers due at once
+
+The timer scheduler fired one timer per transaction, about six statements each. It now fires a batch of due timers (up to `batchSize`, default 100) in one transaction of eight statements: the due timers, the runs with their current sequence numbers, one insert for every `timer_fired` event, one update for the timers, one insert for the workflow tasks and their ids. A run timeout timer still gets a transaction of its own and ends a batch. `packages/core/src/timers/batched-timers.test.ts` seeds 10,000 runs with a timer each, all due, lets three schedulers race over them with batches of 250, and checks that every timer was fired once, that every run has exactly one `timer_fired` event and one workflow task, and that a batch of 100 costs at most 8 statements.
+
 ## What to try next
 
 - The engine's own three-step run still costs 86 statements, most of them reads before a step and markers after a decision. Folding those (`docs/DEFERRED.md`, day 53) is the next lever for the engine, where this benchmark's path is down to 14.

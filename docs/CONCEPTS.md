@@ -167,6 +167,14 @@ A run has at most one pending workflow task. A workflow task is only a request t
 
 A worker sends the acks and the heartbeats of the tasks that finish or beat in the same turn of the event loop as one statement each. A heartbeat moves `lease_extended_until`, a column no index covers, so Postgres can write it as a HOT update without touching the indexes of `tasks`; a lease ends at the later of that column and the `visible_at` the dequeue set.
 
+## Leader election and wake-ups
+
+Some work must happen once per queue, not once per process: firing due timers, starting cron runs, reclaiming expired leases and recovering stalled runs, compacting closed histories. Every engine is a candidate, and the one that holds a Postgres session advisory lock for its queue and schema runs those loops; the others only run tasks. A candidate tries the lock once per lease period (one second by default) on a session of its own. Postgres releases a session lock when the session ends, so when a leader's process dies, the next attempt of another engine takes over, within two lease periods; a leader that loses its session stops its loops at once. The loops were already safe to run in several processes, so a short overlap during a handover costs duplicated reads, not duplicated effects.
+
+Due timers are fired in batches: one transaction takes up to a hundred due timers with `for update skip locked`, locks their runs, appends one `timer_fired` per timer, marks them fired and enqueues one workflow task per run.
+
+Workers poll, backing off to half a second when the queue is empty. With wake-ups on, the `tasks` insert trigger sends one `NOTIFY` per transaction and queue, and an engine listening on a dedicated session polls at once. The notification is only a hint: polling stays on, so a notification lost while the listening session reconnects costs latency, never a task. See `docs/DEPLOYMENT.md` for the sessions this needs behind a connection pooler.
+
 ## Guarantees and limits
 
 | The engine guarantees                                             | The engine does not guarantee                         |
