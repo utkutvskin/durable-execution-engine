@@ -193,7 +193,7 @@ An idle worker waits out its empty-poll backoff before it looks again: the engin
 | off (polling) |    519.8 |    715.9 |    792.6 |
 | on            |     14.3 |     22.3 |     31.8 |
 
-A second run gave 723.1 / 729.5 / 793.0 without and 13.7 / 19.2 / 26.0 with wake-ups. What remains is the work itself: about 2 ms for the start, 6 ms to lease and decide the workflow task, and 5 to 8 ms to lease the step task and call its handler. `packages/worker/src/bench/wakeup-latency.integration.test.ts` measures 20 samples with wake-ups on an engine polling every 500 ms and fails when the p50 is 20 ms or more; a second test checks that the same engine without wake-ups is slower than that.
+A second run gave 723.1 / 729.5 / 793.0 without and 13.7 / 19.2 / 26.0 with wake-ups. What remains is the work itself: about 2 ms for the start, 6 ms to lease and decide the workflow task, and 5 to 8 ms to lease the step task and call its handler. `packages/worker/src/bench/wakeup-latency.integration.test.ts` measures 20 samples with wake-ups on an engine polling every 500 ms and fails when the p50 is 100 ms or more, a fifth of one poll wait; a second test checks that the same engine without wake-ups takes longer than 20 ms. The 20 ms target is checked by `pnpm run bench:wakeup` on a quiet machine, not by the test suite: the first CI run of the suite, with every test file running in parallel on a shared runner, measured a p50 of 35.7 ms with wake-ups, so a 20 ms assertion there would fail on runner load rather than on the engine.
 
 ## 10,000 timers due at once
 

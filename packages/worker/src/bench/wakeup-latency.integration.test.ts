@@ -22,7 +22,7 @@ describe("idle-queue start latency", () => {
     await database.close();
   });
 
-  it("reaches the first step in under 20 ms at the median with wake-ups on an idle engine", async () => {
+  it("reaches the first step well within one poll wait at the median with wake-ups on an idle engine", async () => {
     const summary = await measureStartLatency({
       enginePool: notifying,
       producerPool: notifying,
@@ -34,7 +34,7 @@ describe("idle-queue start latency", () => {
     });
 
     expect(summary.count).toBe(20);
-    expect(summary.p50Ms).toBeLessThan(20);
+    expect(summary.p50Ms).toBeLessThan(100);
   });
 
   it("waits for the poll backoff without wake-ups, which is what they remove", async () => {
