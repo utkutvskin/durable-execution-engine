@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 54: wake-ups, leader election and batched timers
+
+- **Status:** DONE
+- **Completed day:** 54
+- **Files added or changed:** new `packages/core/migrations/0033_task_wakeups.{up,down}.sql`, new `packages/core/src/db/session.ts` (`createSessionConnector`, `SessionConnection`), `db/pool.ts` (`notifyWakeups`), `timers/timer-scheduler.ts` (batched `tick`) (+ new `batched-timers.test.ts`), `index.ts`, `db/migrator.test.ts`, `migrator-schema.test.ts`, new `packages/worker/src/leader-election.ts` (`startLeaderElection`, `DEFAULT_LEADER_LEASE_MS`) (+ new `leader-election.integration.test.ts`), new `wakeup-listener.ts` (`startWakeupListener`, `WAKEUP_CHANNEL`) (+ new `wakeup.integration.test.ts`), `worker.ts` (`Worker.wake`), `engine/runtime.ts` (`leaderElection`, `leaderLeaseMs`, `wakeups`, `sessionConnectionString`, `Engine.isLeader`) (+ new `engine/leader-loops.integration.test.ts`), new `bench/wakeup-latency.ts`, `bench/run-wakeup-bench.ts` (+ new `wakeup-latency.integration.test.ts`), `index.ts`, `package.json` (`bench:wakeup`), `api-reports/dee-core.api.md`, `dee-worker.api.md`, `docs/DEPLOYMENT.md`, `BENCHMARKS.md`, `CONCEPTS.md`, `DECISIONS.md` (ADR-0064), `DEFERRED.md`
+- **Technical decisions:** ADR-0064 in `docs/DECISIONS.md`. No new dependency. One migration, `0033_task_wakeups` (a statement-level insert trigger on `tasks` that notifies `dee_wakeup` once per transaction and queue when the session has `dee.notify_wakeups = on`).
+- **BLOCKER:** -
+- **Handoff note:** `pnpm run verify` is green locally (194 test files, 1570 tests, 20 more than the green baseline of 1550), and `pnpm run api:check` passes. **Done, each with a test or command:** idle start-to-first-step p50 went from 519.8 ms (a second run 723.1) without wake-ups to 14.3 ms (13.7) with them, 40 samples each, `pnpm run bench:wakeup`, in `docs/BENCHMARKS.md`; `bench/wakeup-latency.integration.test.ts` fails when the p50 over 20 samples on an engine polling every 500 ms is 20 ms or more. With 3 engines only the leader issues the timer, janitor and schedule loop statements (`engine/leader-loops.integration.test.ts`, one counting pool per engine), and a leader whose backend is terminated is replaced within 2 lease periods on virtual timers (`leader-election.integration.test.ts`). 10,000 timers due at once fire exactly once across three racing schedulers, one `timer_fired` and one workflow task per run (`timers/batched-timers.test.ts`); a batch of 100 costs at most 8 statements. **Mutation check:** without the wake that is kept during an in-flight poll, the wake race test goes red. **Real finding:** the latency test failed under parallel load at about 25 ms because each sample started while the previous run's completion decision was still running; the samples now wait for their run to complete, and a decision that recorded events wakes the engine's own step pool in process. **Things to know:** leader election is on by default; each engine holds one session outside its pool for it, and a second one with `wakeups: true`. Wake-ups need both `createPool({ notifyWakeups: true })` (or `alter database ... set dee.notify_wakeups = on`) on the producers and `wakeups: true` on the engine. `wf serve` and `wf worker` have no wake-up flag yet; this and the other gaps are in `docs/DEFERRED.md`. The day has 5 commits. I wrote the code before its tests; apart from the mutation check, none of the new tests was seen red first. Day 55 (retention and cleanup) is next.
+
+---
+
 ## Day 53: fewer statements per run
 
 - **Status:** DONE
