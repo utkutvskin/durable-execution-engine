@@ -78,10 +78,10 @@ describe("migrations into a named schema", () => {
   it("reverts inside the named schema", async () => {
     await migrateUp(app.pool, defaultMigrationsDir, { schema: engineSchema });
     const reverted = await migrateDown(app.pool, defaultMigrationsDir, 1, { schema: engineSchema });
-    expect(reverted).toEqual(["0035_closed_run_retention"]);
+    expect(reverted).toEqual(["0036_dequeue_lane_estimate"]);
     expect(
       await pendingMigrations(app.pool, defaultMigrationsDir, { schema: engineSchema }),
-    ).toEqual(["0035_closed_run_retention"]);
+    ).toEqual(["0036_dequeue_lane_estimate"]);
     await migrateUp(app.pool, defaultMigrationsDir, { schema: engineSchema });
   });
 

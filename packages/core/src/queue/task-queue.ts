@@ -349,7 +349,7 @@ export function createTaskQueue(
                     where served.queue_name = $1 and served.namespace_id = n.id
                       and served.task_type = kind.task_type and served.lease_seq is not null
                   ), 0) as turn
-           from namespaces n cross join unnest($9::text[]) as kind (task_type)
+           from dequeue_lane_namespaces() as n (id) cross join unnest($9::text[]) as kind (task_type)
            ${held.laneFilter}
          ),
          candidates as (
