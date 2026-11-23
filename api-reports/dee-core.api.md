@@ -196,6 +196,9 @@ export const childStartedEventSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
+export function clearNamespaceRetention(pool: Pool, namespaceId: string): Promise<boolean>;
+
+// @public
 export interface ClockSource {
     // (undocumented)
     now(): Date;
@@ -476,6 +479,9 @@ export function createRecoveryMetrics(): RecoveryMetrics;
 export function createResultRecorder(pool: Pool, codec?: Codec, recorderOptions?: ResultRecorderOptions): ResultRecorder;
 
 // @public
+export function createRetentionSweeper(pool: Pool, options?: RetentionSweeperOptions): RetentionSweeper;
+
+// @public
 export function createRunCache<TValue>(options: RunCacheOptions): RunCache<TValue>;
 
 // @public
@@ -722,6 +728,9 @@ export const DEFAULT_EMBEDDED_QUEUE = "default";
 
 // @public
 export const DEFAULT_EVENT_BUFFER_MS: number;
+
+// @public
+export const DEFAULT_FINISHED_TASK_GRACE_MS = 30000;
 
 // @public
 export const DEFAULT_MAX_CHILDREN = 1000;
@@ -1627,6 +1636,18 @@ export interface MonotonicClock extends ClockSource {
 }
 
 // @public
+export interface NamespacePurge {
+    // (undocumented)
+    readonly closedRunRetentionMs: number;
+    // (undocumented)
+    readonly namespaceId: string;
+    // (undocumented)
+    readonly rows: PurgedRows;
+    // (undocumented)
+    readonly runsPurged: number;
+}
+
+// @public
 export interface NamespaceQuota {
     // (undocumented)
     readonly burst: number | null;
@@ -1874,6 +1895,34 @@ export const PRIORITY_RANGE: {
     readonly min: -1000;
     readonly max: 1000;
 };
+
+// @public
+export interface PurgedRows {
+    // (undocumented)
+    readonly concurrencySlotHistory: number;
+    // (undocumented)
+    readonly deadLetters: number;
+    // (undocumented)
+    readonly scheduleTriggers: number;
+    // (undocumented)
+    readonly stepAttempts: number;
+    // (undocumented)
+    readonly taskHistory: number;
+    // (undocumented)
+    readonly timers: number;
+    // (undocumented)
+    readonly workflowTaskResults: number;
+}
+
+// @public
+export interface PurgeReport {
+    // (undocumented)
+    readonly namespaces: readonly NamespacePurge[];
+    // (undocumented)
+    readonly rows: PurgedRows;
+    // (undocumented)
+    readonly runsPurged: number;
+}
 
 // @public
 export interface QuarantinedTask {
@@ -2260,6 +2309,33 @@ export interface RetentionPolicy {
     readonly closedRunRetentionMs: number;
     // (undocumented)
     readonly tailEvents: number;
+}
+
+// @public
+export interface RetentionReport extends PurgeReport {
+    // (undocumented)
+    readonly tasksRetired: number;
+}
+
+// @public
+export interface RetentionSweeper {
+    purgeClosedRuns(): Promise<PurgeReport>;
+    retireFinishedTasks(): Promise<number>;
+    sweep(): Promise<RetentionReport>;
+}
+
+// @public
+export interface RetentionSweeperOptions {
+    // (undocumented)
+    readonly batchSize?: number;
+    // (undocumented)
+    readonly clock?: ClockSource;
+    // (undocumented)
+    readonly closedRunRetentionMs?: number;
+    // (undocumented)
+    readonly finishedTaskGraceMs?: number;
+    // (undocumented)
+    readonly maxBatches?: number;
 }
 
 // @public
@@ -2774,6 +2850,9 @@ export interface SessionConnectorOptions {
     // (undocumented)
     readonly connectionString?: string;
 }
+
+// @public
+export function setNamespaceRetention(pool: Pool, namespaceId: string, closedRunRetentionMs: number | null): Promise<void>;
 
 // @public
 export interface SettledStepTask {
@@ -4280,6 +4359,26 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/replay/replay-histories.d.ts:62:5 - (ae-undocumented) Missing documentation for "failed".
 // dist/replay/replay-histories.d.ts:69:5 - (ae-undocumented) Missing documentation for "buildId".
 // dist/replay/replay-histories.d.ts:70:5 - (ae-undocumented) Missing documentation for "reader".
+// dist/retention/retention-sweeper.d.ts:14:5 - (ae-undocumented) Missing documentation for "workflowTaskResults".
+// dist/retention/retention-sweeper.d.ts:15:5 - (ae-undocumented) Missing documentation for "stepAttempts".
+// dist/retention/retention-sweeper.d.ts:16:5 - (ae-undocumented) Missing documentation for "timers".
+// dist/retention/retention-sweeper.d.ts:17:5 - (ae-undocumented) Missing documentation for "scheduleTriggers".
+// dist/retention/retention-sweeper.d.ts:18:5 - (ae-undocumented) Missing documentation for "deadLetters".
+// dist/retention/retention-sweeper.d.ts:19:5 - (ae-undocumented) Missing documentation for "taskHistory".
+// dist/retention/retention-sweeper.d.ts:20:5 - (ae-undocumented) Missing documentation for "concurrencySlotHistory".
+// dist/retention/retention-sweeper.d.ts:26:5 - (ae-undocumented) Missing documentation for "namespaceId".
+// dist/retention/retention-sweeper.d.ts:27:5 - (ae-undocumented) Missing documentation for "closedRunRetentionMs".
+// dist/retention/retention-sweeper.d.ts:28:5 - (ae-undocumented) Missing documentation for "runsPurged".
+// dist/retention/retention-sweeper.d.ts:29:5 - (ae-undocumented) Missing documentation for "rows".
+// dist/retention/retention-sweeper.d.ts:36:5 - (ae-undocumented) Missing documentation for "runsPurged".
+// dist/retention/retention-sweeper.d.ts:37:5 - (ae-undocumented) Missing documentation for "rows".
+// dist/retention/retention-sweeper.d.ts:38:5 - (ae-undocumented) Missing documentation for "namespaces".
+// dist/retention/retention-sweeper.d.ts:44:5 - (ae-undocumented) Missing documentation for "tasksRetired".
+// dist/retention/retention-sweeper.d.ts:59:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/retention/retention-sweeper.d.ts:60:5 - (ae-undocumented) Missing documentation for "finishedTaskGraceMs".
+// dist/retention/retention-sweeper.d.ts:61:5 - (ae-undocumented) Missing documentation for "closedRunRetentionMs".
+// dist/retention/retention-sweeper.d.ts:62:5 - (ae-undocumented) Missing documentation for "batchSize".
+// dist/retention/retention-sweeper.d.ts:63:5 - (ae-undocumented) Missing documentation for "maxBatches".
 // dist/retention/task-retirement.d.ts:7:5 - (ae-undocumented) Missing documentation for "before".
 // dist/retention/task-retirement.d.ts:8:5 - (ae-undocumented) Missing documentation for "limit".
 // dist/retry/attempt-log.d.ts:9:5 - (ae-undocumented) Missing documentation for "runId".
