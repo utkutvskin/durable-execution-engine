@@ -8,6 +8,8 @@ const LOOP_STATEMENTS = [
   /from timers join workflow_runs/,
   /^with expired as/,
   /^select \* from schedules/,
+  /retire_finished_tasks/,
+  /not exists \(select 1 from run_snapshots s where s\.run_id = w\.id\)/,
 ];
 
 function loopStatements(counting: CountingPool): string[] {
@@ -40,6 +42,7 @@ describe("background loops on the elected engine", () => {
       steps: [],
       loopIntervalMs: 10,
       leaderLeaseMs: 20,
+      compaction: { intervalMs: 10, policy: { closedRunRetentionMs: 0, tailEvents: 0 } },
       ...options,
     });
     const entry = { engine, counting };
@@ -55,7 +58,7 @@ describe("background loops on the elected engine", () => {
     );
   }
 
-  it("runs the timer, schedule and janitor loops on exactly one of three engines", async () => {
+  it("runs the timer, schedule, janitor, compactor and retention loops on exactly one of three engines", async () => {
     const group = [boot(), boot(), boot()];
     await waitFor(() => group.some(({ engine }) => engine.isLeader));
     const leader = group.find(({ engine }) => engine.isLeader);

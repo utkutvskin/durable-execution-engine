@@ -4,18 +4,26 @@ import {
   COMPACTION_OPTIONS,
   OPS_OPTIONS,
   QUOTA_OPTIONS,
+  RETENTION_OPTIONS,
   RUNTIME_OPTIONS,
   createCliLogger,
   flagOrEnv,
   integerOption,
   parseCompactionSettings,
+  parseRetentionSettings,
   parseOpsSettings,
   parseRuntimeSettings,
   parseServeLimits,
 } from "./runtime-flags.ts";
 import { parseCommand } from "./shared.ts";
 
-const ALL = { ...RUNTIME_OPTIONS, ...QUOTA_OPTIONS, ...COMPACTION_OPTIONS, ...OPS_OPTIONS };
+const ALL = {
+  ...RUNTIME_OPTIONS,
+  ...QUOTA_OPTIONS,
+  ...COMPACTION_OPTIONS,
+  ...RETENTION_OPTIONS,
+  ...OPS_OPTIONS,
+};
 
 function parse(...args: string[]) {
   return parseCommand(args, ALL);
@@ -108,6 +116,23 @@ describe("runtime flags", () => {
       batchSize: undefined,
       policy: { closedRunRetentionMs: 604_800_000, tailEvents: 20 },
     });
+  });
+
+  it("reads the retention flags in seconds and leaves them out when not given", () => {
+    expect(parseRetentionSettings(parse(), {})).toEqual({
+      intervalMs: undefined,
+      closedRunRetentionMs: undefined,
+    });
+    expect(
+      parseRetentionSettings(parse("--retention", "86400", "--retention-interval", "5"), {}),
+    ).toEqual({
+      intervalMs: 5_000,
+      closedRunRetentionMs: 86_400_000,
+    });
+    expect(parseRetentionSettings(parse(), { WF_RETENTION: "0" }).closedRunRetentionMs).toBe(0);
+    expect(() => parseRetentionSettings(parse("--retention-interval", "0"), {})).toThrow(
+      /--retention-interval must be a whole number at least 1/,
+    );
   });
 
   it("serves health only when a port is given and listens on all addresses by default", () => {

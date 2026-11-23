@@ -49,6 +49,14 @@ export const COMPACTION_OPTIONS = {
 } as const satisfies OptionSpec;
 
 /**
+ * Options of `worker` that set the retention sweep.
+ */
+export const RETENTION_OPTIONS = {
+  retention: { type: "string" },
+  "retention-interval": { type: "string" },
+} as const satisfies OptionSpec;
+
+/**
  * Options of `worker` for the health and metrics port.
  */
 export const OPS_OPTIONS = {
@@ -250,6 +258,29 @@ export function parseCompactionSettings(
         SECOND_MS,
       tailEvents: integerOption(parsed, "compact-tail-events", env, 0) ?? DEFAULT_TAIL_EVENTS,
     },
+  };
+}
+
+/**
+ * The retention sweep of a worker: `closedRunRetentionMs` is the default
+ * retention of closed runs (none when `--retention` is left out, so only
+ * namespaces with their own retention are purged), and `intervalMs` how
+ * often the sweep runs (the engine's loop interval when left out).
+ */
+export interface RetentionSettings {
+  readonly intervalMs: number | undefined;
+  readonly closedRunRetentionMs: number | undefined;
+}
+
+/**
+ * Reads `RETENTION_OPTIONS`, in seconds.
+ */
+export function parseRetentionSettings(parsed: ParsedCommand, env: Env): RetentionSettings {
+  const retention = integerOption(parsed, "retention", env, 0);
+  const interval = integerOption(parsed, "retention-interval", env, 1);
+  return {
+    intervalMs: interval === undefined ? undefined : interval * SECOND_MS,
+    closedRunRetentionMs: retention === undefined ? undefined : retention * SECOND_MS,
   };
 }
 

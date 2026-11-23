@@ -71,6 +71,9 @@ worker only:
   --compact-interval s    compact closed runs every s seconds
   --compact-retention s   age of a closed run before compaction (default: 604800)
   --compact-tail-events n events kept per compacted run (default: 20)
+  --retention s           purge closed runs s seconds after they close (default: only
+                          namespaces with their own retention)
+  --retention-interval s  run the retention sweep every s seconds (default: 1)
 
 common options:
   --database-url url      postgres connection string (default: DATABASE_URL)

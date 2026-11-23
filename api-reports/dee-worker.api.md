@@ -19,6 +19,8 @@ import { RateLimitRule } from '@dee/core';
 import type { RecoverStalledRunsOptions } from '@dee/core';
 import { RecoveryMetrics } from '@dee/core';
 import { RetentionPolicy } from '@dee/core';
+import type { RetentionReport } from '@dee/core';
+import type { RetentionSweeper } from '@dee/core';
 import { ScheduleManager } from '@dee/core';
 import type { ScheduleTickReport } from '@dee/core';
 import type { SessionConnector } from '@dee/core';
@@ -179,6 +181,8 @@ export interface EngineOptions {
     // (undocumented)
     readonly random?: RandomSource;
     // (undocumented)
+    readonly retention?: EngineRetentionOptions | false;
+    // (undocumented)
     readonly sessionConnectionString?: string;
     // (undocumented)
     readonly shutdownTimeoutMs?: number;
@@ -202,6 +206,18 @@ export interface EngineOptions {
     readonly workflowConcurrency?: number;
     // (undocumented)
     readonly workflows: readonly AnyWorkflowDefinition[];
+}
+
+// @public
+export interface EngineRetentionOptions {
+    // (undocumented)
+    readonly batchSize?: number;
+    // (undocumented)
+    readonly closedRunRetentionMs?: number;
+    // (undocumented)
+    readonly finishedTaskGraceMs?: number;
+    // (undocumented)
+    readonly intervalMs?: number;
 }
 
 // @public
@@ -360,6 +376,25 @@ export interface ProcessLike {
 }
 
 // @public
+export interface RetentionLoop {
+    stop(): Promise<void>;
+}
+
+// @public
+export interface RetentionLoopOptions {
+    // (undocumented)
+    readonly intervalMs: number;
+    // (undocumented)
+    readonly onError?: (error: unknown) => void;
+    // (undocumented)
+    readonly onSweep?: (report: RetentionReport) => void;
+    // (undocumented)
+    readonly sweeper: RetentionSweeper;
+    // (undocumented)
+    readonly timers?: Timers;
+}
+
+// @public
 export interface ScheduleLoop {
     stop(): Promise<void>;
 }
@@ -411,6 +446,9 @@ export function startLeaderElection(options: LeaderElectionOptions): LeaderElect
 
 // @public
 export function startOpsServer(options: OpsServerOptions): Promise<OpsServer>;
+
+// @public
+export function startRetentionLoop(options: RetentionLoopOptions): RetentionLoop;
 
 // @public
 export function startScheduleLoop(options: ScheduleLoopOptions): ScheduleLoop;
@@ -594,47 +632,52 @@ export interface WorkerOptions {
 // dist/compactor-loop.d.ts:12:5 - (ae-undocumented) Missing documentation for "timers".
 // dist/compactor-loop.d.ts:13:5 - (ae-undocumented) Missing documentation for "onSweep".
 // dist/compactor-loop.d.ts:14:5 - (ae-undocumented) Missing documentation for "onError".
-// dist/engine/runtime.d.ts:49:5 - (ae-undocumented) Missing documentation for "pool".
-// dist/engine/runtime.d.ts:50:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/engine/runtime.d.ts:51:5 - (ae-undocumented) Missing documentation for "workflows".
-// dist/engine/runtime.d.ts:52:5 - (ae-undocumented) Missing documentation for "steps".
-// dist/engine/runtime.d.ts:53:5 - (ae-undocumented) Missing documentation for "buildId".
-// dist/engine/runtime.d.ts:54:5 - (ae-undocumented) Missing documentation for "maxCachedRuns".
-// dist/engine/runtime.d.ts:55:5 - (ae-undocumented) Missing documentation for "stickyTimeoutMs".
-// dist/engine/runtime.d.ts:56:5 - (ae-undocumented) Missing documentation for "concurrency".
-// dist/engine/runtime.d.ts:57:5 - (ae-undocumented) Missing documentation for "workflowConcurrency".
-// dist/engine/runtime.d.ts:58:5 - (ae-undocumented) Missing documentation for "stepConcurrency".
-// dist/engine/runtime.d.ts:59:5 - (ae-undocumented) Missing documentation for "queueRateLimit".
-// dist/engine/runtime.d.ts:60:5 - (ae-undocumented) Missing documentation for "pollIntervalMs".
-// dist/engine/runtime.d.ts:61:5 - (ae-undocumented) Missing documentation for "visibilityTimeoutMs".
-// dist/engine/runtime.d.ts:62:5 - (ae-undocumented) Missing documentation for "loopIntervalMs".
-// dist/engine/runtime.d.ts:63:5 - (ae-undocumented) Missing documentation for "stalledRunGraceMs".
-// dist/engine/runtime.d.ts:64:5 - (ae-undocumented) Missing documentation for "shutdownTimeoutMs".
-// dist/engine/runtime.d.ts:65:5 - (ae-undocumented) Missing documentation for "nackBackoff".
-// dist/engine/runtime.d.ts:66:5 - (ae-undocumented) Missing documentation for "maxHandlerAttempts".
-// dist/engine/runtime.d.ts:67:5 - (ae-undocumented) Missing documentation for "poisonThreshold".
-// dist/engine/runtime.d.ts:68:5 - (ae-undocumented) Missing documentation for "stickyRouting".
-// dist/engine/runtime.d.ts:69:5 - (ae-undocumented) Missing documentation for "compaction".
-// dist/engine/runtime.d.ts:70:5 - (ae-undocumented) Missing documentation for "leaderElection".
-// dist/engine/runtime.d.ts:71:5 - (ae-undocumented) Missing documentation for "leaderLeaseMs".
-// dist/engine/runtime.d.ts:72:5 - (ae-undocumented) Missing documentation for "wakeups".
-// dist/engine/runtime.d.ts:73:5 - (ae-undocumented) Missing documentation for "sessionConnectionString".
-// dist/engine/runtime.d.ts:74:5 - (ae-undocumented) Missing documentation for "clock".
-// dist/engine/runtime.d.ts:75:5 - (ae-undocumented) Missing documentation for "random".
-// dist/engine/runtime.d.ts:76:5 - (ae-undocumented) Missing documentation for "tracing".
-// dist/engine/runtime.d.ts:77:5 - (ae-undocumented) Missing documentation for "onDecision".
-// dist/engine/runtime.d.ts:78:5 - (ae-undocumented) Missing documentation for "onError".
-// dist/engine/runtime.d.ts:84:5 - (ae-undocumented) Missing documentation for "intervalMs".
-// dist/engine/runtime.d.ts:85:5 - (ae-undocumented) Missing documentation for "policy".
-// dist/engine/runtime.d.ts:86:5 - (ae-undocumented) Missing documentation for "batchSize".
-// dist/engine/runtime.d.ts:93:5 - (ae-undocumented) Missing documentation for "cache".
-// dist/engine/runtime.d.ts:94:5 - (ae-undocumented) Missing documentation for "replay".
-// dist/engine/runtime.d.ts:102:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/engine/runtime.d.ts:103:5 - (ae-undocumented) Missing documentation for "workerId".
-// dist/engine/runtime.d.ts:104:5 - (ae-undocumented) Missing documentation for "schedules".
-// dist/engine/runtime.d.ts:105:5 - (ae-undocumented) Missing documentation for "metrics".
-// dist/engine/runtime.d.ts:106:5 - (ae-undocumented) Missing documentation for "recovery".
-// dist/engine/runtime.d.ts:109:5 - (ae-undocumented) Missing documentation for "decisionTotals".
+// dist/engine/runtime.d.ts:55:5 - (ae-undocumented) Missing documentation for "pool".
+// dist/engine/runtime.d.ts:56:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/engine/runtime.d.ts:57:5 - (ae-undocumented) Missing documentation for "workflows".
+// dist/engine/runtime.d.ts:58:5 - (ae-undocumented) Missing documentation for "steps".
+// dist/engine/runtime.d.ts:59:5 - (ae-undocumented) Missing documentation for "buildId".
+// dist/engine/runtime.d.ts:60:5 - (ae-undocumented) Missing documentation for "maxCachedRuns".
+// dist/engine/runtime.d.ts:61:5 - (ae-undocumented) Missing documentation for "stickyTimeoutMs".
+// dist/engine/runtime.d.ts:62:5 - (ae-undocumented) Missing documentation for "concurrency".
+// dist/engine/runtime.d.ts:63:5 - (ae-undocumented) Missing documentation for "workflowConcurrency".
+// dist/engine/runtime.d.ts:64:5 - (ae-undocumented) Missing documentation for "stepConcurrency".
+// dist/engine/runtime.d.ts:65:5 - (ae-undocumented) Missing documentation for "queueRateLimit".
+// dist/engine/runtime.d.ts:66:5 - (ae-undocumented) Missing documentation for "pollIntervalMs".
+// dist/engine/runtime.d.ts:67:5 - (ae-undocumented) Missing documentation for "visibilityTimeoutMs".
+// dist/engine/runtime.d.ts:68:5 - (ae-undocumented) Missing documentation for "loopIntervalMs".
+// dist/engine/runtime.d.ts:69:5 - (ae-undocumented) Missing documentation for "stalledRunGraceMs".
+// dist/engine/runtime.d.ts:70:5 - (ae-undocumented) Missing documentation for "shutdownTimeoutMs".
+// dist/engine/runtime.d.ts:71:5 - (ae-undocumented) Missing documentation for "nackBackoff".
+// dist/engine/runtime.d.ts:72:5 - (ae-undocumented) Missing documentation for "maxHandlerAttempts".
+// dist/engine/runtime.d.ts:73:5 - (ae-undocumented) Missing documentation for "poisonThreshold".
+// dist/engine/runtime.d.ts:74:5 - (ae-undocumented) Missing documentation for "stickyRouting".
+// dist/engine/runtime.d.ts:75:5 - (ae-undocumented) Missing documentation for "compaction".
+// dist/engine/runtime.d.ts:76:5 - (ae-undocumented) Missing documentation for "retention".
+// dist/engine/runtime.d.ts:77:5 - (ae-undocumented) Missing documentation for "leaderElection".
+// dist/engine/runtime.d.ts:78:5 - (ae-undocumented) Missing documentation for "leaderLeaseMs".
+// dist/engine/runtime.d.ts:79:5 - (ae-undocumented) Missing documentation for "wakeups".
+// dist/engine/runtime.d.ts:80:5 - (ae-undocumented) Missing documentation for "sessionConnectionString".
+// dist/engine/runtime.d.ts:81:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/engine/runtime.d.ts:82:5 - (ae-undocumented) Missing documentation for "random".
+// dist/engine/runtime.d.ts:83:5 - (ae-undocumented) Missing documentation for "tracing".
+// dist/engine/runtime.d.ts:84:5 - (ae-undocumented) Missing documentation for "onDecision".
+// dist/engine/runtime.d.ts:85:5 - (ae-undocumented) Missing documentation for "onError".
+// dist/engine/runtime.d.ts:93:5 - (ae-undocumented) Missing documentation for "intervalMs".
+// dist/engine/runtime.d.ts:94:5 - (ae-undocumented) Missing documentation for "finishedTaskGraceMs".
+// dist/engine/runtime.d.ts:95:5 - (ae-undocumented) Missing documentation for "closedRunRetentionMs".
+// dist/engine/runtime.d.ts:96:5 - (ae-undocumented) Missing documentation for "batchSize".
+// dist/engine/runtime.d.ts:102:5 - (ae-undocumented) Missing documentation for "intervalMs".
+// dist/engine/runtime.d.ts:103:5 - (ae-undocumented) Missing documentation for "policy".
+// dist/engine/runtime.d.ts:104:5 - (ae-undocumented) Missing documentation for "batchSize".
+// dist/engine/runtime.d.ts:111:5 - (ae-undocumented) Missing documentation for "cache".
+// dist/engine/runtime.d.ts:112:5 - (ae-undocumented) Missing documentation for "replay".
+// dist/engine/runtime.d.ts:120:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/engine/runtime.d.ts:121:5 - (ae-undocumented) Missing documentation for "workerId".
+// dist/engine/runtime.d.ts:122:5 - (ae-undocumented) Missing documentation for "schedules".
+// dist/engine/runtime.d.ts:123:5 - (ae-undocumented) Missing documentation for "metrics".
+// dist/engine/runtime.d.ts:124:5 - (ae-undocumented) Missing documentation for "recovery".
+// dist/engine/runtime.d.ts:127:5 - (ae-undocumented) Missing documentation for "decisionTotals".
 // dist/engine/task-handler.d.ts:23:5 - (ae-undocumented) Missing documentation for "pool".
 // dist/engine/task-handler.d.ts:24:5 - (ae-undocumented) Missing documentation for "queue".
 // dist/engine/task-handler.d.ts:25:5 - (ae-undocumented) Missing documentation for "queueName".
@@ -689,6 +732,11 @@ export interface WorkerOptions {
 // dist/ops-server.d.ts:20:5 - (ae-undocumented) Missing documentation for "port".
 // dist/ops-server.d.ts:21:5 - (ae-undocumented) Missing documentation for "host".
 // dist/ops-server.d.ts:22:5 - (ae-undocumented) Missing documentation for "stop".
+// dist/retention-loop.d.ts:8:5 - (ae-undocumented) Missing documentation for "sweeper".
+// dist/retention-loop.d.ts:9:5 - (ae-undocumented) Missing documentation for "intervalMs".
+// dist/retention-loop.d.ts:10:5 - (ae-undocumented) Missing documentation for "timers".
+// dist/retention-loop.d.ts:11:5 - (ae-undocumented) Missing documentation for "onSweep".
+// dist/retention-loop.d.ts:12:5 - (ae-undocumented) Missing documentation for "onError".
 // dist/schedule-loop.d.ts:9:5 - (ae-undocumented) Missing documentation for "manager".
 // dist/schedule-loop.d.ts:10:5 - (ae-undocumented) Missing documentation for "pendingStarts".
 // dist/schedule-loop.d.ts:11:5 - (ae-undocumented) Missing documentation for "intervalMs".

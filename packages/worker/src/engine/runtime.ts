@@ -3,6 +3,7 @@ import {
   createHistoryCompactor,
   createJanitor,
   createPendingStartFirer,
+  createRetentionSweeper,
   createStickyRouter,
   createScheduleManager,
   createTaskQueue,
@@ -21,6 +22,7 @@ import {
   type Tracing,
 } from "@dee/core";
 import { startCompactorLoop, type CompactorLoop } from "../compactor-loop.ts";
+import { startRetentionLoop, type RetentionLoop } from "../retention-loop.ts";
 import { createWorkerIdentity } from "../identity.ts";
 import { startJanitorLoop, type JanitorLoop } from "../janitor-loop.ts";
 import { startLeaderElection, type LeaderElection } from "../leader-election.ts";
@@ -49,6 +51,12 @@ import {
  * claimed to that worker, so decisions advance a cached session instead of
  * replaying the history. `compaction` adds a loop that compacts closed runs
  * every `intervalMs` under `policy` (`batchSize` runs per sweep).
+ * `retention` (on by default, `false` turns it off) runs a retention sweep
+ * every `intervalMs` (default `loopIntervalMs`): completed tasks older than
+ * `finishedTaskGraceMs` move to `task_history`, and closed runs are purged
+ * in every namespace with a retention (`closedRunRetentionMs`, or the
+ * namespace's own; see `createRetentionSweeper`). Without either, no run
+ * data is deleted.
  * `engine.metrics` renders the ten engine metrics: task latency is filled
  * from the worker and the reclaimed lease count from the janitor of this
  * engine.
@@ -62,7 +70,7 @@ import {
  * shared through Postgres by every engine on the queue. The schedule loop
  * also fires due debounced starts and queued singleton starts.
  *
- * The timer, schedule, janitor and compactor loops run on one engine per
+ * The timer, schedule, janitor, compactor and retention loops run on one engine per
  * queue and schema, elected through a session advisory lock
  * (`leaderElection`, default true; see `startLeaderElection`). Every engine
  * tries to take the lock once per `leaderLeaseMs` (default 1000), so a
@@ -101,6 +109,7 @@ export interface EngineOptions {
   readonly poisonThreshold?: number;
   readonly stickyRouting?: boolean;
   readonly compaction?: CompactionOptions;
+  readonly retention?: EngineRetentionOptions | false;
   readonly leaderElection?: boolean;
   readonly leaderLeaseMs?: number;
   readonly wakeups?: boolean;
@@ -110,6 +119,18 @@ export interface EngineOptions {
   readonly tracing?: Tracing;
   readonly onDecision?: (decision: DecisionReport) => void;
   readonly onError?: (error: unknown) => void;
+}
+
+/**
+ * The retention schedule of `EngineOptions.retention`. Every field is
+ * optional; see `RetentionSweeperOptions` for `finishedTaskGraceMs`,
+ * `closedRunRetentionMs` and `batchSize`.
+ */
+export interface EngineRetentionOptions {
+  readonly intervalMs?: number;
+  readonly finishedTaskGraceMs?: number;
+  readonly closedRunRetentionMs?: number;
+  readonly batchSize?: number;
 }
 
 /**
@@ -141,7 +162,7 @@ export interface Engine {
   readonly schedules: ScheduleManager;
   readonly metrics: EngineMetrics;
   readonly recovery: RecoveryMetrics;
-  /** Whether this engine runs the queue's timer, schedule, janitor and compactor loops. */
+  /** Whether this engine runs the queue's timer, schedule, janitor, compactor and retention loops. */
   readonly isLeader: boolean;
   decisionTotals(): DecisionTotals;
   /** Stops the loops, then drains the worker. */
@@ -153,6 +174,7 @@ interface BackgroundLoops {
   readonly schedule: ScheduleLoop;
   readonly janitor: JanitorLoop;
   readonly compactor: CompactorLoop | undefined;
+  readonly retention: RetentionLoop | undefined;
 }
 
 /**
@@ -253,6 +275,20 @@ export function startEngine(options: EngineOptions): Engine {
           clock: options.clock ?? systemClock,
           policy: options.compaction.policy,
         });
+  const retention = options.retention === false ? undefined : (options.retention ?? {});
+  const sweeper =
+    retention === undefined
+      ? undefined
+      : createRetentionSweeper(options.pool, {
+          ...clockOption,
+          ...(retention.finishedTaskGraceMs === undefined
+            ? {}
+            : { finishedTaskGraceMs: retention.finishedTaskGraceMs }),
+          ...(retention.closedRunRetentionMs === undefined
+            ? {}
+            : { closedRunRetentionMs: retention.closedRunRetentionMs }),
+          ...(retention.batchSize === undefined ? {} : { batchSize: retention.batchSize }),
+        });
   let running: BackgroundLoops | undefined;
   const startLoops = (): void => {
     running ??= {
@@ -280,6 +316,14 @@ export function startEngine(options: EngineOptions): Engine {
                 : { batchSize: options.compaction.batchSize }),
               onError,
             }),
+      retention:
+        sweeper === undefined
+          ? undefined
+          : startRetentionLoop({
+              sweeper,
+              intervalMs: retention?.intervalMs ?? loopIntervalMs,
+              onError,
+            }),
     };
   };
   const stopLoops = async (): Promise<void> => {
@@ -293,6 +337,7 @@ export function startEngine(options: EngineOptions): Engine {
       loops.schedule.stop(),
       loops.janitor.stop(),
       loops.compactor?.stop(),
+      loops.retention?.stop(),
     ]);
   };
   const connect = createSessionConnector(

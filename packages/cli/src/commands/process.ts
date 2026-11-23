@@ -23,6 +23,8 @@ import {
   flagOrEnv,
   integerOption,
   parseCompactionSettings,
+  parseRetentionSettings,
+  RETENTION_OPTIONS,
   parseOpsSettings,
   parseRuntimeSettings,
 } from "./runtime-flags.ts";
@@ -230,6 +232,7 @@ export async function workerCommand(
     ...MODULE_OPTIONS,
     ...RUNTIME_OPTIONS,
     ...COMPACTION_OPTIONS,
+    ...RETENTION_OPTIONS,
     ...OPS_OPTIONS,
     queue: { type: "string" },
     concurrency: { type: "string" },
@@ -238,6 +241,7 @@ export async function workerCommand(
   const settings = parseRuntimeSettings(parsed, io.env);
   const concurrency = integerOption(parsed, "concurrency", io.env, 1, 10_000) ?? 4;
   const compaction = parseCompactionSettings(parsed, io.env);
+  const retention = parseRetentionSettings(parsed, io.env);
   const ops = parseOpsSettings(parsed, io.env);
   const module = await selectedModule(parsed, io, false);
   const logger = createCliLogger(settings, io, { service: "wf-worker" });
@@ -270,6 +274,12 @@ export async function workerCommand(
               ...(compaction.batchSize === undefined ? {} : { batchSize: compaction.batchSize }),
             },
           }),
+      retention: {
+        ...(retention.intervalMs === undefined ? {} : { intervalMs: retention.intervalMs }),
+        ...(retention.closedRunRetentionMs === undefined
+          ? {}
+          : { closedRunRetentionMs: retention.closedRunRetentionMs }),
+      },
       onError: (error) => {
         logger.error("worker error", {
           error: error instanceof Error ? error.message : String(error),

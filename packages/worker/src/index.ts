@@ -42,9 +42,17 @@ export type {
   EngineTaskHandlerOptions,
 } from "./engine/task-handler.ts";
 export { DEFAULT_QUEUE_NAME, startEngine } from "./engine/runtime.ts";
-export type { CompactionOptions, DecisionTotals, Engine, EngineOptions } from "./engine/runtime.ts";
+export type {
+  CompactionOptions,
+  DecisionTotals,
+  Engine,
+  EngineOptions,
+  EngineRetentionOptions,
+} from "./engine/runtime.ts";
 export { startCompactorLoop } from "./compactor-loop.ts";
 export type { CompactorLoop, CompactorLoopOptions } from "./compactor-loop.ts";
+export { startRetentionLoop } from "./retention-loop.ts";
+export type { RetentionLoop, RetentionLoopOptions } from "./retention-loop.ts";
 export { WAKEUP_CHANNEL, startWakeupListener } from "./wakeup-listener.ts";
 export type { WakeupListener, WakeupListenerOptions } from "./wakeup-listener.ts";
 export { DEFAULT_LEADER_LEASE_MS, startLeaderElection } from "./leader-election.ts";
