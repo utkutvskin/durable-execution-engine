@@ -412,6 +412,8 @@ export type {
   RetentionPolicy,
 } from "./compaction/history-compactor.ts";
 export { readSnapshotOnClient } from "./compaction/snapshot.ts";
+export { retireFinishedTasks } from "./retention/task-retirement.ts";
+export type { RetireFinishedTasksOptions } from "./retention/task-retirement.ts";
 export type { RunSnapshot } from "./compaction/snapshot.ts";
 export type { HistoryWarning } from "./workflow/decision-loop.ts";
 export { createLiveSession } from "./workflow/live-session.ts";

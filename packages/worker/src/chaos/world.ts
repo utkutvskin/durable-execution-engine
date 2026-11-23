@@ -354,7 +354,7 @@ export function whenStuck(
   return async (): Promise<void> => {
     const result = await world.database.pool.query<{ progress: string }>(
       `select (select count(*) from run_events where run_id = any($1::uuid[]))
-            + (select count(*) from tasks where state = 'COMPLETED' and run_id = any($1::uuid[]))
+            + (select count(*) from all_tasks where state = 'COMPLETED' and run_id = any($1::uuid[]))
               as progress`,
       [[...workload.runIds]],
     );

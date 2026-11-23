@@ -2263,6 +2263,17 @@ export interface RetentionPolicy {
 }
 
 // @public
+export function retireFinishedTasks(pool: Pool, options: RetireFinishedTasksOptions): Promise<number>;
+
+// @public
+export interface RetireFinishedTasksOptions {
+    // (undocumented)
+    readonly before: Date;
+    // (undocumented)
+    readonly limit: number;
+}
+
+// @public
 export type RetryDecision = {
     readonly retry: true;
     readonly delayMs: number;
@@ -4053,7 +4064,7 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/invariants/invariant-checker.d.ts:41:5 - (ae-undocumented) Missing documentation for "runIds".
 // dist/invariants/invariant-checker.d.ts:42:5 - (ae-undocumented) Missing documentation for "expectedTaskIds".
 // dist/invariants/invariant-checker.d.ts:43:5 - (ae-undocumented) Missing documentation for "at".
-// dist/invariants/invariant-checker.d.ts:70:5 - (ae-undocumented) Missing documentation for "check".
+// dist/invariants/invariant-checker.d.ts:71:5 - (ae-undocumented) Missing documentation for "check".
 // dist/observability/engine-metrics.d.ts:27:5 - (ae-undocumented) Missing documentation for "queues".
 // dist/observability/engine-metrics.d.ts:28:5 - (ae-undocumented) Missing documentation for "registry".
 // dist/observability/engine-metrics.d.ts:29:5 - (ae-undocumented) Missing documentation for "recovery".
@@ -4269,6 +4280,8 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/replay/replay-histories.d.ts:62:5 - (ae-undocumented) Missing documentation for "failed".
 // dist/replay/replay-histories.d.ts:69:5 - (ae-undocumented) Missing documentation for "buildId".
 // dist/replay/replay-histories.d.ts:70:5 - (ae-undocumented) Missing documentation for "reader".
+// dist/retention/task-retirement.d.ts:7:5 - (ae-undocumented) Missing documentation for "before".
+// dist/retention/task-retirement.d.ts:8:5 - (ae-undocumented) Missing documentation for "limit".
 // dist/retry/attempt-log.d.ts:9:5 - (ae-undocumented) Missing documentation for "runId".
 // dist/retry/attempt-log.d.ts:10:5 - (ae-undocumented) Missing documentation for "stepId".
 // dist/retry/attempt-log.d.ts:11:5 - (ae-undocumented) Missing documentation for "attempt".

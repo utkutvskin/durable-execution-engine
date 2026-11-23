@@ -68,8 +68,9 @@ export interface InvariantCheckOptions {
  *   signal or a child and is reported in `waitingRuns` instead of as a
  *   violation. A run with none of these can never move again.
  * - `task-not-lost`: a `LEASED` task carries a lease token, every expected
- *   task still exists, and a `COMPLETED` step task left its step an outcome,
- *   a failed attempt or a dead letter.
+ *   task is still in `tasks` or was retired to `task_history`, and a
+ *   `COMPLETED` step task, retired or not, left its step an outcome, a failed
+ *   attempt or a dead letter.
  * - `step-result-written-once`: a step has at most one terminal event and one
  *   `step_results` row, and every row has its event.
  * - `projection-consistent`: the run row equals the fold of the event log up
@@ -199,7 +200,7 @@ export function createInvariantChecker(pool: Pool, store: EventStore): Invariant
     }
     const unrecorded = await pool.query<{ id: string; run_id: string; step_id: string }>(
       `select t.id, t.run_id, t.payload->>'stepId' as step_id
-       from tasks t join workflow_runs r on r.id = t.run_id
+       from all_tasks t join workflow_runs r on r.id = t.run_id
        where t.task_type = 'STEP_TASK' and t.state = 'COMPLETED' and t.payload ? 'stepId'
          and r.status in ('RUNNING', 'COMPLETED')
          and ($1::uuid[] is null or t.run_id = any($1::uuid[]))
@@ -226,7 +227,7 @@ export function createInvariantChecker(pool: Pool, store: EventStore): Invariant
     let tasksChecked = 0;
     if (expectedTaskIds.length > 0) {
       const present = await pool.query<{ id: string }>(
-        "select id from tasks where id = any($1::uuid[])",
+        "select id from all_tasks where id = any($1::uuid[])",
         [[...expectedTaskIds]],
       );
       const found = new Set(present.rows.map((row) => row.id));

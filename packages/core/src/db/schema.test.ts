@@ -83,6 +83,7 @@ describe("initial schema", () => {
       [database.schema],
     );
     expect(result.rows.map((row) => row.table_name)).toEqual([
+      "all_tasks",
       "api_keys",
       "concurrency_slot_history",
       "concurrency_slots",
@@ -104,6 +105,7 @@ describe("initial schema", () => {
       "step_attempts",
       "step_heartbeats",
       "step_results",
+      "task_history",
       "tasks",
       "timers",
       "workflow_runs",
