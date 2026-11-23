@@ -175,6 +175,12 @@ Due timers are fired in batches: one transaction takes up to a hundred due timer
 
 Workers poll, backing off to half a second when the queue is empty. With wake-ups on, the `tasks` insert trigger sends one `NOTIFY` per transaction and queue, and an engine listening on a dedicated session polls at once. The notification is only a hint: polling stays on, so a notification lost while the listening session reconnects costs latency, never a task. See `docs/DEPLOYMENT.md` for the sessions this needs behind a connection pooler.
 
+## Retention and cleanup
+
+A finished task has done its job once its result is recorded, so it does not stay in `tasks`, where every dequeue has to step over it. The elected engine moves completed tasks that settled more than 30 seconds ago to `task_history`, an append-only table, a thousand at a time; recent completions stay a little while because the dequeue reads them to know which namespace it served last. The view `all_tasks` shows both tables as one.
+
+Closed runs keep their execution data for as long as their namespace's retention says, then the same loop purges it: the decision results, failed step attempts, timers, schedule triggers, requeued dead letters, task history and released concurrency slots of runs that closed longer ago than the retention. A run is purged once and marked with `purged_at`. Its row, its events, its step results and its open dead letters stay, so the run can still be listed and read; the history compactor (`compaction`, `--compact-interval`) is what shrinks its events. Each namespace can set its own retention, or keep its runs forever; without a retention, nothing is purged. Open runs are never touched: a run that must live for a long time keeps its history short with continue-as-new.
+
 ## Guarantees and limits
 
 | The engine guarantees                                             | The engine does not guarantee                         |

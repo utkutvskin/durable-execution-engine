@@ -32,6 +32,7 @@ erDiagram
   namespaces ||--o{ api_keys : issues
   workflow_runs ||--o{ run_events : "append-only log"
   workflow_runs ||--o{ tasks : "has open work"
+  workflow_runs ||--o{ task_history : "finished work"
   workflow_runs ||--o{ timers : sleeps
   workflow_runs ||--o{ step_results : "one per step attempt key"
   workflow_runs ||--o{ step_attempts : "retry bookkeeping"
@@ -43,9 +44,10 @@ erDiagram
 
 - `run_events` is the source of truth. A row is `(run_id, sequence_number, event_type, payload)` and the pair `(run_id, sequence_number)` is unique, which is what makes appends safe under concurrency.
 - `workflow_runs` is a projection: the status, the result and the timestamps are a pure fold over the events and can be rebuilt from them.
-- `tasks` is the queue. A task is `PENDING`, `LEASED`, `COMPLETED` or `QUARANTINED`. A lease has a token and an expiry.
+- `tasks` is the queue. A task is `PENDING`, `LEASED`, `COMPLETED` or `QUARANTINED`. A lease has a token and an expiry. Completed tasks move to the append-only `task_history` after a short grace period, and `all_tasks` reads both.
 - `step_results` and `workflow_task_results` are the idempotency ledgers: a result is written once per logical key, in the same transaction as the event it produces.
 - `timers`, `schedules` and `schedule_triggers` make time durable: a timer fires from the database, never from process memory.
+- `namespace_retention` holds how long a namespace's closed runs keep their execution data; the retention sweep purges it afterwards and marks the run with `purged_at`.
 
 Schema changes are SQL migration pairs in `packages/core/migrations`, applied by `wf migrate` or `pnpm run migrate:up`.
 
