@@ -199,6 +199,22 @@ A second run gave 723.1 / 729.5 / 793.0 without and 13.7 / 19.2 / 26.0 with wake
 
 The timer scheduler fired one timer per transaction, about six statements each. It now fires a batch of due timers (up to `batchSize`, default 100) in one transaction of eight statements: the due timers, the runs with their current sequence numbers, one insert for every `timer_fired` event, one update for the timers, one insert for the workflow tasks and their ids. A run timeout timer still gets a transaction of its own and ends a batch. `packages/core/src/timers/batched-timers.test.ts` seeds 10,000 runs with a timer each, all due, lets three schedulers race over them with batches of 250, and checks that every timer was fired once, that every run has exactly one `timer_fired` event and one workflow task, and that a batch of 100 costs at most 8 statements.
 
+## `tasks` over 30 minutes
+
+`pnpm run bench:growth` keeps 32 three-step runs in flight on one engine for 30 minutes (`BENCH_GROWTH_MINUTES`), starting a run whenever one completes, with the retention loop moving finished tasks after 5 s and purging closed runs after 60 s (`BENCH_GROWTH_RETENTION=off` turns it off), and reads the size of `tasks` once a minute. Selected minutes of one run, same machine:
+
+| Minute | Runs completed | `tasks` rows | `tasks` size (MB) | `task_history` rows |
+| -----: | -------------: | -----------: | ----------------: | ------------------: |
+|      1 |          2,990 |        2,141 |             16.17 |              18,949 |
+|      5 |         16,818 |        2,357 |             32.38 |              21,978 |
+|     10 |         33,444 |        1,588 |             38.24 |              21,357 |
+|     15 |         50,297 |        2,282 |             39.88 |              21,920 |
+|     20 |         67,284 |        2,383 |             40.09 |              22,085 |
+|     25 |         83,871 |        2,312 |             37.93 |              20,873 |
+|     30 |         99,725 |        1,966 |             37.36 |              20,626 |
+
+About 700,000 tasks went through `tasks` in the 30 minutes; it held between 1,588 and 2,837 rows at every reading, the completions of the last few seconds, and its size on disk settled near 38 to 40 MB after the first ten minutes as autovacuum reused the freed pages. `task_history` stayed near 21,000 rows because the purge removes closed runs after 60 s. Throughput held at about 3,300 runs a minute from start to end. The first attempt of this benchmark stalled after one minute, at under 50 runs a minute, because the dequeue's estimated cost had crossed `jit_above_cost` (ADR-0065, migration 0036). `packages/worker/src/bench/table-growth.integration.test.ts` runs the same workload for 250 runs in the test suite and checks that `tasks` stays under a fixed bound with retention on and grows with every run with it off.
+
 ## What to try next
 
 - The engine's own three-step run still costs 86 statements, most of them reads before a step and markers after a decision. Folding those (`docs/DEFERRED.md`, day 53) is the next lever for the engine, where this benchmark's path is down to 14.
