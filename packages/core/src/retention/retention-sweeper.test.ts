@@ -281,6 +281,37 @@ describe("retention for closed runs", () => {
     });
   });
 
+  it("never deadlocks or leaves task history of a purged run when retirement races the purge", async () => {
+    const namespace = await createNamespace("default");
+    now = new Date(START.getTime() + DAY_MS);
+    const sweeper = createRetentionSweeper(database.pool, {
+      clock,
+      closedRunRetentionMs: 0,
+      finishedTaskGraceMs: 0,
+      batchSize: 100,
+    });
+    for (let round = 0; round < 5; round += 1) {
+      await seedRuns(namespace, 600, START);
+      await Promise.all([
+        sweeper.retireFinishedTasks(),
+        sweeper.purgeClosedRuns(),
+        sweeper.retireFinishedTasks(),
+        sweeper.purgeClosedRuns(),
+      ]);
+      await drain(sweeper);
+    }
+
+    const leftover = await database.pool.query<{ count: string }>(
+      `select count(*) from all_tasks t join workflow_runs r on r.id = t.run_id
+       where r.purged_at is not null`,
+    );
+    expect(leftover.rows[0]?.count).toBe("0");
+    const purged = await database.pool.query<{ count: string }>(
+      "select count(*) from workflow_runs where purged_at is not null",
+    );
+    expect(purged.rows[0]?.count).toBe("3000");
+  });
+
   it("keeps open dead letters, buffered triggers and the run rows, and drops old skipped triggers", async () => {
     const namespace = await createNamespace("default");
     const [runId] = await seedRuns(namespace, 1, START);

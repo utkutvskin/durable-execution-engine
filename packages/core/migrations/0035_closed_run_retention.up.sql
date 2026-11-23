@@ -47,7 +47,7 @@ begin
       and run.purged_at is null and run.closed_at <= p_cutoff
     order by run.closed_at, run.id
     limit p_limit
-    for update skip locked
+    for no key update skip locked
   ), marked as (
     update workflow_runs run set purged_at = p_now
     from due where run.id = due.id
@@ -83,12 +83,12 @@ begin
   get diagnostics removed = row_count;
   dead_letters := removed;
 
-  delete from task_history retired where retired.run_id = any(purged);
-  get diagnostics removed = row_count;
-  task_history := removed;
   delete from tasks finished
   where finished.run_id = any(purged) and finished.state = 'COMPLETED'
     and not exists (select 1 from concurrency_slots slot where slot.task_id = finished.id);
+  get diagnostics removed = row_count;
+  task_history := removed;
+  delete from task_history retired where retired.run_id = any(purged);
   get diagnostics removed = row_count;
   task_history := task_history + removed;
 
