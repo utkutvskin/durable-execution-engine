@@ -215,6 +215,29 @@ The timer scheduler fired one timer per transaction, about six statements each. 
 
 About 700,000 tasks went through `tasks` in the 30 minutes; it held between 1,588 and 2,837 rows at every reading, the completions of the last few seconds, and its size on disk settled near 38 to 40 MB after the first ten minutes as autovacuum reused the freed pages. `task_history` stayed near 21,000 rows because the purge removes closed runs after 60 s. Throughput held at about 3,300 runs a minute from start to end. The first attempt of this benchmark stalled after one minute, at under 50 runs a minute, because the dequeue's estimated cost had crossed `jit_above_cost` (ADR-0065, migration 0036). `packages/worker/src/bench/table-growth.integration.test.ts` runs the same workload for 250 runs in the test suite and checks that `tasks` stays under a fixed bound with retention on and grows with every run with it off.
 
+## Partitioned history
+
+Migration 0037 partitions `run_events` by the day each run was created (ADR-0066). The default benchmark (400 runs of 3 steps) was run 10 times on each side, alternating between a checkout of the commit before the migration and this one, in two rounds of 5 with the order reversed in the second, because this machine drifts by about 10 percent over a few minutes. Medians of the 10 runs:
+
+| Measure                     |      Before |       After |    Change |
+| --------------------------- | ----------: | ----------: | --------: |
+| Runs started per second     |       1,106 |       1,097 |       -1% |
+| Steps completed per second  |         895 |         900 |       +1% |
+| Events appended per second  |      43,338 |      54,029 |      +25% |
+| Start a run, p50 / p99 (ms) | 11.8 / 79.9 | 11.6 / 74.6 | -1% / -7% |
+| Run end to end p50 (ms)     |         583 |         586 |       +1% |
+| Run end to end p95 (ms)     |         684 |         731 |       +7% |
+| Run end to end p99 (ms)     |         695 |         751 |       +8% |
+| Append 10 events, p50 (ms)  |         3.2 |         2.7 |      -17% |
+| Append 10 events, p95 (ms)  |         6.2 |         5.2 |      -15% |
+| Append 10 events, p99 (ms)  |         8.2 |         6.8 |      -18% |
+
+Steps per second ranged from 878 to 978 before and from 820 to 958 after, and the end-to-end p95 from 640 to 753 before and from 652 to 784 after, so the ranges overlap on every row except the appends, which are faster because `run_events` no longer has a foreign key to check on every insert. The tail of the end-to-end latency is the one row that moved the wrong way, by less than the spread of either side.
+
+The first version of the migration was clearly slower: 808 steps per second against 890 in an alternating run of 5, and a run took 644 ms end to end at the median instead of 580. A micro benchmark of 3,000 executions per statement showed why: an ad hoc read of one run's history went from 164 to 553 microseconds, because the planner could not prune partitions for a key that comes from a subquery and planned every partition on every call, while the hot path functions, whose plans are cached, had become faster. The history read and the sequence read are now SQL functions too (`read_run_events`, `run_event_sequence`), and the same micro benchmark reads a history in 151 microseconds and the sequence in 133, against 180 and 221 before the migration.
+
+`packages/worker/src/bench/hot-queries.integration.test.ts` still finds no sequential scan that runs in the history and sequence reads over 20,000 runs; the plan lists the empty partitions, which are never executed, so the test now counts only scans that ran.
+
 ## What to try next
 
 - The engine's own three-step run still costs 86 statements, most of them reads before a step and markers after a decision. Folding those (`docs/DEFERRED.md`, day 53) is the next lever for the engine, where this benchmark's path is down to 14.

@@ -181,6 +181,14 @@ A finished task has done its job once its result is recorded, so it does not sta
 
 Closed runs keep their execution data for as long as their namespace's retention says, then the same loop purges it: the decision results, failed step attempts, timers, schedule triggers, requeued dead letters, task history and released concurrency slots of runs that closed longer ago than the retention. A run is purged once and marked with `purged_at`. Its row, its events, its step results and its open dead letters stay, so the run can still be listed and read; the history compactor (`compaction`, `--compact-interval`) is what shrinks its events. Each namespace can set its own retention, or keep its runs forever; without a retention, nothing is purged. Open runs are never touched: a run that must live for a long time keeps its history short with continue-as-new.
 
+## Partitioned history, archives and read replicas
+
+`run_events` is split into one partition per day, by the day each run was created, so every event of a run sits in the same partition. The elected engine creates the next seven days ahead of time. Once retention has purged every run created on a day, and an hour has passed since that day ended, the engine writes the day's partition to an archive, if one is configured (`archiveDirectory`, `wf worker --archive-dir`), and then detaches and drops it, which frees the space at once instead of leaving dead rows for vacuum. A day keeps its partition for as long as one of its runs is open or not yet purged.
+
+An archive is a newline-delimited JSON file per partition: a header line, then one line per event with its run, sequence number, time, event format version and payload. `wf history import <file> --out <dir>` turns it back into one history export per run, which `wf replay` replays against the current code, so an archived run can still be checked after its rows are gone.
+
+With a read replica (`DATABASE_READ_URL`, `wf serve --database-read-url`), the API reads run lists, run pages, histories and the metrics scrape from the replica. A process that just started, signalled or changed a run reads that run, and after a start the run list of its namespace, from the primary for ten seconds, and a run the replica does not have yet is read from the primary, so a client sees its own writes.
+
 ## Guarantees and limits
 
 | The engine guarantees                                             | The engine does not guarantee                         |

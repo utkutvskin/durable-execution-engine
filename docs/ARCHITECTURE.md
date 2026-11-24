@@ -42,7 +42,7 @@ erDiagram
   schedules ||--o{ workflow_runs : starts
 ```
 
-- `run_events` is the source of truth. A row is `(run_id, sequence_number, event_type, payload)` and the pair `(run_id, sequence_number)` is unique, which is what makes appends safe under concurrency.
+- `run_events` is the source of truth. A row is `(run_id, sequence_number, event_type, payload)` and the pair `(run_id, sequence_number)` is unique, which is what makes appends safe under concurrency. The table is range partitioned by `run_created_at`, the creation time of the event's run, one partition per UTC day, so all events of a run share a partition; `run_event_partitions` records each partition's range, its archive and when it was dropped. The events of runs created before migration 0037 live in `run_events_legacy`, and `run_events_default` catches a day whose partition does not exist yet.
 - `workflow_runs` is a projection: the status, the result and the timestamps are a pure fold over the events and can be rebuilt from them.
 - `tasks` is the queue. A task is `PENDING`, `LEASED`, `COMPLETED` or `QUARANTINED`. A lease has a token and an expiry. Completed tasks move to the append-only `task_history` after a short grace period, and `all_tasks` reads both.
 - `step_results` and `workflow_task_results` are the idempotency ledgers: a result is written once per logical key, in the same transaction as the event it produces.
