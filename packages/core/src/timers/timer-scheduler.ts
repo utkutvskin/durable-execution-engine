@@ -227,7 +227,7 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
        from workflow_runs r
        where r.id = any($1::uuid[])
        order by r.id
-       for update of r`,
+       for no key update of r`,
       [runIds],
     );
     const runsById = new Map(runs.rows.map((run) => [run.id, run]));

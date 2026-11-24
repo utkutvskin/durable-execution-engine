@@ -1,4 +1,6 @@
+import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { resolveDatabaseUrl } from "../db/env.ts";
 import { createCountingPool } from "../db/statement-counter.ts";
 import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
 import { RUN_TIMEOUT_TIMER_ID } from "../timeouts/run-timeouts.ts";
@@ -80,6 +82,28 @@ describe("batched timers", () => {
     );
     const again = await schedulers[0]?.catchUp();
     expect(again?.fired).toHaveLength(0);
+  });
+
+  it("fires the timer of a run whose key another transaction holds, as a task history insert does", async () => {
+    const [runId = ""] = await seedRuns(1);
+    await seedTimers([runId], "wake", START);
+    const holder = await database.pool.connect();
+    const impatient = new pg.Pool({
+      connectionString: resolveDatabaseUrl(process.env),
+      options: `-c search_path=${database.schema} -c lock_timeout=2000`,
+    });
+    try {
+      await holder.query("begin");
+      await holder.query("select 1 from workflow_runs where id = $1 for key share", [runId]);
+
+      const report = await createTimerScheduler(impatient, { queueName: QUEUE, clock }).tick();
+
+      expect(report.fired.map((timer) => timer.runId)).toEqual([runId]);
+    } finally {
+      await holder.query("rollback");
+      holder.release();
+      await impatient.end();
+    }
   });
 
   it("fires a batch of 100 timers with a fixed number of statements", async () => {
