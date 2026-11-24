@@ -31,3 +31,21 @@ export function resolveDatabaseUrl(env: DatabaseUrlEnv): string {
   const port = env.POSTGRES_PORT ?? DEFAULT_PORT;
   return `postgres://${user}:${password}@localhost:${port}/${db}`;
 }
+
+/**
+ * The subset of `process.env` that `resolveReadDatabaseUrl` reads from.
+ */
+export interface ReadDatabaseUrlEnv {
+  readonly DATABASE_READ_URL?: string | undefined;
+}
+
+/**
+ * The connection string of the optional read replica: `DATABASE_READ_URL`
+ * when it is set and not empty, else `undefined` (every read goes to the
+ * primary).
+ */
+export function resolveReadDatabaseUrl(env: ReadDatabaseUrlEnv): string | undefined {
+  return env.DATABASE_READ_URL === undefined || env.DATABASE_READ_URL === ""
+    ? undefined
+    : env.DATABASE_READ_URL;
+}

@@ -1,4 +1,12 @@
-import { createHealthChecks, createPool, migrateUp, pendingMigrations, type Pool } from "@dee/core";
+import path from "node:path";
+import {
+  createHealthChecks,
+  createPool,
+  migrateUp,
+  pendingMigrations,
+  resolveReadDatabaseUrl,
+  type Pool,
+} from "@dee/core";
 import { startEngine, startOpsServer, type OpsServer } from "@dee/worker";
 import { databaseUrl, ensureDatabase, findComposeDirectory, isProduction } from "../database.ts";
 import { CliError } from "../errors.ts";
@@ -136,6 +144,33 @@ export async function openPool(
 }
 
 /**
+ * Opens a pool on the read replica named by `--database-read-url` or
+ * `DATABASE_READ_URL`, or returns `undefined` when neither is set. It does
+ * not start docker compose: a replica is never the local dev database.
+ */
+export function openReadPool(
+  parsed: ParsedCommand,
+  io: CliIo,
+  options: OpenPoolOptions = {},
+): Pool | undefined {
+  const url =
+    stringFlag(parsed, "database-read-url") ??
+    resolveReadDatabaseUrl({ DATABASE_READ_URL: io.env["DATABASE_READ_URL"] });
+  if (url === undefined) {
+    return undefined;
+  }
+  return createPool(
+    { DATABASE_URL: url },
+    {
+      ...(options.poolSize === undefined ? {} : { max: options.poolSize }),
+      onError: (error) => {
+        io.stderr(`read replica error: ${error.message}`);
+      },
+    },
+  );
+}
+
+/**
  * The options that choose the database and the workflow modules.
  */
 export const MODULE_OPTIONS = {
@@ -214,7 +249,8 @@ export async function devCommand(
  * [--log-format json|text] [--otlp-endpoint url] [--sampling-ratio r]
  * [--health-port n] [--health-host h] [--metrics-token t]
  * [--compact-interval s] [--compact-retention s] [--compact-tail-events n]
- * [--compact-batch n]`: runs workflows and steps from the chosen modules
+ * [--compact-batch n] [--retention s] [--retention-interval s]
+ * [--archive-dir path] [--partition-interval s]`: runs workflows and steps from the chosen modules
  * against the database, without an api. With `--health-port` it serves
  * `/health`, `/ready` and `/metrics` there. With `--compact-interval` it
  * compacts runs that closed `--compact-retention` seconds ago (default one
@@ -279,6 +315,14 @@ export async function workerCommand(
         ...(retention.closedRunRetentionMs === undefined
           ? {}
           : { closedRunRetentionMs: retention.closedRunRetentionMs }),
+      },
+      partitions: {
+        ...(retention.partitionIntervalMs === undefined
+          ? {}
+          : { intervalMs: retention.partitionIntervalMs }),
+        ...(retention.archiveDirectory === undefined
+          ? {}
+          : { archiveDirectory: path.resolve(io.cwd, retention.archiveDirectory) }),
       },
       onError: (error) => {
         logger.error("worker error", {

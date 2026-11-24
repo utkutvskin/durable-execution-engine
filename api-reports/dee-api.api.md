@@ -93,6 +93,10 @@ export interface ApiOptions {
     // (undocumented)
     readonly quotaGuard?: QuotaGuard;
     // (undocumented)
+    readonly readPool?: Pool;
+    // (undocumented)
+    readonly readYourWritesMs?: number;
+    // (undocumented)
     readonly service?: RunService;
     // (undocumented)
     readonly sideHandler?: SideHandler;
@@ -208,6 +212,9 @@ export interface DeadLetterSummary {
 
 // @public
 export const DEFAULT_PAGE_LIMIT = 500;
+
+// @public
+export const DEFAULT_READ_YOUR_WRITES_MS = 10000;
 
 // @public
 export interface ErrorResult extends RouteResult {
@@ -541,6 +548,8 @@ export interface RunServiceOptions {
     readonly clock?: ClockSource;
     // (undocumented)
     readonly queueName: string;
+    readonly readPool?: Pool;
+    readonly readYourWritesMs?: number;
     // (undocumented)
     readonly tracing?: Tracing;
     // (undocumented)
@@ -801,30 +810,32 @@ export function validateOpenApiDocument(document: unknown): string[];
 // dist/run-service.d.ts:340:5 - (ae-undocumented) Missing documentation for "tracing".
 // dist/run-service.d.ts:341:5 - (ae-undocumented) Missing documentation for "workflows".
 // dist/run-service.d.ts:342:5 - (ae-undocumented) Missing documentation for "updateWait".
-// dist/server.d.ts:48:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/server.d.ts:49:5 - (ae-undocumented) Missing documentation for "maxBodyBytes".
-// dist/server.d.ts:50:5 - (ae-undocumented) Missing documentation for "apiKeys".
-// dist/server.d.ts:51:5 - (ae-undocumented) Missing documentation for "service".
-// dist/server.d.ts:52:5 - (ae-undocumented) Missing documentation for "quotaGuard".
-// dist/server.d.ts:53:5 - (ae-undocumented) Missing documentation for "maxQueueDepth".
-// dist/server.d.ts:54:5 - (ae-undocumented) Missing documentation for "tracing".
-// dist/server.d.ts:55:5 - (ae-undocumented) Missing documentation for "health".
-// dist/server.d.ts:56:5 - (ae-undocumented) Missing documentation for "metrics".
-// dist/server.d.ts:57:5 - (ae-undocumented) Missing documentation for "logger".
-// dist/server.d.ts:58:5 - (ae-undocumented) Missing documentation for "streamPollMs".
-// dist/server.d.ts:59:5 - (ae-undocumented) Missing documentation for "sideHandler".
-// dist/server.d.ts:60:5 - (ae-undocumented) Missing documentation for "workflows".
-// dist/server.d.ts:61:5 - (ae-undocumented) Missing documentation for "maxStreamsPerNamespace".
-// dist/server.d.ts:62:5 - (ae-undocumented) Missing documentation for "maxStreamLifetimeMs".
-// dist/server.d.ts:63:5 - (ae-undocumented) Missing documentation for "authThrottle".
-// dist/server.d.ts:67:5 - (ae-undocumented) Missing documentation for "metricsToken".
-// dist/server.d.ts:68:5 - (ae-undocumented) Missing documentation for "metricsCacheMs".
-// dist/server.d.ts:69:5 - (ae-undocumented) Missing documentation for "nowMs".
-// dist/server.d.ts:75:5 - (ae-undocumented) Missing documentation for "listener".
-// dist/server.d.ts:76:5 - (ae-undocumented) Missing documentation for "apiKeys".
-// dist/server.d.ts:77:5 - (ae-undocumented) Missing documentation for "routes".
-// dist/server.d.ts:78:5 - (ae-undocumented) Missing documentation for "openApiDocument".
-// dist/server.d.ts:79:5 - (ae-undocumented) Missing documentation for "metrics".
+// dist/server.d.ts:53:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/server.d.ts:54:5 - (ae-undocumented) Missing documentation for "maxBodyBytes".
+// dist/server.d.ts:55:5 - (ae-undocumented) Missing documentation for "apiKeys".
+// dist/server.d.ts:56:5 - (ae-undocumented) Missing documentation for "service".
+// dist/server.d.ts:57:5 - (ae-undocumented) Missing documentation for "quotaGuard".
+// dist/server.d.ts:58:5 - (ae-undocumented) Missing documentation for "maxQueueDepth".
+// dist/server.d.ts:59:5 - (ae-undocumented) Missing documentation for "tracing".
+// dist/server.d.ts:60:5 - (ae-undocumented) Missing documentation for "health".
+// dist/server.d.ts:61:5 - (ae-undocumented) Missing documentation for "metrics".
+// dist/server.d.ts:62:5 - (ae-undocumented) Missing documentation for "logger".
+// dist/server.d.ts:63:5 - (ae-undocumented) Missing documentation for "streamPollMs".
+// dist/server.d.ts:64:5 - (ae-undocumented) Missing documentation for "sideHandler".
+// dist/server.d.ts:65:5 - (ae-undocumented) Missing documentation for "workflows".
+// dist/server.d.ts:66:5 - (ae-undocumented) Missing documentation for "maxStreamsPerNamespace".
+// dist/server.d.ts:67:5 - (ae-undocumented) Missing documentation for "maxStreamLifetimeMs".
+// dist/server.d.ts:68:5 - (ae-undocumented) Missing documentation for "authThrottle".
+// dist/server.d.ts:72:5 - (ae-undocumented) Missing documentation for "metricsToken".
+// dist/server.d.ts:73:5 - (ae-undocumented) Missing documentation for "metricsCacheMs".
+// dist/server.d.ts:74:5 - (ae-undocumented) Missing documentation for "nowMs".
+// dist/server.d.ts:75:5 - (ae-undocumented) Missing documentation for "readPool".
+// dist/server.d.ts:76:5 - (ae-undocumented) Missing documentation for "readYourWritesMs".
+// dist/server.d.ts:82:5 - (ae-undocumented) Missing documentation for "listener".
+// dist/server.d.ts:83:5 - (ae-undocumented) Missing documentation for "apiKeys".
+// dist/server.d.ts:84:5 - (ae-undocumented) Missing documentation for "routes".
+// dist/server.d.ts:85:5 - (ae-undocumented) Missing documentation for "openApiDocument".
+// dist/server.d.ts:86:5 - (ae-undocumented) Missing documentation for "metrics".
 
 // (No @packageDocumentation comment for this package)
 

@@ -190,7 +190,8 @@ export { markRunWaiting } from "./recovery/run-waiting.ts";
 export type { RunWaitingMark, WaitingOn } from "./recovery/run-waiting.ts";
 export { createRecoveryMetrics } from "./recovery/metrics.ts";
 export type { RecoveryMetrics, RecoveryMetricsSnapshot } from "./recovery/metrics.ts";
-export { resolveDatabaseUrl } from "./db/env.ts";
+export { resolveDatabaseUrl, resolveReadDatabaseUrl } from "./db/env.ts";
+export type { ReadDatabaseUrlEnv } from "./db/env.ts";
 export type { DatabaseUrlEnv } from "./db/env.ts";
 export type { Pool, PoolClient } from "pg";
 export {

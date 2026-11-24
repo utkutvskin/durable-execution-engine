@@ -45,6 +45,7 @@ commands:
   schedule pause <id>     stop a schedule; schedule resume <id> starts it from the next match
   schedule backfill <id>  start every trigger of --from to --to once (--overlap p)
   history export <id>     print the run's whole history as a history export (--out file)
+  history import <file>   turn run event archives into history exports (--out dir)
   replay <file...>        replay history exports against --module code, exit 1 on non-determinism
   example <name|all>      run a bundled example end to end (payment-saga, etl-pipeline)
   help                    show this text
@@ -64,6 +65,8 @@ serve only:
   --max-queue-depth n     answer 503 to writes while the queue holds this many tasks
   --metrics-token t       require this bearer token on /metrics
   --metrics-cache-ms n    serve one rendered scrape for this long
+  --database-read-url url serve list, history, ui and metrics reads from this replica
+                          (default: DATABASE_READ_URL; none reads the primary)
 worker only:
   --queue name --concurrency n
   --health-port n         serve /health, /ready and /metrics on this port
@@ -74,6 +77,8 @@ worker only:
   --retention s           purge closed runs s seconds after they close (default: only
                           namespaces with their own retention)
   --retention-interval s  run the retention sweep every s seconds (default: 1)
+  --archive-dir path      write a run_events partition here before it is dropped
+  --partition-interval s  maintain the run_events partitions every s seconds (default: 3600)
 
 common options:
   --database-url url      postgres connection string (default: DATABASE_URL)

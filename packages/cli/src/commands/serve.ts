@@ -6,6 +6,7 @@ import { startServeEnvironment } from "../serve-environment.ts";
 import {
   MODULE_OPTIONS,
   openPool,
+  openReadPool,
   selectedModule,
   untilSignal,
   type ProcessHooks,
@@ -28,7 +29,10 @@ import { booleanFlag, parseCommand, stringFlags } from "./shared.ts";
  * [--log-level l] [--log-format json|text] [--otlp-endpoint url]
  * [--sampling-ratio r] [--max-concurrent-runs n] [--max-pending-tasks n]
  * [--rate-per-second n] [--burst n] [--max-queue-depth n] [--metrics-token t]
- * [--metrics-cache-ms n]`: runs the api and the web ui without a worker.
+ * [--metrics-cache-ms n] [--database-read-url url]`: runs the api and the web
+ * ui without a worker. With `--database-read-url` (or `DATABASE_READ_URL`)
+ * run lists, histories, the ui's reads and the metrics scrape go to that
+ * read replica, with read-your-writes after a start or signal.
  *
  * The api key comes from `WF_API_KEY` (registered for the namespace) or from
  * a key the namespace already has; only a namespace without any key gets a
@@ -51,6 +55,7 @@ export async function serveCommand(
     namespace: { type: "string" },
     queue: { type: "string" },
     migrate: { type: "boolean" },
+    "database-read-url": { type: "string" },
   });
   const settings = parseRuntimeSettings(parsed, io.env);
   const limits = parseServeLimits(parsed, io.env);
@@ -67,6 +72,7 @@ export async function serveCommand(
     workflows?.register(entry);
   }
   const pool = await openPool(parsed, io, hooks, { poolSize: settings.poolSize });
+  const readPool = openReadPool(parsed, io, { poolSize: settings.poolSize });
   const tracing = createCliTracing(settings, "wf-serve");
   try {
     if (booleanFlag(parsed, "migrate")) {
@@ -89,6 +95,7 @@ export async function serveCommand(
       logger,
       tracing: tracing?.tracing,
       workflows,
+      readPool,
     });
     try {
       logger.info("api listening", {
@@ -97,6 +104,7 @@ export async function serveCommand(
         queue: queueName,
         production: isProduction(io.env),
         keySource: environment.keySource,
+        readReplica: readPool !== undefined,
       });
       if (environment.issuedKey !== undefined) {
         logger.warn("issued a new api key, it is shown once", {
@@ -113,5 +121,6 @@ export async function serveCommand(
   } finally {
     await tracing?.shutdown().catch(() => undefined);
     await pool.end();
+    await readPool?.end();
   }
 }

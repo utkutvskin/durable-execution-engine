@@ -7,6 +7,7 @@ import {
   applyRunTimeoutsOnClient,
   insertRunStatement,
   createPostgresEventStore,
+  type EventStore,
   createRunControl,
   createRunInteractions,
   createWorkflowRegistry,
@@ -475,8 +476,32 @@ export interface RunServiceOptions {
   readonly tracing?: Tracing;
   readonly workflows?: WorkflowRegistry;
   readonly updateWait?: UpdateWaitOptions;
-  /** "Now" for idempotency key expiry and debounce windows (default the system clock). */
+  /** "Now" for idempotency key expiry, debounce windows and read-your-writes (default the system clock). */
   readonly clock?: ClockSource;
+  /**
+   * A pool on a read replica. Run lists, run descriptions and histories are
+   * read from it, except for a run this service started, signalled or
+   * changed in the last `readYourWritesMs` (and the run list of its
+   * namespace after a start), which are read from the primary. A run the
+   * replica does not know yet is read from the primary.
+   */
+  readonly readPool?: Pool;
+  /** How long after a write its run is read from the primary (default `DEFAULT_READ_YOUR_WRITES_MS`). */
+  readonly readYourWritesMs?: number;
+}
+
+/**
+ * How long after a start, signal or other write a run (and, after a start,
+ * the run list of its namespace) is read from the primary instead of the
+ * read replica.
+ */
+export const DEFAULT_READ_YOUR_WRITES_MS = 10_000;
+
+const MAX_REMEMBERED_WRITES = 10_000;
+
+interface Reader {
+  readonly db: Pool;
+  readonly events: EventStore;
 }
 
 interface RunRow {
@@ -582,6 +607,67 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
   const tracing = options.tracing ?? noopTracing;
   const clock = options.clock ?? systemClock;
   const store = createPostgresEventStore(pool);
+  const readPool = options.readPool;
+  const readStore = readPool === undefined ? store : createPostgresEventStore(readPool);
+  const readYourWritesMs = options.readYourWritesMs ?? DEFAULT_READ_YOUR_WRITES_MS;
+  const recentWrites = new Map<string, number>();
+
+  function remember(...keys: readonly string[]): void {
+    if (readPool === undefined) {
+      return;
+    }
+    const until = clock.now().getTime() + readYourWritesMs;
+    for (const key of keys) {
+      recentWrites.delete(key);
+      recentWrites.set(key, until);
+    }
+    for (const oldest of recentWrites.keys()) {
+      if (recentWrites.size <= MAX_REMEMBERED_WRITES) {
+        break;
+      }
+      recentWrites.delete(oldest);
+    }
+  }
+
+  function writtenRecently(key: string): boolean {
+    const until = recentWrites.get(key);
+    if (until === undefined) {
+      return false;
+    }
+    if (until <= clock.now().getTime()) {
+      recentWrites.delete(key);
+      return false;
+    }
+    return true;
+  }
+
+  const primaryReader: Reader = { db: pool, events: store };
+
+  async function readThrough<T>(
+    key: string,
+    read: (reader: Reader) => Promise<T | undefined>,
+    missing: () => Error,
+  ): Promise<T> {
+    if (readPool !== undefined && !writtenRecently(key)) {
+      const fromReplica = await read({ db: readPool, events: readStore });
+      if (fromReplica !== undefined) {
+        return fromReplica;
+      }
+    }
+    const fromPrimary = await read(primaryReader);
+    if (fromPrimary === undefined) {
+      throw missing();
+    }
+    return fromPrimary;
+  }
+
+  function runKey(runId: string): string {
+    return `run:${runId}`;
+  }
+
+  function namespaceKey(namespaceId: string): string {
+    return `namespace:${namespaceId}`;
+  }
   const interactions: RunInteractions = createRunInteractions(pool, {
     workflows: options.workflows ?? createWorkflowRegistry(),
     clock: systemClock,
@@ -612,15 +698,23 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     }
   }
 
-  async function readRun(namespaceId: string, runId: string): Promise<RunRow> {
+  async function findRun(
+    db: Pool,
+    namespaceId: string,
+    runId: string,
+  ): Promise<RunRow | undefined> {
     if (!UUID_PATTERN.test(runId)) {
-      throw new RunNotFoundError(runId);
+      return undefined;
     }
-    const result = await pool.query<RunRow>(
+    const result = await db.query<RunRow>(
       `select ${RUN_COLUMNS} from workflow_runs where id = $1 and namespace_id = $2`,
       [runId, namespaceId],
     );
-    const row = result.rows[0];
+    return result.rows[0];
+  }
+
+  async function readRun(namespaceId: string, runId: string): Promise<RunRow> {
+    const row = await findRun(pool, namespaceId, runId);
     if (row === undefined) {
       throw new RunNotFoundError(runId);
     }
@@ -781,6 +875,7 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
       return { created: false, pending: toPendingDescription(inserted.pending) };
     }
     if (inserted !== undefined) {
+      remember(runKey(inserted.runId), namespaceKey(namespaceId));
       return { created: true, run: toDescription(await readRun(namespaceId, inserted.runId)) };
     }
     const raced = await findByKey(namespaceId, input, now);
@@ -809,8 +904,16 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     requestStart,
 
     async describeRun(namespaceId: string, runId: string): Promise<RunDescription> {
-      const description = toDescription(await readRun(namespaceId, runId));
-      const concurrency = await readRunConcurrency(pool, runId);
+      const { description, concurrency } = await readThrough(
+        runKey(runId),
+        async ({ db }) => {
+          const row = await findRun(db, namespaceId, runId);
+          return row === undefined
+            ? undefined
+            : { description: toDescription(row), concurrency: await readRunConcurrency(db, runId) };
+        },
+        () => new RunNotFoundError(runId),
+      );
       const paused = await operations.pausesOfRun(namespaceId, runId);
       return {
         ...description,
@@ -851,7 +954,9 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
         );
       }
       values.push(input.limit + 1);
-      const result = await pool.query<CursorRow>(
+      const lister =
+        readPool === undefined || writtenRecently(namespaceKey(namespaceId)) ? pool : readPool;
+      const result = await lister.query<CursorRow>(
         `select ${RUN_COLUMNS},
            to_char(started_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as started_cursor
          from workflow_runs
@@ -872,10 +977,16 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     },
 
     async getHistory(namespaceId, runId, page) {
-      await assertOwned(namespaceId, runId);
       const after = parseSequenceCursor(page?.cursor);
       const limit = pageSize(page);
-      const events = await store.read(runId, after, limit + 1);
+      const events = await readThrough(
+        runKey(runId),
+        async ({ db, events: reader }) =>
+          (await findRun(db, namespaceId, runId)) === undefined
+            ? undefined
+            : reader.read(runId, after, limit + 1),
+        () => new RunNotFoundError(runId),
+      );
       const shown = events.slice(0, limit);
       const last = shown.at(-1);
       return {
@@ -892,8 +1003,16 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     },
 
     async readHistorySince(namespaceId, runId, afterSequence) {
-      const run = await readRun(namespaceId, runId);
-      const events = await store.read(runId, afterSequence);
+      const { run, events } = await readThrough(
+        runKey(runId),
+        async ({ db, events: reader }) => {
+          const found = await findRun(db, namespaceId, runId);
+          return found === undefined
+            ? undefined
+            : { run: found, events: await reader.read(runId, afterSequence) };
+        },
+        () => new RunNotFoundError(runId),
+      );
       return {
         events: events.map((stored) => ({
           sequenceNumber: stored.sequenceNumber,
@@ -959,12 +1078,14 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
 
     async signalRun(namespaceId, runId, signalName, payload, signalId) {
       await assertOwned(namespaceId, runId);
-      return interactions.signalRun(runId, signalName, payload, { signalId });
+      const receipt = await interactions.signalRun(runId, signalName, payload, { signalId });
+      remember(runKey(runId));
+      return receipt;
     },
 
     async signalWithStart(namespaceId, request) {
       assertKnownType(request.workflowType);
-      return interactions.signalWithStart({
+      const receipt = await interactions.signalWithStart({
         namespaceId,
         workflowType: request.workflowType,
         workflowKey: request.workflowKey,
@@ -974,6 +1095,8 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
         payload: request.payload ?? null,
         signalId: request.signalId,
       });
+      remember(runKey(receipt.runId), namespaceKey(namespaceId));
+      return receipt;
     },
 
     async sendEvent(namespaceId, input) {
@@ -994,6 +1117,7 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
 
     async updateRun(namespaceId, runId, updateName, argument, updateOptions) {
       await assertOwned(namespaceId, runId);
+      remember(runKey(runId));
       return interactions.updateRun(runId, updateName, argument, updateOptions);
     },
 
@@ -1004,11 +1128,13 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
 
     async cancelRun(namespaceId, runId, reason) {
       await assertOwned(namespaceId, runId);
+      remember(runKey(runId));
       return control.cancelRun(runId, reason);
     },
 
     async terminateRun(namespaceId, runId, reason) {
       await assertOwned(namespaceId, runId);
+      remember(runKey(runId));
       return control.terminateRun(runId, reason);
     },
   };

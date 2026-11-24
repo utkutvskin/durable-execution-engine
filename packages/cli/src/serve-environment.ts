@@ -15,7 +15,8 @@ import type { ServeLimits } from "./commands/runtime-flags.ts";
  * Configuration of `startServeEnvironment`. `port` 0 picks a free port.
  * `apiKey` is a key chosen by the operator (from `WF_API_KEY`); without one,
  * the namespace keeps the keys it has, and only a namespace without any gets
- * a freshly issued one.
+ * a freshly issued one. `readPool` is a read replica for the api's list,
+ * history and metrics reads (see `ApiOptions.readPool`).
  */
 export interface ServeEnvironmentOptions {
   readonly pool: Pool;
@@ -28,6 +29,7 @@ export interface ServeEnvironmentOptions {
   readonly logger: Logger;
   readonly tracing?: Tracing | undefined;
   readonly workflows?: WorkflowRegistry | undefined;
+  readonly readPool?: Pool | undefined;
 }
 
 /**
@@ -101,6 +103,7 @@ export async function startServeEnvironment(
     logger: options.logger,
     ...(options.tracing === undefined ? {} : { tracing: options.tracing }),
     ...(options.workflows === undefined ? {} : { workflows: options.workflows }),
+    ...(options.readPool === undefined ? {} : { readPool: options.readPool }),
     ...(options.limits.maxQueueDepth === undefined
       ? {}
       : { maxQueueDepth: options.limits.maxQueueDepth }),

@@ -49,11 +49,14 @@ export const COMPACTION_OPTIONS = {
 } as const satisfies OptionSpec;
 
 /**
- * Options of `worker` that set the retention sweep.
+ * Options of `worker` that set the retention sweep and the maintenance of
+ * the `run_events` partitions.
  */
 export const RETENTION_OPTIONS = {
   retention: { type: "string" },
   "retention-interval": { type: "string" },
+  "archive-dir": { type: "string" },
+  "partition-interval": { type: "string" },
 } as const satisfies OptionSpec;
 
 /**
@@ -266,10 +269,15 @@ export function parseCompactionSettings(
  * retention of closed runs (none when `--retention` is left out, so only
  * namespaces with their own retention are purged), and `intervalMs` how
  * often the sweep runs (the engine's loop interval when left out).
+ * `archiveDirectory` is where a `run_events` partition is written before it
+ * is dropped (no copy is kept when left out), and `partitionIntervalMs` how
+ * often the partitions are maintained (hourly when left out).
  */
 export interface RetentionSettings {
   readonly intervalMs: number | undefined;
   readonly closedRunRetentionMs: number | undefined;
+  readonly archiveDirectory: string | undefined;
+  readonly partitionIntervalMs: number | undefined;
 }
 
 /**
@@ -278,9 +286,13 @@ export interface RetentionSettings {
 export function parseRetentionSettings(parsed: ParsedCommand, env: Env): RetentionSettings {
   const retention = integerOption(parsed, "retention", env, 0);
   const interval = integerOption(parsed, "retention-interval", env, 1);
+  const partitionInterval = integerOption(parsed, "partition-interval", env, 1);
   return {
     intervalMs: interval === undefined ? undefined : interval * SECOND_MS,
     closedRunRetentionMs: retention === undefined ? undefined : retention * SECOND_MS,
+    archiveDirectory: flagOrEnv(parsed, "archive-dir", env),
+    partitionIntervalMs:
+      partitionInterval === undefined ? undefined : partitionInterval * SECOND_MS,
   };
 }
 

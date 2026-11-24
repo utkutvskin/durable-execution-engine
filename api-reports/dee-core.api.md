@@ -2113,6 +2113,12 @@ export function readConcurrencyBacklog(pool: Pool, options?: {
 }): Promise<ConcurrencyBacklogEntry[]>;
 
 // @public
+export interface ReadDatabaseUrlEnv {
+    // (undocumented)
+    readonly DATABASE_READ_URL?: string | undefined;
+}
+
+// @public
 export interface ReadinessResult {
     // (undocumented)
     readonly checks: Readonly<Record<string, "ok" | "failed">>;
@@ -2388,6 +2394,9 @@ export interface ResolvedConcurrency {
 
 // @public
 export function resolveRateLimitBucket<TInput>(owner: string, prefix: string, rule: KeyedRateLimitRule<TInput>, input: TInput): string;
+
+// @public
+export function resolveReadDatabaseUrl(env: ReadDatabaseUrlEnv): string | undefined;
 
 // @public
 export function resolveRetryPolicy(partial?: Partial<RetryPolicy>): RetryPolicy;
@@ -4149,6 +4158,7 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/db/env.d.ts:9:5 - (ae-undocumented) Missing documentation for "POSTGRES_PASSWORD".
 // dist/db/env.d.ts:10:5 - (ae-undocumented) Missing documentation for "POSTGRES_DB".
 // dist/db/env.d.ts:11:5 - (ae-undocumented) Missing documentation for "POSTGRES_PORT".
+// dist/db/env.d.ts:23:5 - (ae-undocumented) Missing documentation for "DATABASE_READ_URL".
 // dist/db/migrator.d.ts:7:5 - (ae-undocumented) Missing documentation for "id".
 // dist/db/migrator.d.ts:8:5 - (ae-undocumented) Missing documentation for "up".
 // dist/db/migrator.d.ts:9:5 - (ae-undocumented) Missing documentation for "down".

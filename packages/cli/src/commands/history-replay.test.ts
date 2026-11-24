@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { parseHistoryExport } from "@dee/core";
+import { archiveHeaderLine, parseHistoryExport } from "@dee/core";
 import type { CliIo } from "../io.ts";
 import { main } from "../main.ts";
 import type { HistoryItem, RunClient } from "../run-client.ts";
@@ -128,8 +128,74 @@ describe("wf history export and wf replay", () => {
 
   it("rejects an unknown history action and a missing run id as usage errors", async () => {
     const client = historyClient(sampleHistory);
-    expect(await main(["history", "import", RUN_ID], captureIo(directory).io, { client })).toBe(2);
+    expect(await main(["history", "purge", RUN_ID], captureIo(directory).io, { client })).toBe(2);
     expect(await main(["history", "export"], captureIo(directory).io, { client })).toBe(2);
+  });
+
+  async function writeArchive(file: string, runs: Record<string, readonly HistoryItem[]>) {
+    const header = archiveHeaderLine(
+      {
+        name: "run_events_p20260101",
+        lowerBound: new Date("2026-01-01T00:00:00.000Z"),
+        upperBound: new Date("2026-01-02T00:00:00.000Z"),
+      },
+      exportedAt,
+    );
+    const lines = Object.entries(runs).flatMap(([runId, events]) =>
+      events.map((item) => JSON.stringify({ runId, ...item })),
+    );
+    await writeFile(path.join(directory, file), `${[header, ...lines].join("\n")}\n`, "utf8");
+  }
+
+  it("imports an archive into one export per run that wf replay replays", async () => {
+    await writeArchive("partition.ndjson", { [RUN_ID]: [...sampleHistory].reverse() });
+    const imported = captureIo(directory);
+    expect(
+      await main(["history", "import", "partition.ndjson", "--out", "histories"], imported.io, {
+        now: () => exportedAt,
+      }),
+    ).toBe(0);
+    expect(imported.out).toEqual([
+      "imported 1 runs of run_events_p20260101 from partition.ndjson to histories",
+    ]);
+    const file = path.join("histories", `${RUN_ID}.json`);
+    const written = JSON.parse(await readFile(path.join(directory, file), "utf8")) as unknown;
+    expect(parseHistoryExport(written).events.map((event) => event.sequenceNumber)).toEqual([
+      1, 2, 3, 4,
+    ]);
+
+    const replayed = captureIo(directory);
+    const code = await main(
+      ["replay", "--module", path.join(fixtures, "replay-module.ts"), file],
+      replayed.io,
+    );
+    expect(code).toBe(0);
+    expect(replayed.out).toEqual([
+      `ok    run ${RUN_ID} (${file}): 4 events replayed`,
+      "1 passed, 0 failed",
+    ]);
+  });
+
+  it("skips a compacted run of an archive and names it on stderr", async () => {
+    const compacted = "33333333-3333-4333-8333-333333333333";
+    await writeArchive("partition.ndjson", {
+      [RUN_ID]: sampleHistory,
+      [compacted]: sampleHistory.slice(2),
+    });
+    const { io, out, err } = captureIo(directory);
+    expect(await main(["history", "import", "partition.ndjson", "--out", "h"], io)).toBe(0);
+    expect(err).toEqual([
+      expect.stringMatching(new RegExp(`^skipped run ${compacted}: .*compacted run cannot`)),
+    ]);
+    expect(out).toEqual(["imported 1 runs of run_events_p20260101 from partition.ndjson to h"]);
+  });
+
+  it("refuses an import without --out and a file that is not an archive", async () => {
+    await writeFile(path.join(directory, "plain.ndjson"), '{"hello":"world"}\n', "utf8");
+    expect(await main(["history", "import", "plain.ndjson"], captureIo(directory).io)).toBe(2);
+    const { io, err } = captureIo(directory);
+    expect(await main(["history", "import", "plain.ndjson", "--out", "h"], io)).toBe(1);
+    expect(err[0]).toMatch(/^error: plain\.ndjson: not a run event archive/);
   });
 
   it("replays an export against the code that wrote it and exits 0", async () => {

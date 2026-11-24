@@ -67,6 +67,11 @@ export type SideHandler = (request: IncomingMessage, response: ServerResponse) =
  * one set of aggregate queries per interval. With `workflows`, starting a run
  * of a type the registry does not know answers 400. `nowMs` replaces the
  * monotonic clock of the throttle, the metrics cache and the stream lifetime.
+ *
+ * `readPool` is a pool on a read replica: run lists, run descriptions,
+ * histories (the ui's reads among them) and the metrics scrape read from it,
+ * with read-your-writes for `readYourWritesMs` after a start or signal (see
+ * `RunServiceOptions.readPool`). Everything else uses `pool`.
  */
 export interface ApiOptions {
   readonly queueName: string;
@@ -88,6 +93,8 @@ export interface ApiOptions {
   readonly metricsToken?: string;
   readonly metricsCacheMs?: number;
   readonly nowMs?: () => number;
+  readonly readPool?: Pool;
+  readonly readYourWritesMs?: number;
 }
 
 /**
@@ -275,6 +282,10 @@ export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler {
       queueName: options.queueName,
       ...(options.tracing === undefined ? {} : { tracing: options.tracing }),
       ...(options.workflows === undefined ? {} : { workflows: options.workflows }),
+      ...(options.readPool === undefined ? {} : { readPool: options.readPool }),
+      ...(options.readYourWritesMs === undefined
+        ? {}
+        : { readYourWritesMs: options.readYourWritesMs }),
     });
   const routes = createRoutes(service);
   const openApiDocument = buildOpenApiDocument(routes);
@@ -286,7 +297,9 @@ export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler {
     });
   const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   const health = options.health ?? createHealthChecks(pool);
-  const metrics = options.metrics ?? createEngineMetrics(pool, { queues: [options.queueName] });
+  const metrics =
+    options.metrics ??
+    createEngineMetrics(options.readPool ?? pool, { queues: [options.queueName] });
   const logger = options.logger ?? createLogger();
   const streamPollMs = options.streamPollMs ?? DEFAULT_STREAM_POLL_MS;
   const nowMs = options.nowMs ?? ((): number => performance.now());

@@ -30,6 +30,7 @@ export {
   InvalidCursorError,
   UnknownWorkflowTypeError,
   DEFAULT_PAGE_LIMIT,
+  DEFAULT_READ_YOUR_WRITES_MS,
   MAX_PAGE_LIMIT,
   createRunService,
 } from "./run-service.ts";
