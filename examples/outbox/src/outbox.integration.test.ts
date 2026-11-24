@@ -45,7 +45,7 @@ describe("outbox", () => {
   beforeEach(async () => {
     await app.pool.query("drop trigger if exists orders_start_fulfilment on orders");
     await app.pool.query("truncate order_lines, orders");
-    await enginePool.query("truncate namespaces cascade");
+    await enginePool.query("truncate namespaces, run_events cascade");
     errors.length = 0;
   });
 

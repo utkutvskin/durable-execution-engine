@@ -52,6 +52,45 @@ export function applyRunTimeoutsOnClient(client: PoolClient, runId: string, star
 }): Promise<void>;
 
 // @public
+export interface ArchiveContents {
+    // (undocumented)
+    readonly histories: readonly HistoryExport[];
+    // (undocumented)
+    readonly partition: string;
+    // (undocumented)
+    readonly unreadable: readonly UnreadableArchivedRun[];
+}
+
+// @public
+export interface ArchivedEvent {
+    // (undocumented)
+    readonly createdAt: string;
+    // (undocumented)
+    readonly event: {
+        readonly type: string;
+    } & Readonly<Record<string, unknown>>;
+    // (undocumented)
+    readonly runId: string;
+    // (undocumented)
+    readonly sequenceNumber: number;
+    // (undocumented)
+    readonly version: number;
+}
+
+// @public
+export interface ArchivedPartition {
+    // (undocumented)
+    readonly lowerBound: Date | null;
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    readonly upperBound: Date;
+}
+
+// @public
+export function archiveHeaderLine(partition: ArchivedPartition, archivedAt: Date): string;
+
+// @public
 export function assertRunAcceptsCommand(state: RunState, command: WorkflowCommand): void;
 
 // @public
@@ -379,6 +418,9 @@ export function createDeadLetterQueue(pool: Pool, options?: {
 }): DeadLetterQueue;
 
 // @public
+export function createDirectoryArchive(directory: string): RunEventArchive;
+
+// @public
 export function createEngineMetrics(pool: Pool, options?: EngineMetricsOptions): EngineMetrics;
 
 // @public
@@ -435,6 +477,9 @@ export function createMetricsRegistry(): MetricsRegistry;
 
 // @public
 export function createMonotonicClock(source: ClockSource): MonotonicClock;
+
+// @public
+export function createPartitionMaintainer(pool: Pool, options?: PartitionMaintainerOptions): PartitionMaintainer;
 
 // @public
 export function createPauseControl(pool: Pool): PauseControl;
@@ -739,6 +784,12 @@ export const DEFAULT_MAX_CHILDREN = 1000;
 export const DEFAULT_MAX_PAYLOAD_BYTES = 1048576;
 
 // @public
+export const DEFAULT_PARTITION_AHEAD_DAYS = 7;
+
+// @public
+export const DEFAULT_PARTITION_SETTLE_MS: number;
+
+// @public
 export const DEFAULT_POISON_THRESHOLD = 3;
 
 // @public
@@ -887,6 +938,16 @@ export function deserializeError(serialized: SerializedError): Error;
 
 // @public
 export function detachedStepContext(signal?: AbortSignal): StepContext;
+
+// @public
+export interface DroppedPartition {
+    // (undocumented)
+    readonly archivedTo: string | null;
+    // (undocumented)
+    readonly events: number;
+    // (undocumented)
+    readonly name: string;
+}
 
 // @public
 export interface EmbeddedOptions {
@@ -1398,6 +1459,14 @@ export interface JanitorOptions {
 export const jsonCodec: Codec;
 
 // @public
+export interface KeptPartition {
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    readonly reason: string;
+}
+
+// @public
 export interface KeyedRateLimitRule<TInput = never> extends RateLimitRule {
     // (undocumented)
     readonly key?: (input: TInput) => string;
@@ -1771,6 +1840,40 @@ export function parseHistoryExport(raw: unknown, source?: string, reader?: Event
 export function parseTraceparent(value: string | null | undefined): ParsedTraceparent | undefined;
 
 // @public
+export interface PartitionMaintainer {
+    // (undocumented)
+    listPartitions(): Promise<RunEventPartition[]>;
+    // (undocumented)
+    runOnce(): Promise<PartitionMaintenanceReport>;
+}
+
+// @public
+export interface PartitionMaintainerOptions {
+    // (undocumented)
+    readonly aheadDays?: number;
+    // (undocumented)
+    readonly archive?: RunEventArchive;
+    // (undocumented)
+    readonly batchSize?: number;
+    // (undocumented)
+    readonly clock?: ClockSource;
+    // (undocumented)
+    readonly codec?: Codec;
+    // (undocumented)
+    readonly settleMs?: number;
+}
+
+// @public
+export interface PartitionMaintenanceReport {
+    // (undocumented)
+    readonly created: readonly string[];
+    // (undocumented)
+    readonly dropped: readonly DroppedPartition[];
+    // (undocumented)
+    readonly kept: readonly KeptPartition[];
+}
+
+// @public
 export interface PauseControl {
     list(namespaceId: string): Promise<PauseRecord[]>;
     pause(target: PauseTarget, reason?: string): Promise<PauseReceipt>;
@@ -2025,6 +2128,9 @@ export function readRunChain(pool: Pool, firstRunId: string): Promise<ChainRun[]
 
 // @public
 export function readRunConcurrency(pool: Pool, runId: string): Promise<RunConcurrencyState | undefined>;
+
+// @public
+export function readRunEventArchive(text: string, source: string, exportedAt?: Date): ArchiveContents;
 
 // @public
 export function readSnapshotOnClient(client: Pick<PoolClient, "query">, runId: string): Promise<RunSnapshot | undefined>;
@@ -2378,6 +2484,12 @@ export interface RetryPolicy {
 export function rollbackQuietly(client: PoolClient): Promise<boolean>;
 
 // @public
+export const RUN_EVENT_ARCHIVE_FORMAT = "dee.run-events-archive";
+
+// @public
+export const RUN_EVENT_ARCHIVE_FORMAT_VERSION = 1;
+
+// @public
 export const RUN_STATE_TRANSITIONS: Readonly<Record<RunState, readonly RunState[]>>;
 
 // @public
@@ -2473,6 +2585,20 @@ export interface RunControlOptions {
 
 // @public
 export function runDecisionLoop<TInput, TResult>(handler: WorkflowHandler<TInput, TResult>, input: TInput, history: readonly WorkflowEvent[], options: DecisionLoopOptions): Promise<DecisionResult<TResult>>;
+
+// @public
+export interface RunEventArchive {
+    // (undocumented)
+    write(partition: ArchivedPartition, lines: AsyncIterable<string>): Promise<string>;
+}
+
+// @public
+export interface RunEventPartition extends ArchivedPartition {
+    // (undocumented)
+    readonly archivedTo: string | null;
+    // (undocumented)
+    readonly droppedAt: Date | null;
+}
 
 // @public
 export const runFailedEventSchema: z.ZodObject<{
@@ -3562,6 +3688,14 @@ export class UnknownUpdateError extends Error {
 export const UNLIMITED_QUOTA: NamespaceQuota;
 
 // @public
+export interface UnreadableArchivedRun {
+    // (undocumented)
+    readonly reason: string;
+    // (undocumented)
+    readonly runId: string;
+}
+
+// @public
 export class UnsupportedEventError extends Error {
     constructor(eventType: string | undefined, version: number, reason: string);
     // (undocumented)
@@ -4359,6 +4493,24 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/replay/replay-histories.d.ts:62:5 - (ae-undocumented) Missing documentation for "failed".
 // dist/replay/replay-histories.d.ts:69:5 - (ae-undocumented) Missing documentation for "buildId".
 // dist/replay/replay-histories.d.ts:70:5 - (ae-undocumented) Missing documentation for "reader".
+// dist/retention/partition-maintainer.d.ts:28:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/retention/partition-maintainer.d.ts:29:5 - (ae-undocumented) Missing documentation for "aheadDays".
+// dist/retention/partition-maintainer.d.ts:30:5 - (ae-undocumented) Missing documentation for "archive".
+// dist/retention/partition-maintainer.d.ts:31:5 - (ae-undocumented) Missing documentation for "codec".
+// dist/retention/partition-maintainer.d.ts:32:5 - (ae-undocumented) Missing documentation for "settleMs".
+// dist/retention/partition-maintainer.d.ts:33:5 - (ae-undocumented) Missing documentation for "batchSize".
+// dist/retention/partition-maintainer.d.ts:40:5 - (ae-undocumented) Missing documentation for "name".
+// dist/retention/partition-maintainer.d.ts:41:5 - (ae-undocumented) Missing documentation for "events".
+// dist/retention/partition-maintainer.d.ts:42:5 - (ae-undocumented) Missing documentation for "archivedTo".
+// dist/retention/partition-maintainer.d.ts:50:5 - (ae-undocumented) Missing documentation for "name".
+// dist/retention/partition-maintainer.d.ts:51:5 - (ae-undocumented) Missing documentation for "reason".
+// dist/retention/partition-maintainer.d.ts:57:5 - (ae-undocumented) Missing documentation for "created".
+// dist/retention/partition-maintainer.d.ts:58:5 - (ae-undocumented) Missing documentation for "dropped".
+// dist/retention/partition-maintainer.d.ts:59:5 - (ae-undocumented) Missing documentation for "kept".
+// dist/retention/partition-maintainer.d.ts:65:5 - (ae-undocumented) Missing documentation for "archivedTo".
+// dist/retention/partition-maintainer.d.ts:66:5 - (ae-undocumented) Missing documentation for "droppedAt".
+// dist/retention/partition-maintainer.d.ts:75:5 - (ae-undocumented) Missing documentation for "runOnce".
+// dist/retention/partition-maintainer.d.ts:76:5 - (ae-undocumented) Missing documentation for "listPartitions".
 // dist/retention/retention-sweeper.d.ts:14:5 - (ae-undocumented) Missing documentation for "workflowTaskResults".
 // dist/retention/retention-sweeper.d.ts:15:5 - (ae-undocumented) Missing documentation for "stepAttempts".
 // dist/retention/retention-sweeper.d.ts:16:5 - (ae-undocumented) Missing documentation for "timers".
@@ -4379,6 +4531,20 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/retention/retention-sweeper.d.ts:61:5 - (ae-undocumented) Missing documentation for "closedRunRetentionMs".
 // dist/retention/retention-sweeper.d.ts:62:5 - (ae-undocumented) Missing documentation for "batchSize".
 // dist/retention/retention-sweeper.d.ts:63:5 - (ae-undocumented) Missing documentation for "maxBatches".
+// dist/retention/run-event-archive.d.ts:16:5 - (ae-undocumented) Missing documentation for "name".
+// dist/retention/run-event-archive.d.ts:17:5 - (ae-undocumented) Missing documentation for "lowerBound".
+// dist/retention/run-event-archive.d.ts:18:5 - (ae-undocumented) Missing documentation for "upperBound".
+// dist/retention/run-event-archive.d.ts:26:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/retention/run-event-archive.d.ts:27:5 - (ae-undocumented) Missing documentation for "sequenceNumber".
+// dist/retention/run-event-archive.d.ts:28:5 - (ae-undocumented) Missing documentation for "createdAt".
+// dist/retention/run-event-archive.d.ts:29:5 - (ae-undocumented) Missing documentation for "version".
+// dist/retention/run-event-archive.d.ts:30:5 - (ae-undocumented) Missing documentation for "event".
+// dist/retention/run-event-archive.d.ts:41:5 - (ae-undocumented) Missing documentation for "write".
+// dist/retention/run-event-archive.d.ts:59:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/retention/run-event-archive.d.ts:60:5 - (ae-undocumented) Missing documentation for "reason".
+// dist/retention/run-event-archive.d.ts:67:5 - (ae-undocumented) Missing documentation for "partition".
+// dist/retention/run-event-archive.d.ts:68:5 - (ae-undocumented) Missing documentation for "histories".
+// dist/retention/run-event-archive.d.ts:69:5 - (ae-undocumented) Missing documentation for "unreadable".
 // dist/retention/task-retirement.d.ts:7:5 - (ae-undocumented) Missing documentation for "before".
 // dist/retention/task-retirement.d.ts:8:5 - (ae-undocumented) Missing documentation for "limit".
 // dist/retry/attempt-log.d.ts:9:5 - (ae-undocumented) Missing documentation for "runId".

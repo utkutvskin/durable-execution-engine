@@ -171,7 +171,8 @@ const STALLED_PREDICATE = `
   and (r.last_recovered_at is null
        or r.last_recovered_at + least($2 * power(2, least(r.recovery_count, 20)), ${String(MAX_RECOVERY_BACKOFF_MS)})
           * interval '1 millisecond' <= ${DB_NOW})
-  and coalesce((select max(e.created_at) from run_events e where e.run_id = r.id), r.created_at)
+  and coalesce((select max(e.created_at) from run_events e
+                 where e.run_id = r.id and e.run_created_at = r.created_at), r.created_at)
       <= ${DB_NOW} - $2 * interval '1 millisecond'
   and not exists (
     select 1 from tasks t where t.run_id = r.id and t.state in ('PENDING', 'LEASED', 'QUARANTINED')

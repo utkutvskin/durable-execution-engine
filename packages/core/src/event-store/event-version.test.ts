@@ -88,8 +88,9 @@ describe("event versions in the event store", () => {
 
   async function insertRaw(sequence: number, payload: unknown, version: number): Promise<void> {
     await database.pool.query(
-      `insert into run_events (run_id, sequence_number, event_type, payload, event_version)
-       values ($1, $2, $3, $4::jsonb, $5)`,
+      `insert into run_events
+         (run_id, sequence_number, event_type, payload, event_version, run_created_at)
+       values ($1, $2, $3, $4::jsonb, $5, (select created_at from workflow_runs where id = $1))`,
       [runId, sequence, (payload as { type: string }).type, JSON.stringify(payload), version],
     );
   }

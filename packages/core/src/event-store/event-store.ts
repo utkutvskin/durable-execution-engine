@@ -97,7 +97,7 @@ function isUniqueViolation(error: unknown): boolean {
 async function readCurrentSequence(client: PoolClient, runId: string): Promise<number> {
   const result = await client.query<{ seq: string }>(
     `select greatest(
-       coalesce((select max(sequence_number) from run_events where run_id = $1), 0),
+       run_event_sequence($1),
        coalesce((select last_sequence_number from run_snapshots where run_id = $1), 0)
      ) as seq`,
     [runId],
@@ -217,10 +217,7 @@ export async function readEventsOnClient(
   fromSeq = 0,
 ): Promise<StoredEvent[]> {
   const result = await client.query<StoredEventRow>(
-    `select sequence_number, payload::text as payload, created_at, event_version
-     from run_events
-     where run_id = $1 and sequence_number > $2
-     order by sequence_number asc`,
+    "select sequence_number, payload, created_at, event_version from read_run_events($1, $2, null)",
     [runId, fromSeq],
   );
   return result.rows.map((row) => toStoredEvent(codec, row));
@@ -258,11 +255,7 @@ export function createPostgresEventStore(pool: Pool, codec: Codec = jsonCodec): 
 
     async read(runId: string, fromSeq = 0, limit?: number): Promise<StoredEvent[]> {
       const result = await pool.query<StoredEventRow>(
-        `select sequence_number, payload::text as payload, created_at, event_version
-         from run_events
-         where run_id = $1 and sequence_number > $2
-         order by sequence_number asc
-         limit $3`,
+        "select sequence_number, payload, created_at, event_version from read_run_events($1, $2, $3)",
         [runId, fromSeq, limit ?? null],
       );
       return result.rows.map((row) => toStoredEvent(codec, row));

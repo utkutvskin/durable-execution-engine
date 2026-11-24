@@ -221,7 +221,7 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
     const runs = await client.query<LockedRunRow>(
       `select r.id, r.namespace_id, r.status, r.traceparent, r.queue_name,
               greatest(
-                coalesce((select max(e.sequence_number) from run_events e where e.run_id = r.id), 0),
+                run_event_sequence(r.id),
                 coalesce((select s.last_sequence_number from run_snapshots s where s.run_id = r.id), 0)
               ) as current_seq
        from workflow_runs r
@@ -241,10 +241,13 @@ export function createTimerScheduler(pool: Pool, options: TimerSchedulerOptions)
     });
     if (live.length > 0) {
       await client.query(
-        `insert into run_events (run_id, sequence_number, event_type, payload, event_version)
-         select batch.run_id, batch.sequence_number, 'timer_fired', batch.payload::jsonb, $4
+        `insert into run_events
+           (run_id, sequence_number, event_type, payload, event_version, run_created_at)
+         select batch.run_id, batch.sequence_number, 'timer_fired', batch.payload::jsonb, $4,
+                run.created_at
          from unnest($1::uuid[], $2::bigint[], $3::text[])
-           as batch (run_id, sequence_number, payload)`,
+           as batch (run_id, sequence_number, payload)
+         join workflow_runs run on run.id = batch.run_id`,
         [
           live.map((timer) => timer.run_id),
           sequences,

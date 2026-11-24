@@ -127,7 +127,8 @@ describe("database time", () => {
 
   it("does not let a janitor on a fast host call a fresh run stalled", async () => {
     await database.pool.query(
-      "insert into run_events (run_id, sequence_number, event_type, payload) values ($1, 1, 'run_started', '{}'::jsonb)",
+      `insert into run_events (run_id, sequence_number, event_type, payload, run_created_at)
+       values ($1, 1, 'run_started', '{}'::jsonb, (select created_at from workflow_runs where id = $1))`,
       [runId],
     );
     hostClockOffsetBy(SKEW_MS);

@@ -142,11 +142,7 @@ export async function refreshProjection(
 ): Promise<RunProjection> {
   const current = await pool.query<RunRow & { has_newer: boolean }>(
     `select status, input, result, error, closed_at, last_sequence_number,
-            exists (
-              select 1 from run_events
-              where run_events.run_id = workflow_runs.id
-                and run_events.sequence_number > workflow_runs.last_sequence_number
-            ) as has_newer
+            run_event_sequence(workflow_runs.id) > workflow_runs.last_sequence_number as has_newer
      from workflow_runs where id = $1`,
     [runId],
   );

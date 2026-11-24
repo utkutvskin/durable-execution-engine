@@ -43,13 +43,15 @@ describe("hot query plans", () => {
     const stalled = plans.get("stalled runs");
     expect(stalled?.sequentialScans).not.toContain("workflow_runs");
     expect(stalled?.sequentialScans).not.toContain("tasks");
-    expect(stalled?.sequentialScans).not.toContain("run_events");
+    expect(stalled?.sequentialScans.filter((table) => table.startsWith("run_events"))).toEqual([]);
   });
 
   it("reads a run's history and sequence through the run_events index", () => {
     expect(plans.get("read history")?.sequentialScans).toEqual([]);
     expect(
-      plans.get("sequence check")?.sequentialScans.filter((table) => table === "run_events"),
+      plans
+        .get("sequence check")
+        ?.sequentialScans.filter((table) => table.startsWith("run_events")),
     ).toEqual([]);
   });
 

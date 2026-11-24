@@ -39,7 +39,7 @@ describe("transactional workflow start, signal and cancel", () => {
 
   beforeEach(async () => {
     await app.pool.query("truncate orders");
-    await engine.pool.query("truncate namespaces cascade");
+    await engine.pool.query("truncate namespaces, run_events cascade");
   });
 
   async function counts(): Promise<Counts> {

@@ -126,10 +126,12 @@ export function createHistoryCompactor(
                created_at = now()`,
         [runId, projection.lastSequenceNumber, prunedEventCount, serializeProjection(projection)],
       );
-      await client.query("delete from run_events where run_id = $1 and sequence_number <= $2", [
-        runId,
-        projection.lastSequenceNumber,
-      ]);
+      await client.query(
+        `delete from run_events
+         where run_id = $1 and run_created_at = (select created_at from workflow_runs where id = $1)
+           and sequence_number <= $2`,
+        [runId, projection.lastSequenceNumber],
+      );
       await client.query("commit");
       return {
         runId,

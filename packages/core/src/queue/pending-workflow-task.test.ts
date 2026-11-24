@@ -20,7 +20,7 @@ describe("one pending workflow task per run", () => {
   });
 
   beforeEach(async () => {
-    await database.pool.query("truncate namespaces cascade");
+    await database.pool.query("truncate namespaces, run_events cascade");
     const namespace = await database.pool.query<{ id: string }>(
       "insert into namespaces (name) values ('default') returning id",
     );

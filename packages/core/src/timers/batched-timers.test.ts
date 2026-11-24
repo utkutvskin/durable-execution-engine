@@ -97,7 +97,8 @@ describe("batched timers", () => {
   it("gives two timers of one run consecutive sequence numbers and one workflow task", async () => {
     const [runId = ""] = await seedRuns(1);
     await database.pool.query(
-      "insert into run_events (run_id, sequence_number, event_type, payload) values ($1, 1, 'workflow_started', '{}'::jsonb)",
+      `insert into run_events (run_id, sequence_number, event_type, payload, run_created_at)
+       values ($1, 1, 'workflow_started', '{}'::jsonb, (select created_at from workflow_runs where id = $1))`,
       [runId],
     );
     await seedTimers([runId], "first", START);

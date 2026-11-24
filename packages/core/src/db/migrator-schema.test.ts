@@ -28,7 +28,9 @@ describe("migrations into a named schema", () => {
 
   async function tablesIn(schema: string): Promise<string[]> {
     const result = await app.pool.query<{ table_name: string }>(
-      "select table_name from information_schema.tables where table_schema = $1 order by table_name",
+      `select table_name from information_schema.tables
+       where table_schema = $1 and table_name !~ '^run_events_p[0-9]{8}$'
+       order by table_name`,
       [schema],
     );
     return result.rows.map((row) => row.table_name);
@@ -78,10 +80,10 @@ describe("migrations into a named schema", () => {
   it("reverts inside the named schema", async () => {
     await migrateUp(app.pool, defaultMigrationsDir, { schema: engineSchema });
     const reverted = await migrateDown(app.pool, defaultMigrationsDir, 1, { schema: engineSchema });
-    expect(reverted).toEqual(["0036_dequeue_lane_estimate"]);
+    expect(reverted).toEqual(["0037_partitioned_run_events"]);
     expect(
       await pendingMigrations(app.pool, defaultMigrationsDir, { schema: engineSchema }),
-    ).toEqual(["0036_dequeue_lane_estimate"]);
+    ).toEqual(["0037_partitioned_run_events"]);
     await migrateUp(app.pool, defaultMigrationsDir, { schema: engineSchema });
   });
 

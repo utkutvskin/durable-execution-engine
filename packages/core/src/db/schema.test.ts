@@ -27,13 +27,13 @@ describe("initial schema", () => {
     expect(runId).toBeDefined();
 
     await database.pool.query(
-      "insert into run_events (run_id, sequence_number, event_type) values ($1, 1, 'run_started')",
+      "insert into run_events (run_id, sequence_number, event_type, run_created_at) values ($1, 1, 'run_started', (select created_at from workflow_runs where id = $1))",
       [runId],
     );
 
     await expect(
       database.pool.query(
-        "insert into run_events (run_id, sequence_number, event_type) values ($1, 1, 'run_started')",
+        "insert into run_events (run_id, sequence_number, event_type, run_created_at) values ($1, 1, 'run_started', (select created_at from workflow_runs where id = $1))",
         [runId],
       ),
     ).rejects.toThrow(/duplicate key value violates unique constraint/);
@@ -79,6 +79,7 @@ describe("initial schema", () => {
     const result = await database.pool.query<{ table_name: string }>(
       `select table_name from information_schema.tables
        where table_schema = $1 and table_name != 'schema_migrations'
+        and table_name !~ '^run_events_p[0-9]{8}$'
        order by table_name`,
       [database.schema],
     );
@@ -97,7 +98,10 @@ describe("initial schema", () => {
       "pauses",
       "pending_starts",
       "rate_limit_admissions",
+      "run_event_partitions",
       "run_events",
+      "run_events_default",
+      "run_events_legacy",
       "run_snapshots",
       "run_stickiness",
       "schedule_triggers",

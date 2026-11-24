@@ -74,12 +74,13 @@ describe("flow control in the engine", () => {
          insert into workflow_runs (namespace_id, workflow_type, input, queue_name, created_at)
          select $1, 'filler', 'null'::jsonb, 'default', now() - $3 * interval '1 second'
          from generate_series(1, $2::int)
-         returning id
+         returning id, created_at
        ),
        events as (
-         insert into run_events (run_id, sequence_number, event_type, payload, event_version)
+         insert into run_events
+           (run_id, sequence_number, event_type, payload, event_version, run_created_at)
          select id, 1, 'run_started',
-                '{"type":"run_started","workflowType":"filler","input":null}'::jsonb, 1
+                '{"type":"run_started","workflowType":"filler","input":null}'::jsonb, 1, created_at
          from runs
        )
        insert into tasks (namespace_id, run_id, queue_name, task_type, payload, visible_at)

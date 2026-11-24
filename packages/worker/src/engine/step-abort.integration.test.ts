@@ -37,10 +37,12 @@ describe("a hanging step that loses its lease", () => {
     );
     runId = run.rows[0]?.id ?? "";
     await pool.query(
-      `insert into run_events (run_id, sequence_number, event_type, payload)
-       values ($1, 1, 'run_started', '{"type":"run_started","workflowType":"hang","input":{}}'::jsonb),
+      `insert into run_events (run_id, sequence_number, event_type, payload, run_created_at)
+       values ($1, 1, 'run_started', '{"type":"run_started","workflowType":"hang","input":{}}'::jsonb,
+               (select created_at from workflow_runs where id = $1)),
               ($1, 2, 'step_scheduled',
-               '{"type":"step_scheduled","stepId":"step-1","stepType":"hang","input":{}}'::jsonb)`,
+               '{"type":"step_scheduled","stepId":"step-1","stepType":"hang","input":{}}'::jsonb,
+               (select created_at from workflow_runs where id = $1))`,
       [runId],
     );
     await queue.enqueue({

@@ -428,6 +428,33 @@ export type {
   RetentionSweeper,
   RetentionSweeperOptions,
 } from "./retention/retention-sweeper.ts";
+export {
+  createPartitionMaintainer,
+  DEFAULT_PARTITION_AHEAD_DAYS,
+  DEFAULT_PARTITION_SETTLE_MS,
+} from "./retention/partition-maintainer.ts";
+export type {
+  DroppedPartition,
+  KeptPartition,
+  PartitionMaintainer,
+  PartitionMaintainerOptions,
+  PartitionMaintenanceReport,
+  RunEventPartition,
+} from "./retention/partition-maintainer.ts";
+export {
+  archiveHeaderLine,
+  createDirectoryArchive,
+  readRunEventArchive,
+  RUN_EVENT_ARCHIVE_FORMAT,
+  RUN_EVENT_ARCHIVE_FORMAT_VERSION,
+} from "./retention/run-event-archive.ts";
+export type {
+  ArchiveContents,
+  ArchivedEvent,
+  ArchivedPartition,
+  RunEventArchive,
+  UnreadableArchivedRun,
+} from "./retention/run-event-archive.ts";
 export type { RunSnapshot } from "./compaction/snapshot.ts";
 export type { HistoryWarning } from "./workflow/decision-loop.ts";
 export { createLiveSession } from "./workflow/live-session.ts";

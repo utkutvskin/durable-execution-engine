@@ -53,6 +53,28 @@ describe("createPostgresEventStore", () => {
     expect(stored.map((entry) => entry.event)).toEqual(events);
   });
 
+  it("rejects an append to a run that does not exist and writes nothing", async () => {
+    const missing = "00000000-0000-4000-8000-000000000000";
+
+    await expect(
+      store.append(missing, 0, [{ type: "run_started", workflowType: "ghost", input: null }]),
+    ).rejects.toMatchObject({ code: "23503", message: `run "${missing}" does not exist` });
+    const rows = await database.pool.query<{ count: string }>("select count(*) from run_events");
+    expect(rows.rows[0]?.count).toBe("0");
+  });
+
+  it("keeps a run's events in the partition of the run's creation time", async () => {
+    await store.append(runId, 0, [{ type: "run_started", workflowType: "ship-order", input: {} }]);
+
+    const placed = await database.pool.query<{ matches: boolean }>(
+      `select event.run_created_at = run.created_at as matches
+       from run_events event join workflow_runs run on run.id = event.run_id
+       where event.run_id = $1`,
+      [runId],
+    );
+    expect(placed.rows).toEqual([{ matches: true }]);
+  });
+
   it("returns an empty array without writing anything when events is empty", async () => {
     const stored = await store.append(runId, 0, []);
     expect(stored).toEqual([]);

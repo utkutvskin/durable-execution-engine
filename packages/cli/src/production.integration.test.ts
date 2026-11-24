@@ -414,8 +414,9 @@ describe("production commands", () => {
       );
       const runId = closed.rows[0]?.id ?? "";
       await database.pool.query(
-        `insert into run_events (run_id, sequence_number, event_type, payload)
-         values ($1, 1, 'run_started', '{"type":"run_started","workflowType":"ghost","input":null}')`,
+        `insert into run_events (run_id, sequence_number, event_type, payload, run_created_at)
+         values ($1, 1, 'run_started', '{"type":"run_started","workflowType":"ghost","input":null}',
+                 (select created_at from workflow_runs where id = $1))`,
         [runId],
       );
       const worker = startCommand(

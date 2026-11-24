@@ -43,8 +43,9 @@ export async function seedHotTables(
     [namespaceId, scale.runs],
   );
   await pool.query(
-    `insert into run_events (run_id, sequence_number, event_type, payload)
-     select r.id, s.n, (array['run_started', 'step_scheduled', 'step_completed', 'run_completed'])[s.n], '{}'::jsonb
+    `insert into run_events (run_id, sequence_number, event_type, payload, run_created_at)
+     select r.id, s.n, (array['run_started', 'step_scheduled', 'step_completed', 'run_completed'])[s.n], '{}'::jsonb,
+            r.created_at
      from workflow_runs r cross join generate_series(1, 4) as s (n)`,
   );
   await pool.query(
@@ -100,7 +101,9 @@ export function hotQueries(
       name: "sequence check",
       table: "run_events",
       sql: `select greatest(
-              coalesce((select max(sequence_number) from run_events where run_id = $1), 0),
+              coalesce((select max(sequence_number) from run_events
+                        where run_id = $1
+                          and run_created_at = (select created_at from workflow_runs where id = $1)), 0),
               coalesce((select last_sequence_number from run_snapshots where run_id = $1), 0)
             ) as seq`,
       params: [runId],
@@ -109,7 +112,9 @@ export function hotQueries(
       name: "read history",
       table: "run_events",
       sql: `select sequence_number, payload::text as payload, created_at
-            from run_events where run_id = $1 and sequence_number > $2
+            from run_events
+            where run_id = $1 and run_created_at = (select created_at from workflow_runs where id = $1)
+              and sequence_number > $2
             order by sequence_number asc`,
       params: [runId, 0],
     },
@@ -127,7 +132,8 @@ export function hotQueries(
       table: "workflow_runs",
       sql: `select r.id from workflow_runs r
             where r.status = 'RUNNING'
-              and coalesce((select max(e.created_at) from run_events e where e.run_id = r.id), r.created_at)
+              and coalesce((select max(e.created_at) from run_events e
+                        where e.run_id = r.id and e.run_created_at = r.created_at), r.created_at)
                   <= $1::timestamptz - $2 * interval '1 millisecond'
               and not exists (
                 select 1 from tasks t
@@ -200,6 +206,7 @@ interface PlanNode {
   "Node Type": string;
   "Relation Name"?: string;
   "Actual Rows"?: number;
+  "Actual Loops"?: number;
   Plans?: PlanNode[];
 }
 
@@ -234,7 +241,7 @@ export async function explainQuery(pool: Pool, query: HotQuery): Promise<QueryPl
       rowsReturned: report.Plan["Actual Rows"] ?? 0,
       nodeTypes: nodes.map((node) => node["Node Type"]),
       sequentialScans: nodes
-        .filter((node) => node["Node Type"] === "Seq Scan")
+        .filter((node) => node["Node Type"] === "Seq Scan" && node["Actual Loops"] !== 0)
         .map((node) => node["Relation Name"] ?? ""),
     };
   } finally {
