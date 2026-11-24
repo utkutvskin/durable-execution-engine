@@ -3,6 +3,8 @@ import {
   createHistoryCompactor,
   createJanitor,
   createPendingStartFirer,
+  createDirectoryArchive,
+  createPartitionMaintainer,
   createRetentionSweeper,
   createStickyRouter,
   createScheduleManager,
@@ -17,12 +19,18 @@ import {
   type RateLimitRule,
   type RecoveryMetrics,
   type RetentionPolicy,
+  type RunEventArchive,
   type ScheduleManager,
   type TaskType,
   type Tracing,
 } from "@dee/core";
 import { startCompactorLoop, type CompactorLoop } from "../compactor-loop.ts";
 import { startRetentionLoop, type RetentionLoop } from "../retention-loop.ts";
+import {
+  DEFAULT_PARTITION_INTERVAL_MS,
+  startPartitionLoop,
+  type PartitionLoop,
+} from "../partition-loop.ts";
 import { createWorkerIdentity } from "../identity.ts";
 import { startJanitorLoop, type JanitorLoop } from "../janitor-loop.ts";
 import { startLeaderElection, type LeaderElection } from "../leader-election.ts";
@@ -57,6 +65,12 @@ import {
  * in every namespace with a retention (`closedRunRetentionMs`, or the
  * namespace's own; see `createRetentionSweeper`). Without either, no run
  * data is deleted.
+ * `partitions` (on by default, `false` turns it off) maintains the
+ * `run_events` partitions at once and every `intervalMs` (default
+ * `DEFAULT_PARTITION_INTERVAL_MS`): it creates `aheadDays` of partitions
+ * ahead and drops a partition once retention purged every run created in
+ * it, after writing it to `archive` or to `archiveDirectory` (see
+ * `createPartitionMaintainer`).
  * `engine.metrics` renders the ten engine metrics: task latency is filled
  * from the worker and the reclaimed lease count from the janitor of this
  * engine.
@@ -70,7 +84,7 @@ import {
  * shared through Postgres by every engine on the queue. The schedule loop
  * also fires due debounced starts and queued singleton starts.
  *
- * The timer, schedule, janitor, compactor and retention loops run on one engine per
+ * The timer, schedule, janitor, compactor, retention and partition loops run on one engine per
  * queue and schema, elected through a session advisory lock
  * (`leaderElection`, default true; see `startLeaderElection`). Every engine
  * tries to take the lock once per `leaderLeaseMs` (default 1000), so a
@@ -110,6 +124,7 @@ export interface EngineOptions {
   readonly stickyRouting?: boolean;
   readonly compaction?: CompactionOptions;
   readonly retention?: EngineRetentionOptions | false;
+  readonly partitions?: EnginePartitionOptions | false;
   readonly leaderElection?: boolean;
   readonly leaderLeaseMs?: number;
   readonly wakeups?: boolean;
@@ -131,6 +146,20 @@ export interface EngineRetentionOptions {
   readonly finishedTaskGraceMs?: number;
   readonly closedRunRetentionMs?: number;
   readonly batchSize?: number;
+}
+
+/**
+ * The partition maintenance of `EngineOptions.partitions`. Every field is
+ * optional; see `PartitionMaintainerOptions` for `aheadDays`, `settleMs`
+ * and `archive`. `archiveDirectory` is a shorthand for
+ * `archive: createDirectoryArchive(archiveDirectory)`.
+ */
+export interface EnginePartitionOptions {
+  readonly intervalMs?: number;
+  readonly aheadDays?: number;
+  readonly settleMs?: number;
+  readonly archive?: RunEventArchive;
+  readonly archiveDirectory?: string;
 }
 
 /**
@@ -175,6 +204,7 @@ interface BackgroundLoops {
   readonly janitor: JanitorLoop;
   readonly compactor: CompactorLoop | undefined;
   readonly retention: RetentionLoop | undefined;
+  readonly partitions: PartitionLoop | undefined;
 }
 
 /**
@@ -289,6 +319,21 @@ export function startEngine(options: EngineOptions): Engine {
             : { closedRunRetentionMs: retention.closedRunRetentionMs }),
           ...(retention.batchSize === undefined ? {} : { batchSize: retention.batchSize }),
         });
+  const partitions = options.partitions === false ? undefined : (options.partitions ?? {});
+  const archive =
+    partitions?.archive ??
+    (partitions?.archiveDirectory === undefined
+      ? undefined
+      : createDirectoryArchive(partitions.archiveDirectory));
+  const maintainer =
+    partitions === undefined
+      ? undefined
+      : createPartitionMaintainer(options.pool, {
+          ...clockOption,
+          ...(partitions.aheadDays === undefined ? {} : { aheadDays: partitions.aheadDays }),
+          ...(partitions.settleMs === undefined ? {} : { settleMs: partitions.settleMs }),
+          ...(archive === undefined ? {} : { archive }),
+        });
   let running: BackgroundLoops | undefined;
   const startLoops = (): void => {
     running ??= {
@@ -324,6 +369,14 @@ export function startEngine(options: EngineOptions): Engine {
               intervalMs: retention?.intervalMs ?? loopIntervalMs,
               onError,
             }),
+      partitions:
+        maintainer === undefined
+          ? undefined
+          : startPartitionLoop({
+              maintainer,
+              intervalMs: partitions?.intervalMs ?? DEFAULT_PARTITION_INTERVAL_MS,
+              onError,
+            }),
     };
   };
   const stopLoops = async (): Promise<void> => {
@@ -338,6 +391,7 @@ export function startEngine(options: EngineOptions): Engine {
       loops.janitor.stop(),
       loops.compactor?.stop(),
       loops.retention?.stop(),
+      loops.partitions?.stop(),
     ]);
   };
   const connect = createSessionConnector(

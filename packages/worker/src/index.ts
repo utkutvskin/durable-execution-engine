@@ -47,12 +47,15 @@ export type {
   DecisionTotals,
   Engine,
   EngineOptions,
+  EnginePartitionOptions,
   EngineRetentionOptions,
 } from "./engine/runtime.ts";
 export { startCompactorLoop } from "./compactor-loop.ts";
 export type { CompactorLoop, CompactorLoopOptions } from "./compactor-loop.ts";
 export { startRetentionLoop } from "./retention-loop.ts";
 export type { RetentionLoop, RetentionLoopOptions } from "./retention-loop.ts";
+export { DEFAULT_PARTITION_INTERVAL_MS, startPartitionLoop } from "./partition-loop.ts";
+export type { PartitionLoop, PartitionLoopOptions } from "./partition-loop.ts";
 export { WAKEUP_CHANNEL, startWakeupListener } from "./wakeup-listener.ts";
 export type { WakeupListener, WakeupListenerOptions } from "./wakeup-listener.ts";
 export { DEFAULT_LEADER_LEASE_MS, startLeaderElection } from "./leader-election.ts";
