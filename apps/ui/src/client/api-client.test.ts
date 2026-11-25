@@ -151,4 +151,31 @@ describe("createApiClient", () => {
       },
     ]);
   });
+
+  it("lists quarantined tasks and releases one by its encoded id, surfacing a 403", async () => {
+    const seen: { url: string; method: string | undefined }[] = [];
+    const client = createApiClient("k", (input, init) => {
+      seen.push({ url: input as string, method: init?.method });
+      if (seen.length === 1) {
+        return Promise.resolve(jsonResponse(200, { tasks: [{ taskId: "t 1", runId: "r" }] }));
+      }
+      return Promise.resolve(
+        seen.length === 2
+          ? jsonResponse(200, { taskId: "t 1", runId: "r" })
+          : jsonResponse(403, { error: { code: "forbidden", message: "needs operate" } }),
+      );
+    });
+    expect((await client.listQuarantined()).map((task) => task.taskId)).toEqual(["t 1"]);
+    await client.releaseQuarantined("t 1");
+    await expect(client.releaseQuarantined("t 1")).rejects.toMatchObject({
+      status: 403,
+      code: "forbidden",
+      message: "needs operate",
+    });
+    expect(seen).toEqual([
+      { url: "/v1/quarantined-tasks", method: "GET" },
+      { url: "/v1/quarantined-tasks/t%201/release", method: "POST" },
+      { url: "/v1/quarantined-tasks/t%201/release", method: "POST" },
+    ]);
+  });
 });

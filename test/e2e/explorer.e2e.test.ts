@@ -530,6 +530,66 @@ describe.skipIf(BROWSER.mode === "skip")("run explorer in a browser", () => {
     expect(task.rowCount).toBeGreaterThanOrEqual(1);
   }, 30_000);
 
+  async function quarantineTask(runId: string): Promise<string> {
+    const inserted = await database.pool.query<{ id: string }>(
+      `insert into tasks (namespace_id, run_id, queue_name, task_type, state, quarantined_at,
+                          quarantine_reason, reclaim_count)
+       values ($1, $2, $3, 'STEP_TASK', 'QUARANTINED', now(), 'lease lost 10 times', 10)
+       returning id`,
+      [namespaceId, runId, STEP_QUEUE],
+    );
+    return inserted.rows[0]?.id ?? "";
+  }
+
+  it("lists a quarantined task and releases it from the ui", async () => {
+    const runId = await startRun();
+    const taskId = await quarantineTask(runId);
+    await signIn();
+    await page.getByTestId("nav-quarantine").click();
+    const row = page.locator(`[data-task-id="${taskId}"]`);
+    await row.waitFor();
+    expect(await row.textContent()).toContain("lease lost 10 times");
+    expect(await row.textContent()).toContain("STEP_TASK");
+    answerDialogs = false;
+    await row.getByTestId("release-button").click();
+    await expect.poll(() => dialogs.length).toBe(1);
+    expect(dialogs[0]).toContain("release the step_task of run");
+    await page.waitForTimeout(300);
+    const held = await database.pool.query<{ state: string }>(
+      "select state from tasks where id = $1",
+      [taskId],
+    );
+    expect(held.rows[0]?.state).toBe("QUARANTINED");
+    answerDialogs = true;
+    await row.getByTestId("release-button").click();
+    await page.locator("[data-testid=quarantine-message]", { hasText: "released" }).waitFor();
+    await row.waitFor({ state: "detached" });
+    const released = await database.pool.query<{ state: string; reclaim_count: number }>(
+      "select state, reclaim_count from tasks where id = $1",
+      [taskId],
+    );
+    expect(released.rows[0]).toEqual({ state: "PENDING", reclaim_count: 0 });
+  }, 30_000);
+
+  it("shows a read key the quarantine but refuses its release with the scope it needs", async () => {
+    const runId = await startRun();
+    const taskId = await quarantineTask(runId);
+    const reader = await issueTestKey(api.apiKeys, "shop", { scope: "read", label: "viewer" });
+    await signIn(reader.key);
+    await page.getByTestId("nav-quarantine").click();
+    const row = page.locator(`[data-task-id="${taskId}"]`);
+    await row.waitFor();
+    await row.getByTestId("release-button").click();
+    await page.locator("[data-testid=banner]", { hasText: "needs operate" }).waitFor();
+    expect(await row.count()).toBe(1);
+    const held = await database.pool.query<{ state: string }>(
+      "select state from tasks where id = $1",
+      [taskId],
+    );
+    expect(held.rows[0]?.state).toBe("QUARANTINED");
+    await database.pool.query("update tasks set state = 'COMPLETED' where id = $1", [taskId]);
+  }, 30_000);
+
   it("pauses and resumes a run from its page", async () => {
     const runId = await startRun();
     await signIn();

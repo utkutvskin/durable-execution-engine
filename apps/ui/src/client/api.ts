@@ -121,6 +121,19 @@ export interface DeadLetter {
 }
 
 /**
+ * A task that is no longer delivered until an operator releases it.
+ */
+export interface QuarantinedTask {
+  readonly taskId: string;
+  readonly runId: string;
+  readonly queueName: string;
+  readonly taskType: string;
+  readonly reclaimCount: number;
+  readonly quarantinedAt: string;
+  readonly reason: string;
+}
+
+/**
  * What the api reports for an update: `completed` with its result, `failed`
  * with what the handler threw, or `accepted` when the wait ended first.
  */
@@ -169,6 +182,9 @@ export interface ApiClient {
     to: string,
   ): Promise<readonly ScheduleTrigger[]>;
   requeueDeadLetter(id: string): Promise<void>;
+  listQuarantined(): Promise<readonly QuarantinedTask[]>;
+  /** Puts a quarantined task back on its queue with a fresh reclaim budget. */
+  releaseQuarantined(taskId: string): Promise<void>;
   /**
    * Follows a run's history until the run closes or `signal` aborts. Resolves
    * with the last sequence number received, so a caller can resume from it.
@@ -294,6 +310,12 @@ export function createApiClient(apiKey: string, fetchFn: typeof fetch, baseUrl =
     },
     async requeueDeadLetter(id) {
       await request("POST", `/v1/dead-letters/${encodeURIComponent(id)}/requeue`, {});
+    },
+    async listQuarantined() {
+      return (await request<{ tasks: QuarantinedTask[] }>("GET", "/v1/quarantined-tasks")).tasks;
+    },
+    async releaseQuarantined(taskId) {
+      await request("POST", `/v1/quarantined-tasks/${encodeURIComponent(taskId)}/release`, {});
     },
     async streamRun(runId, after, onSlice, signal) {
       const response = await fetchFn(
