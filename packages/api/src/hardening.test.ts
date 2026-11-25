@@ -14,6 +14,7 @@ import {
 import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.ts";
 import { createApiKeyStore, type ApiKeyStore } from "./api-keys.ts";
 import { createApiServer, type ApiOptions } from "./server.ts";
+import { issueTestKey } from "./test-keys.ts";
 
 interface Harness {
   readonly baseUrl: string;
@@ -68,7 +69,8 @@ describe("api hardening", () => {
   }
 
   async function namespaceKey(harness: Harness, label: string): Promise<string> {
-    return (await harness.apiKeys.issue(`${label}-${Math.random().toString(36).slice(2)}`)).key;
+    return (await issueTestKey(harness.apiKeys, `${label}-${Math.random().toString(36).slice(2)}`))
+      .key;
   }
 
   function auth(key: string): Record<string, string> {

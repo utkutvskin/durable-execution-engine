@@ -83,12 +83,12 @@ export async function startServeEnvironment(
   let keySource: KeySource;
   let issuedKey: string | undefined;
   if (options.apiKey !== undefined) {
-    await keys.adopt(options.namespace, options.apiKey, "wf serve");
+    await keys.adopt(options.namespace, options.apiKey, { label: "wf serve" });
     keySource = "adopted";
   } else if (await keys.hasActiveKey(options.namespace)) {
     keySource = "existing";
   } else {
-    issuedKey = (await keys.issue(options.namespace, "wf serve")).key;
+    issuedKey = (await keys.issue(options.namespace, { label: "wf serve" })).key;
     keySource = "issued";
   }
   if (Object.keys(options.limits.quota).length > 0) {

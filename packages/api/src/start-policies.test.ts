@@ -12,6 +12,7 @@ import { validateOpenApiDocument } from "./openapi-validator.ts";
 import { createQuotaGuard } from "./quota-guard.ts";
 import { createRunService } from "./run-service.ts";
 import { createApiServer } from "./server.ts";
+import { issueTestKey } from "./test-keys.ts";
 
 interface Reply {
   readonly status: number;
@@ -87,7 +88,7 @@ describe("shared rate limits and start policies over http", () => {
     database = await createIsolatedDatabase();
     processes = await Promise.all([startProcess(), startProcess(), startProcess()]);
     const issuer = createApiServer(database.pool, { queueName: "default" });
-    const issued = await issuer.apiKeys.issue("policies");
+    const issued = await issueTestKey(issuer.apiKeys, "policies");
     key = issued.key;
     namespaceId = issued.namespaceId;
   });

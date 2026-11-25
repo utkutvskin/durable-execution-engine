@@ -5,6 +5,7 @@ import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/t
 import { validateOpenApiDocument } from "./openapi-validator.ts";
 import { createQuotaGuard } from "./quota-guard.ts";
 import { createApiServer } from "./server.ts";
+import { issueTestKey } from "./test-keys.ts";
 
 interface Reply {
   readonly status: number;
@@ -69,9 +70,9 @@ describe("quotas and rate limiting over http", () => {
         });
         api.server.closeAllConnections();
       });
-    namespaceA = await api.apiKeys.issue("quota-a");
-    namespaceB = await api.apiKeys.issue("quota-b");
-    namespaceC = await api.apiKeys.issue("quota-c");
+    namespaceA = await issueTestKey(api.apiKeys, "quota-a");
+    namespaceB = await issueTestKey(api.apiKeys, "quota-b");
+    namespaceC = await issueTestKey(api.apiKeys, "quota-c");
     expect(validateOpenApiDocument(api.openApiDocument)).toEqual([]);
   });
 

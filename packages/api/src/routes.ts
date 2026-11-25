@@ -30,7 +30,13 @@ import {
   UnknownWorkflowTypeError,
   type RunService,
 } from "./run-service.ts";
-import { InvalidBackfillError, MAX_BACKFILL_TRIGGERS } from "./operations.ts";
+import {
+  InvalidBackfillError,
+  MAX_BACKFILL_TRIGGERS,
+  QuarantinedTaskNotFoundError,
+} from "./operations.ts";
+import { InvalidApiKeyError, NamespaceNotFoundError, type ApiKeyScope } from "./api-keys.ts";
+import { ApiKeyNotFoundError } from "./admin.ts";
 
 /**
  * What a route handler produces: a status code and a JSON body.
@@ -60,14 +66,37 @@ export interface ResponseSpec {
 }
 
 /**
+ * What the audit log records about a successful call. Fields left out
+ * default to the caller's namespace, the first path parameter and the
+ * request body.
+ */
+export interface AuditDescription {
+  readonly namespace?: string | null;
+  readonly target?: string | null;
+  readonly details?: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * Marks a route as an admin or operator action: each successful call is
+ * written to the audit log as `action`, described by `describe`.
+ */
+export interface AuditSpec {
+  readonly action: string;
+  readonly describe?: (request: RawRequest, result: RouteResult) => AuditDescription;
+}
+
+/**
  * An endpoint: its OpenAPI description and its handler in one place, so the
- * generated document cannot drift from what the server does.
+ * generated document cannot drift from what the server does. `scope` is the
+ * weakest key scope that may call it.
  */
 export interface Route {
   readonly method: "get" | "post";
   readonly path: string;
   readonly operationId: string;
   readonly summary: string;
+  readonly scope: ApiKeyScope;
+  readonly audit?: AuditSpec;
   readonly body?: z.ZodType;
   readonly query?: z.ZodObject;
   readonly headerParameters: readonly { name: string; description: string }[];
@@ -519,14 +548,41 @@ const backfillRequestSchema = z
   })
   .meta({ id: "BackfillRequest" });
 
-const errorResponse = (description: string): ResponseSpec => ({
+const quarantinedTaskSchema = z
+  .object({
+    taskId: z.uuid(),
+    runId: z.uuid(),
+    queueName: z.string(),
+    taskType: z.string(),
+    reclaimCount: z.number().int(),
+    quarantinedAt: z.iso.datetime(),
+    reason: z.string(),
+  })
+  .meta({ id: "QuarantinedTask" });
+
+const quarantinedTaskListSchema = z
+  .object({ tasks: z.array(quarantinedTaskSchema) })
+  .meta({ id: "QuarantinedTaskList" });
+
+const releaseResponseSchema = z
+  .object({ taskId: z.uuid(), runId: z.uuid() })
+  .meta({ id: "ReleaseResponse" });
+
+/**
+ * An error response of `description`, for a route's response table.
+ */
+export const errorResponse = (description: string): ResponseSpec => ({
   description,
   schema: errorResponseSchema,
 });
 
-const commonErrors = {
+/**
+ * The errors every authenticated route can answer.
+ */
+export const commonErrors = {
   400: errorResponse("The request is malformed."),
-  401: errorResponse("The api key is missing, unknown or revoked."),
+  401: errorResponse("The api key is missing, unknown, revoked or expired."),
+  403: errorResponse("The api key's scope does not allow this endpoint."),
   429: errorResponse(
     "The namespace exceeded its rate limit or a quota. The Retry-After header gives the wait in seconds.",
   ),
@@ -541,11 +597,17 @@ const deadLetterNotFound = errorResponse(
   "The dead letter does not exist in the caller's namespace or was requeued already.",
 );
 
-interface RouteDefinition<TBody, TQuery> {
+/**
+ * What `defineRoute` takes. `scope` defaults to `read` for a get and to
+ * `operate` for a post.
+ */
+export interface RouteDefinition<TBody, TQuery> {
   readonly method: "get" | "post";
   readonly path: string;
   readonly operationId: string;
   readonly summary: string;
+  readonly scope?: ApiKeyScope;
+  readonly audit?: AuditSpec;
   readonly body?: z.ZodType<TBody>;
   readonly query?: z.ZodObject & z.ZodType<TQuery>;
   readonly headerParameters?: readonly { name: string; description: string }[];
@@ -555,12 +617,18 @@ interface RouteDefinition<TBody, TQuery> {
   ) => Promise<RouteResult>;
 }
 
-function defineRoute<TBody = undefined, TQuery = undefined>(
+/**
+ * Turns a definition into a `Route` that validates its body and query
+ * before calling `handle`.
+ */
+export function defineRoute<TBody = undefined, TQuery = undefined>(
   definition: RouteDefinition<TBody, TQuery>,
 ): Route {
-  const { handle, body, query, headerParameters, ...description } = definition;
+  const { handle, body, query, headerParameters, scope, audit, ...description } = definition;
   return {
     ...description,
+    scope: scope ?? (description.method === "get" ? "read" : "operate"),
+    ...(audit === undefined ? {} : { audit }),
     ...(body === undefined ? {} : { body }),
     ...(query === undefined ? {} : { query }),
     headerParameters: headerParameters ?? [],
@@ -570,6 +638,31 @@ function defineRoute<TBody = undefined, TQuery = undefined>(
       return handle({ ...request, parsedBody, parsedQuery });
     },
   };
+}
+
+function bodyOf(request: RawRequest): Readonly<Record<string, unknown>> {
+  return typeof request.body === "object" && request.body !== null && !Array.isArray(request.body)
+    ? (request.body as Record<string, unknown>)
+    : {};
+}
+
+function pauseTargetOf(body: unknown): string | null {
+  if (typeof body !== "object" || body === null) {
+    return null;
+  }
+  const request = body as { scope?: unknown; runId?: unknown; queueName?: unknown };
+  if (request.scope === "run" && typeof request.runId === "string") {
+    return `run:${request.runId}`;
+  }
+  if (request.scope === "queue") {
+    return `queue:${typeof request.queueName === "string" ? request.queueName : ""}`;
+  }
+  return "namespace";
+}
+
+function scheduleIdOfResult(result: RouteResult): string | null {
+  const body = result.body as { scheduleId?: unknown };
+  return typeof body.scheduleId === "string" ? body.scheduleId : null;
 }
 
 function deadLetterIdOf(request: RawRequest): string {
@@ -738,6 +831,7 @@ export function createRoutes(service: RunService): readonly Route[] {
       method: "post",
       path: "/v1/dead-letters/{deadLetterId}/requeue",
       operationId: "requeueDeadLetter",
+      audit: { action: "dead_letter.requeue" },
       summary: "Put a dead lettered step task back on its queue with a fresh retry budget.",
       responses: {
         200: { description: "The step task was enqueued again.", schema: requeueResponseSchema },
@@ -985,6 +1079,7 @@ export function createRoutes(service: RunService): readonly Route[] {
       method: "post",
       path: "/v1/runs/{runId}/cancel",
       operationId: "cancelRun",
+      audit: { action: "run.cancel" },
       summary: "Request graceful cancellation of an open run.",
       body: reasonRequestSchema,
       responses: {
@@ -1006,6 +1101,7 @@ export function createRoutes(service: RunService): readonly Route[] {
       method: "post",
       path: "/v1/runs/{runId}/terminate",
       operationId: "terminateRun",
+      audit: { action: "run.terminate" },
       summary: "Close an open run immediately, without compensation.",
       body: reasonRequestSchema,
       responses: {
@@ -1030,9 +1126,56 @@ export function createRoutes(service: RunService): readonly Route[] {
 function createOperationRoutes(service: RunService): readonly Route[] {
   return [
     defineRoute({
+      method: "get",
+      path: "/v1/quarantined-tasks",
+      operationId: "listQuarantinedTasks",
+      summary: "List the tasks that are no longer delivered until an operator releases them.",
+      responses: {
+        200: {
+          description: "The quarantined tasks, oldest first.",
+          schema: quarantinedTaskListSchema,
+        },
+        ...commonErrors,
+      },
+      async handle(request) {
+        const tasks = await service.listQuarantinedTasks(request.namespaceId);
+        return { status: 200, body: { tasks } };
+      },
+    }),
+    defineRoute({
+      method: "post",
+      path: "/v1/quarantined-tasks/{taskId}/release",
+      operationId: "releaseQuarantinedTask",
+      summary: "Put a quarantined task back on its queue with a fresh reclaim budget.",
+      audit: {
+        action: "task.release",
+        describe: (_request, result) => ({
+          details: { runId: (result.body as { runId?: unknown }).runId ?? null },
+        }),
+      },
+      responses: {
+        200: { description: "The task was released.", schema: releaseResponseSchema },
+        ...commonErrors,
+        404: errorResponse(
+          "The task is not quarantined in the caller's namespace, or was released already.",
+        ),
+      },
+      async handle(request) {
+        const receipt = await service.releaseQuarantinedTask(
+          request.namespaceId,
+          request.params["taskId"] ?? "",
+        );
+        return { status: 200, body: receipt };
+      },
+    }),
+    defineRoute({
       method: "post",
       path: "/v1/pauses",
       operationId: "pause",
+      audit: {
+        action: "pause.create",
+        describe: (request) => ({ target: pauseTargetOf(request.body), details: bodyOf(request) }),
+      },
       summary:
         "Pause a run, a queue or the namespace. Held tasks stay queued and timers still fire into them.",
       body: pauseRequestSchema,
@@ -1055,6 +1198,10 @@ function createOperationRoutes(service: RunService): readonly Route[] {
       method: "post",
       path: "/v1/pauses/resume",
       operationId: "resume",
+      audit: {
+        action: "pause.resume",
+        describe: (request) => ({ target: pauseTargetOf(request.body), details: bodyOf(request) }),
+      },
       summary: "Resume a paused run, queue or namespace. The next poll leases its held tasks.",
       body: pauseRequestSchema,
       responses: {
@@ -1088,6 +1235,13 @@ function createOperationRoutes(service: RunService): readonly Route[] {
       method: "post",
       path: "/v1/schedules",
       operationId: "createSchedule",
+      audit: {
+        action: "schedule.create",
+        describe: (request, result) => ({
+          target: scheduleIdOfResult(result),
+          details: bodyOf(request),
+        }),
+      },
       summary: "Create a cron schedule that starts a run of a workflow type at every match.",
       body: createScheduleRequestSchema,
       responses: {
@@ -1159,6 +1313,7 @@ function createOperationRoutes(service: RunService): readonly Route[] {
       method: "post",
       path: "/v1/schedules/{scheduleId}/pause",
       operationId: "pauseSchedule",
+      audit: { action: "schedule.pause" },
       summary: "Pause a schedule. It starts nothing, not even a buffered trigger, until resumed.",
       responses: {
         200: { description: "The paused schedule.", schema: scheduleSchema },
@@ -1176,6 +1331,7 @@ function createOperationRoutes(service: RunService): readonly Route[] {
       method: "post",
       path: "/v1/schedules/{scheduleId}/resume",
       operationId: "resumeSchedule",
+      audit: { action: "schedule.resume" },
       summary:
         "Resume a schedule from the next match after now. Missed triggers are not made up; backfill them.",
       responses: {
@@ -1194,6 +1350,7 @@ function createOperationRoutes(service: RunService): readonly Route[] {
       method: "post",
       path: "/v1/schedules/{scheduleId}/backfill",
       operationId: "backfillSchedule",
+      audit: { action: "schedule.backfill" },
       summary: `Handle every trigger in [from, to) once, at most ${String(MAX_BACKFILL_TRIGGERS)}. Repeating a backfill starts nothing new.`,
       body: backfillRequestSchema,
       responses: {
@@ -1293,6 +1450,24 @@ export function toErrorResult(error: unknown): ErrorResult {
   }
   if (error instanceof InvalidBackfillError) {
     return { status: 400, body: { error: { code: "invalid_backfill", message: error.message } } };
+  }
+  if (error instanceof QuarantinedTaskNotFoundError) {
+    return {
+      status: 404,
+      body: { error: { code: "not_found", message: "quarantined task not found" } },
+    };
+  }
+  if (error instanceof NamespaceNotFoundError) {
+    return {
+      status: 404,
+      body: { error: { code: "namespace_not_found", message: error.message } },
+    };
+  }
+  if (error instanceof ApiKeyNotFoundError) {
+    return { status: 404, body: { error: { code: "not_found", message: error.message } } };
+  }
+  if (error instanceof InvalidApiKeyError) {
+    return { status: 400, body: { error: { code: "invalid_key", message: error.message } } };
   }
   if (error instanceof DeadLetterNotFoundError) {
     return {

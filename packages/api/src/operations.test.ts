@@ -5,6 +5,7 @@ import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/t
 import { validateOpenApiDocument } from "./openapi-validator.ts";
 import { createRunService } from "./run-service.ts";
 import { createApiServer } from "./server.ts";
+import { issueTestKey } from "./test-keys.ts";
 
 interface Reply {
   readonly status: number;
@@ -84,8 +85,8 @@ describe("pauses and schedules over http", () => {
         });
         api.server.closeAllConnections();
       });
-    key = (await api.apiKeys.issue("operations")).key;
-    otherKey = (await api.apiKeys.issue("elsewhere")).key;
+    key = (await issueTestKey(api.apiKeys, "operations")).key;
+    otherKey = (await issueTestKey(api.apiKeys, "elsewhere")).key;
     queue = createTaskQueue(database.pool);
   });
 

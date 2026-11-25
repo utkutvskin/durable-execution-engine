@@ -5,6 +5,7 @@ import { defineWorkflow } from "../../core/src/workflow/define-workflow.ts";
 import { createWorkflowRegistry } from "../../core/src/workflow/workflow-registry.ts";
 import { createRunService } from "./run-service.ts";
 import { createApiServer } from "./server.ts";
+import { issueTestKey } from "./test-keys.ts";
 
 interface Reply {
   readonly status: number;
@@ -49,7 +50,7 @@ describe("event and signal endpoints", () => {
         });
         api.server.closeAllConnections();
       });
-    key = (await api.apiKeys.issue("events")).key;
+    key = (await issueTestKey(api.apiKeys, "events")).key;
   });
 
   afterAll(async () => {

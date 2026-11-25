@@ -1441,7 +1441,7 @@ export interface Janitor {
     readonly metrics: RecoveryMetrics;
     reclaimOrphanedLeases(): Promise<ReclaimedTask[]>;
     recoverStalledRuns(options: RecoverStalledRunsOptions): Promise<StalledRun[]>;
-    releaseQuarantined(taskId: string): Promise<boolean>;
+    releaseQuarantined(taskId: string, namespaceId?: string): Promise<boolean>;
     sweep(stalledRuns?: RecoverStalledRunsOptions): Promise<SweepReport>;
 }
 
@@ -4445,10 +4445,10 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/recovery/janitor.d.ts:61:5 - (ae-undocumented) Missing documentation for "reclaimed".
 // dist/recovery/janitor.d.ts:62:5 - (ae-undocumented) Missing documentation for "stalled".
 // dist/recovery/janitor.d.ts:63:5 - (ae-undocumented) Missing documentation for "recovered".
-// dist/recovery/janitor.d.ts:98:5 - (ae-undocumented) Missing documentation for "metrics".
-// dist/recovery/janitor.d.ts:106:5 - (ae-undocumented) Missing documentation for "clock".
-// dist/recovery/janitor.d.ts:107:5 - (ae-undocumented) Missing documentation for "metrics".
-// dist/recovery/janitor.d.ts:108:5 - (ae-undocumented) Missing documentation for "poisonThreshold".
+// dist/recovery/janitor.d.ts:101:5 - (ae-undocumented) Missing documentation for "metrics".
+// dist/recovery/janitor.d.ts:109:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/recovery/janitor.d.ts:110:5 - (ae-undocumented) Missing documentation for "metrics".
+// dist/recovery/janitor.d.ts:111:5 - (ae-undocumented) Missing documentation for "poisonThreshold".
 // dist/recovery/metrics.d.ts:7:5 - (ae-undocumented) Missing documentation for "sweeps".
 // dist/recovery/metrics.d.ts:8:5 - (ae-undocumented) Missing documentation for "leasesReclaimed".
 // dist/recovery/metrics.d.ts:9:5 - (ae-undocumented) Missing documentation for "tasksQuarantined".

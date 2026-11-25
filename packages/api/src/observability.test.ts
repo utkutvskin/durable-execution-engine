@@ -4,6 +4,7 @@ import { ENGINE_METRIC_NAMES, createLogger, createPool, type Logger, type Pool }
 import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.ts";
 import { parsePrometheusText } from "../../core/src/observability/prometheus-text.ts";
 import { createApiServer, type ApiOptions } from "./server.ts";
+import { issueTestKey } from "./test-keys.ts";
 
 interface Running {
   readonly baseUrl: string;
@@ -15,7 +16,7 @@ async function listen(pool: Pool, options: Partial<ApiOptions> = {}): Promise<Ru
   const api = createApiServer(pool, { queueName: "default", ...options });
   await new Promise<void>((resolve) => api.server.listen(0, "127.0.0.1", resolve));
   const { port } = api.server.address() as AddressInfo;
-  const key = await api.apiKeys.issue("ops").then(
+  const key = await issueTestKey(api.apiKeys, "ops").then(
     (issued) => issued.key,
     () => "",
   );

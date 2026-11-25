@@ -13,6 +13,8 @@ import { EventTrigger } from '@dee/core';
 import { HealthChecks } from '@dee/core';
 import { IncomingMessage } from 'node:http';
 import { Logger } from '@dee/core';
+import { NamespaceQuota } from '@dee/core';
+import { NamespaceUsage } from '@dee/core';
 import { OverlapPolicy } from '@dee/core';
 import { PauseScope } from '@dee/core';
 import { Pool } from '@dee/core';
@@ -36,9 +38,34 @@ import { WorkflowRegistry } from '@dee/core';
 import { z } from 'zod';
 
 // @public
+export interface AdminService {
+    createNamespace(name: string): Promise<{
+        readonly namespace: NamespaceView;
+        readonly created: boolean;
+    }>;
+    getQuota(namespace: string): Promise<QuotaView>;
+    issueKey(namespace: string, options: {
+        readonly scope: ApiKeyScope;
+        readonly label?: string;
+        readonly expiresAt?: Date;
+    }): Promise<IssuedKeyView>;
+    listAuditLog(query: AuditQuery): Promise<readonly AuditEntryView[]>;
+    listKeys(namespace: string): Promise<readonly ApiKeyView[]>;
+    // (undocumented)
+    listNamespaces(): Promise<readonly NamespaceView[]>;
+    revokeKey(keyId: string): Promise<ApiKeyView>;
+    setQuota(namespace: string, changes: Partial<NamespaceQuota>): Promise<QuotaView>;
+}
+
+// @public
+export const API_KEY_SCOPES: readonly ApiKeyScope[];
+
+// @public
 export interface ApiHandler {
     // (undocumented)
     readonly apiKeys: ApiKeyStore;
+    // (undocumented)
+    readonly auditLog: AuditLog;
     // (undocumented)
     readonly listener: (request: IncomingMessage, response: ServerResponse) => void;
     // (undocumented)
@@ -50,19 +77,85 @@ export interface ApiHandler {
 }
 
 // @public
+export interface ApiKeyDescription {
+    // (undocumented)
+    readonly createdAt: Date;
+    // (undocumented)
+    readonly expiresAt: Date | null;
+    // (undocumented)
+    readonly keyId: string;
+    // (undocumented)
+    readonly label: string;
+    // (undocumented)
+    readonly lastUsedAt: Date | null;
+    // (undocumented)
+    readonly namespace: string;
+    // (undocumented)
+    readonly revokedAt: Date | null;
+    // (undocumented)
+    readonly scope: ApiKeyScope;
+}
+
+// @public
+export class ApiKeyNotFoundError extends Error {
+    constructor(keyId: string);
+}
+
+// @public
+export type ApiKeyScope = "read" | "operate" | "admin";
+
+// @public
 export interface ApiKeyStore {
-    adopt(namespace: string, key: string, label?: string): Promise<AuthenticatedNamespace>;
+    adopt(namespace: string, key: string, options?: IssueKeyOptions): Promise<AuthenticatedNamespace>;
     authenticate(key: string): Promise<AuthenticatedNamespace | undefined>;
+    createNamespace(name: string): Promise<{
+        readonly namespaceId: string;
+        readonly created: boolean;
+    }>;
+    describeKey(keyId: string): Promise<ApiKeyDescription | undefined>;
     ensureNamespace(name: string): Promise<string>;
     hasActiveKey(namespace: string): Promise<boolean>;
-    issue(namespace: string, label?: string): Promise<IssuedApiKey>;
+    issue(namespace: string, options?: IssueKeyOptions): Promise<IssuedApiKey>;
+    listKeys(namespace: string): Promise<ApiKeyDescription[]>;
+    listNamespaces(): Promise<NamespaceSummary[]>;
+    namespaceId(name: string): Promise<string>;
     revoke(keyId: string): Promise<boolean>;
+}
+
+// @public
+export interface ApiKeyStoreOptions {
+    // (undocumented)
+    readonly clock?: ClockSource;
+}
+
+// @public
+export interface ApiKeyView {
+    // (undocumented)
+    readonly createdAt: string;
+    // (undocumented)
+    readonly expiresAt: string | null;
+    // (undocumented)
+    readonly keyId: string;
+    // (undocumented)
+    readonly label: string;
+    // (undocumented)
+    readonly lastUsedAt: string | null;
+    // (undocumented)
+    readonly namespace: string;
+    // (undocumented)
+    readonly revokedAt: string | null;
+    // (undocumented)
+    readonly scope: ApiKeyScope;
 }
 
 // @public
 export interface ApiOptions {
     // (undocumented)
+    readonly admin?: AdminService;
+    // (undocumented)
     readonly apiKeys?: ApiKeyStore;
+    // (undocumented)
+    readonly auditLog?: AuditLog;
     // (undocumented)
     readonly authThrottle?: {
         readonly maxFailures?: number;
@@ -109,13 +202,112 @@ export interface ApiOptions {
 }
 
 // @public
+export interface AuditDescription {
+    // (undocumented)
+    readonly details?: Readonly<Record<string, unknown>>;
+    // (undocumented)
+    readonly namespace?: string | null;
+    // (undocumented)
+    readonly target?: string | null;
+}
+
+// @public
+export interface AuditEntry {
+    // (undocumented)
+    readonly action: string;
+    // (undocumented)
+    readonly actorKeyId: string;
+    // (undocumented)
+    readonly actorLabel: string;
+    // (undocumented)
+    readonly actorNamespace: string;
+    // (undocumented)
+    readonly actorScope: ApiKeyScope;
+    // (undocumented)
+    readonly details: Readonly<Record<string, unknown>>;
+    // (undocumented)
+    readonly id: string;
+    // (undocumented)
+    readonly namespace: string | null;
+    // (undocumented)
+    readonly occurredAt: Date;
+    // (undocumented)
+    readonly target: string | null;
+}
+
+// @public
+export interface AuditEntryInput {
+    // (undocumented)
+    readonly action: string;
+    // (undocumented)
+    readonly actor: AuthenticatedNamespace;
+    // (undocumented)
+    readonly details: Readonly<Record<string, unknown>>;
+    // (undocumented)
+    readonly namespace: string | null;
+    // (undocumented)
+    readonly target: string | null;
+}
+
+// @public
+export interface AuditEntryView {
+    // (undocumented)
+    readonly action: string;
+    // (undocumented)
+    readonly actor: {
+        readonly keyId: string;
+        readonly label: string;
+        readonly namespace: string;
+        readonly scope: ApiKeyScope;
+    };
+    // (undocumented)
+    readonly details: Readonly<Record<string, unknown>>;
+    // (undocumented)
+    readonly id: string;
+    // (undocumented)
+    readonly namespace: string | null;
+    // (undocumented)
+    readonly occurredAt: string;
+    // (undocumented)
+    readonly target: string | null;
+}
+
+// @public
+export interface AuditLog {
+    list(query?: AuditQuery): Promise<AuditEntry[]>;
+    record(entry: AuditEntryInput): Promise<string>;
+}
+
+// @public
+export interface AuditQuery {
+    // (undocumented)
+    readonly before?: string | undefined;
+    // (undocumented)
+    readonly limit?: number | undefined;
+    // (undocumented)
+    readonly namespace?: string | undefined;
+}
+
+// @public
+export interface AuditSpec {
+    // (undocumented)
+    readonly action: string;
+    // (undocumented)
+    readonly describe?: (request: RawRequest, result: RouteResult) => AuditDescription;
+}
+
+// @public
 export interface AuthenticatedNamespace {
     // (undocumented)
     readonly keyId: string;
     // (undocumented)
+    readonly label: string;
+    // (undocumented)
     readonly namespace: string;
     // (undocumented)
     readonly namespaceId: string;
+    // (undocumented)
+    readonly scope: ApiKeyScope;
 }
 
 // @public
@@ -132,15 +324,33 @@ export interface BackfillRequest {
 export function buildOpenApiDocument(routes: readonly Route[], options?: OpenApiOptions): JsonObject;
 
 // @public
+export const commonErrors: {
+    readonly 400: ResponseSpec;
+    readonly 401: ResponseSpec;
+    readonly 403: ResponseSpec;
+    readonly 429: ResponseSpec;
+    readonly 503: ResponseSpec;
+};
+
+// @public
+export function createAdminRoutes(admin: AdminService): readonly Route[];
+
+// @public
+export function createAdminService(pool: Pool, apiKeys: ApiKeyStore, auditLog?: AuditLog): AdminService;
+
+// @public
 export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler;
 
 // @public
-export function createApiKeyStore(pool: Pool): ApiKeyStore;
+export function createApiKeyStore(pool: Pool, options?: ApiKeyStoreOptions): ApiKeyStore;
 
 // @public
 export function createApiServer(pool: Pool, options: ApiOptions): {
     server: Server;
 } & ApiHandler;
+
+// @public
+export function createAuditLog(pool: Pool): AuditLog;
 
 // @public
 export function createOperations(pool: Pool, options: OperationsOptions): Operations;
@@ -217,6 +427,12 @@ export const DEFAULT_PAGE_LIMIT = 500;
 export const DEFAULT_READ_YOUR_WRITES_MS = 10000;
 
 // @public
+export function defineRoute<TBody = undefined, TQuery = undefined>(definition: RouteDefinition<TBody, TQuery>): Route;
+
+// @public
+export const errorResponse: (description: string) => ResponseSpec;
+
+// @public
 export interface ErrorResult extends RouteResult {
     // (undocumented)
     readonly body: {
@@ -285,11 +501,42 @@ export class InvalidCursorError extends Error {
 // @public
 export interface IssuedApiKey extends AuthenticatedNamespace {
     // (undocumented)
+    readonly expiresAt: Date | null;
+    // (undocumented)
     readonly key: string;
 }
 
 // @public
+export interface IssuedKeyView {
+    // (undocumented)
+    readonly expiresAt: string | null;
+    // (undocumented)
+    readonly key: string;
+    // (undocumented)
+    readonly keyId: string;
+    // (undocumented)
+    readonly label: string;
+    // (undocumented)
+    readonly namespace: string;
+    // (undocumented)
+    readonly scope: ApiKeyScope;
+}
+
+// @public
+export interface IssueKeyOptions {
+    // (undocumented)
+    readonly expiresAt?: Date;
+    // (undocumented)
+    readonly label?: string;
+    // (undocumented)
+    readonly scope?: ApiKeyScope;
+}
+
+// @public
 export type JsonObject = Record<string, unknown>;
+
+// @public
+export const LAST_USED_RESOLUTION_MS = 60000;
 
 // @public
 export interface ListRunsInput {
@@ -309,6 +556,9 @@ export interface ListRunsInput {
 }
 
 // @public
+export const MAX_AUDIT_PAGE = 500;
+
+// @public
 export const MAX_BACKFILL_TRIGGERS = 1000;
 
 // @public
@@ -320,6 +570,37 @@ export interface NamespaceDescription {
     readonly id: string;
     // (undocumented)
     readonly name: string;
+}
+
+// @public
+export class NamespaceNotFoundError extends Error {
+    constructor(namespace: string);
+    // (undocumented)
+    readonly namespace: string;
+}
+
+// @public
+export interface NamespaceSummary {
+    // (undocumented)
+    readonly activeKeys: number;
+    // (undocumented)
+    readonly createdAt: Date;
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    readonly namespaceId: string;
+}
+
+// @public
+export interface NamespaceView {
+    // (undocumented)
+    readonly activeKeys: number;
+    // (undocumented)
+    readonly createdAt: string;
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    readonly namespaceId: string;
 }
 
 // @public
@@ -336,6 +617,7 @@ export interface Operations {
     createSchedule(namespaceId: string, request: CreateScheduleRequest): Promise<ScheduleDescription>;
     getSchedule(namespaceId: string, scheduleId: string): Promise<ScheduleDescription>;
     listPauses(namespaceId: string): Promise<readonly PauseDescription[]>;
+    listQuarantinedTasks(namespaceId: string): Promise<readonly QuarantinedTaskDescription[]>;
     listSchedules(namespaceId: string): Promise<readonly ScheduleDescription[]>;
     listScheduleTriggers(namespaceId: string, scheduleId: string, limit?: number): Promise<readonly TriggerDescription[]>;
     pause(namespaceId: string, request: PauseRequest): Promise<{
@@ -344,6 +626,10 @@ export interface Operations {
     }>;
     pauseSchedule(namespaceId: string, scheduleId: string): Promise<ScheduleDescription>;
     pausesOfRun(namespaceId: string, runId: string): Promise<readonly PauseDescription[]>;
+    releaseQuarantinedTask(namespaceId: string, taskId: string): Promise<{
+        readonly taskId: string;
+        readonly runId: string;
+    }>;
     resume(namespaceId: string, request: PauseRequest): Promise<{
         readonly resumed: boolean;
     }>;
@@ -396,6 +682,29 @@ export interface PauseRequest {
 }
 
 // @public
+export interface QuarantinedTaskDescription {
+    // (undocumented)
+    readonly quarantinedAt: string;
+    // (undocumented)
+    readonly queueName: string;
+    // (undocumented)
+    readonly reason: string;
+    // (undocumented)
+    readonly reclaimCount: number;
+    // (undocumented)
+    readonly runId: string;
+    // (undocumented)
+    readonly taskId: string;
+    // (undocumented)
+    readonly taskType: string;
+}
+
+// @public
+export class QuarantinedTaskNotFoundError extends Error {
+    constructor(taskId: string);
+}
+
+// @public
 export interface QuotaGuard {
     check(namespaceId: string, kind: RequestKind): Promise<Rejection | undefined>;
 }
@@ -412,6 +721,16 @@ export interface QuotaGuardOptions {
     readonly quotaRetryAfterSeconds?: number;
     // (undocumented)
     readonly quotas?: QuotaStore;
+}
+
+// @public
+export interface QuotaView {
+    // (undocumented)
+    readonly namespace: string;
+    // (undocumented)
+    readonly quota: NamespaceQuota;
+    // (undocumented)
+    readonly usage: NamespaceUsage;
 }
 
 // @public
@@ -454,6 +773,8 @@ export interface ResponseSpec {
 // @public
 export interface Route {
     // (undocumented)
+    readonly audit?: AuditSpec;
+    // (undocumented)
     readonly body?: z.ZodType;
     // (undocumented)
     execute(request: RawRequest): Promise<RouteResult>;
@@ -472,6 +793,40 @@ export interface Route {
     readonly query?: z.ZodObject;
     // (undocumented)
     readonly responses: Readonly<Record<number, ResponseSpec>>;
+    // (undocumented)
+    readonly scope: ApiKeyScope;
+    // (undocumented)
+    readonly summary: string;
+}
+
+// @public
+export interface RouteDefinition<TBody, TQuery> {
+    // (undocumented)
+    readonly audit?: AuditSpec;
+    // (undocumented)
+    readonly body?: z.ZodType<TBody>;
+    // (undocumented)
+    readonly handle: (request: RawRequest & {
+        readonly parsedBody: TBody;
+        readonly parsedQuery: TQuery;
+    }) => Promise<RouteResult>;
+    // (undocumented)
+    readonly headerParameters?: readonly {
+        name: string;
+        description: string;
+    }[];
+    // (undocumented)
+    readonly method: "get" | "post";
+    // (undocumented)
+    readonly operationId: string;
+    // (undocumented)
+    readonly path: string;
+    // (undocumented)
+    readonly query?: z.ZodObject & z.ZodType<TQuery>;
+    // (undocumented)
+    readonly responses: Readonly<Record<number, ResponseSpec>>;
+    // (undocumented)
+    readonly scope?: ApiKeyScope;
     // (undocumented)
     readonly summary: string;
 }
@@ -611,6 +966,9 @@ export interface ScheduleDescription {
 }
 
 // @public
+export function scopeAllows(held: ApiKeyScope, needed: ApiKeyScope): boolean;
+
+// @public
 export type SideHandler = (request: IncomingMessage, response: ServerResponse) => boolean;
 
 // @public
@@ -673,54 +1031,128 @@ export function validateOpenApiDocument(document: unknown): string[];
 
 // Warnings were encountered during analysis:
 //
-// dist/api-keys.d.ts:6:5 - (ae-undocumented) Missing documentation for "namespaceId".
-// dist/api-keys.d.ts:7:5 - (ae-undocumented) Missing documentation for "namespace".
-// dist/api-keys.d.ts:8:5 - (ae-undocumented) Missing documentation for "keyId".
-// dist/api-keys.d.ts:15:5 - (ae-undocumented) Missing documentation for "key".
+// dist/admin.d.ts:15:5 - (ae-undocumented) Missing documentation for "namespaceId".
+// dist/admin.d.ts:16:5 - (ae-undocumented) Missing documentation for "name".
+// dist/admin.d.ts:17:5 - (ae-undocumented) Missing documentation for "createdAt".
+// dist/admin.d.ts:18:5 - (ae-undocumented) Missing documentation for "activeKeys".
+// dist/admin.d.ts:24:5 - (ae-undocumented) Missing documentation for "keyId".
+// dist/admin.d.ts:25:5 - (ae-undocumented) Missing documentation for "namespace".
+// dist/admin.d.ts:26:5 - (ae-undocumented) Missing documentation for "label".
+// dist/admin.d.ts:27:5 - (ae-undocumented) Missing documentation for "scope".
+// dist/admin.d.ts:28:5 - (ae-undocumented) Missing documentation for "createdAt".
+// dist/admin.d.ts:29:5 - (ae-undocumented) Missing documentation for "expiresAt".
+// dist/admin.d.ts:30:5 - (ae-undocumented) Missing documentation for "lastUsedAt".
+// dist/admin.d.ts:31:5 - (ae-undocumented) Missing documentation for "revokedAt".
+// dist/admin.d.ts:37:5 - (ae-undocumented) Missing documentation for "key".
+// dist/admin.d.ts:38:5 - (ae-undocumented) Missing documentation for "keyId".
+// dist/admin.d.ts:39:5 - (ae-undocumented) Missing documentation for "namespace".
+// dist/admin.d.ts:40:5 - (ae-undocumented) Missing documentation for "label".
+// dist/admin.d.ts:41:5 - (ae-undocumented) Missing documentation for "scope".
+// dist/admin.d.ts:42:5 - (ae-undocumented) Missing documentation for "expiresAt".
+// dist/admin.d.ts:48:5 - (ae-undocumented) Missing documentation for "namespace".
+// dist/admin.d.ts:49:5 - (ae-undocumented) Missing documentation for "quota".
+// dist/admin.d.ts:50:5 - (ae-undocumented) Missing documentation for "usage".
+// dist/admin.d.ts:56:5 - (ae-undocumented) Missing documentation for "id".
+// dist/admin.d.ts:57:5 - (ae-undocumented) Missing documentation for "occurredAt".
+// dist/admin.d.ts:58:5 - (ae-undocumented) Missing documentation for "actor".
+// dist/admin.d.ts:64:5 - (ae-undocumented) Missing documentation for "namespace".
+// dist/admin.d.ts:65:5 - (ae-undocumented) Missing documentation for "action".
+// dist/admin.d.ts:66:5 - (ae-undocumented) Missing documentation for "target".
+// dist/admin.d.ts:67:5 - (ae-undocumented) Missing documentation for "details".
+// dist/admin.d.ts:74:5 - (ae-undocumented) Missing documentation for "listNamespaces".
+// dist/api-keys.d.ts:23:5 - (ae-undocumented) Missing documentation for "namespaceId".
+// dist/api-keys.d.ts:24:5 - (ae-undocumented) Missing documentation for "namespace".
+// dist/api-keys.d.ts:25:5 - (ae-undocumented) Missing documentation for "keyId".
+// dist/api-keys.d.ts:26:5 - (ae-undocumented) Missing documentation for "scope".
+// dist/api-keys.d.ts:27:5 - (ae-undocumented) Missing documentation for "label".
+// dist/api-keys.d.ts:34:5 - (ae-undocumented) Missing documentation for "key".
+// dist/api-keys.d.ts:35:5 - (ae-undocumented) Missing documentation for "expiresAt".
+// dist/api-keys.d.ts:43:5 - (ae-undocumented) Missing documentation for "label".
+// dist/api-keys.d.ts:44:5 - (ae-undocumented) Missing documentation for "scope".
+// dist/api-keys.d.ts:45:5 - (ae-undocumented) Missing documentation for "expiresAt".
+// dist/api-keys.d.ts:51:5 - (ae-undocumented) Missing documentation for "keyId".
+// dist/api-keys.d.ts:52:5 - (ae-undocumented) Missing documentation for "namespace".
+// dist/api-keys.d.ts:53:5 - (ae-undocumented) Missing documentation for "label".
+// dist/api-keys.d.ts:54:5 - (ae-undocumented) Missing documentation for "scope".
+// dist/api-keys.d.ts:55:5 - (ae-undocumented) Missing documentation for "createdAt".
+// dist/api-keys.d.ts:56:5 - (ae-undocumented) Missing documentation for "expiresAt".
+// dist/api-keys.d.ts:57:5 - (ae-undocumented) Missing documentation for "lastUsedAt".
+// dist/api-keys.d.ts:58:5 - (ae-undocumented) Missing documentation for "revokedAt".
+// dist/api-keys.d.ts:65:5 - (ae-undocumented) Missing documentation for "namespaceId".
+// dist/api-keys.d.ts:66:5 - (ae-undocumented) Missing documentation for "name".
+// dist/api-keys.d.ts:67:5 - (ae-undocumented) Missing documentation for "createdAt".
+// dist/api-keys.d.ts:68:5 - (ae-undocumented) Missing documentation for "activeKeys".
+// dist/api-keys.d.ts:139:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/api-keys.d.ts:157:5 - (ae-undocumented) Missing documentation for "namespace".
+// dist/audit-log.d.ts:9:5 - (ae-undocumented) Missing documentation for "actor".
+// dist/audit-log.d.ts:10:5 - (ae-undocumented) Missing documentation for "action".
+// dist/audit-log.d.ts:11:5 - (ae-undocumented) Missing documentation for "namespace".
+// dist/audit-log.d.ts:12:5 - (ae-undocumented) Missing documentation for "target".
+// dist/audit-log.d.ts:13:5 - (ae-undocumented) Missing documentation for "details".
+// dist/audit-log.d.ts:20:5 - (ae-undocumented) Missing documentation for "id".
+// dist/audit-log.d.ts:21:5 - (ae-undocumented) Missing documentation for "occurredAt".
+// dist/audit-log.d.ts:22:5 - (ae-undocumented) Missing documentation for "actorKeyId".
+// dist/audit-log.d.ts:23:5 - (ae-undocumented) Missing documentation for "actorLabel".
+// dist/audit-log.d.ts:24:5 - (ae-undocumented) Missing documentation for "actorNamespace".
+// dist/audit-log.d.ts:25:5 - (ae-undocumented) Missing documentation for "actorScope".
+// dist/audit-log.d.ts:26:5 - (ae-undocumented) Missing documentation for "namespace".
+// dist/audit-log.d.ts:27:5 - (ae-undocumented) Missing documentation for "action".
+// dist/audit-log.d.ts:28:5 - (ae-undocumented) Missing documentation for "target".
+// dist/audit-log.d.ts:29:5 - (ae-undocumented) Missing documentation for "details".
+// dist/audit-log.d.ts:36:5 - (ae-undocumented) Missing documentation for "namespace".
+// dist/audit-log.d.ts:37:5 - (ae-undocumented) Missing documentation for "before".
+// dist/audit-log.d.ts:38:5 - (ae-undocumented) Missing documentation for "limit".
 // dist/openapi.d.ts:10:5 - (ae-undocumented) Missing documentation for "title".
 // dist/openapi.d.ts:11:5 - (ae-undocumented) Missing documentation for "version".
-// dist/operations.d.ts:20:5 - (ae-undocumented) Missing documentation for "scope".
-// dist/operations.d.ts:21:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/operations.d.ts:22:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/operations.d.ts:23:5 - (ae-undocumented) Missing documentation for "reason".
-// dist/operations.d.ts:24:5 - (ae-undocumented) Missing documentation for "pausedAt".
-// dist/operations.d.ts:31:5 - (ae-undocumented) Missing documentation for "scope".
-// dist/operations.d.ts:32:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/operations.d.ts:33:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/operations.d.ts:34:5 - (ae-undocumented) Missing documentation for "reason".
-// dist/operations.d.ts:40:5 - (ae-undocumented) Missing documentation for "scheduleId".
-// dist/operations.d.ts:41:5 - (ae-undocumented) Missing documentation for "name".
-// dist/operations.d.ts:42:5 - (ae-undocumented) Missing documentation for "cronExpression".
-// dist/operations.d.ts:43:5 - (ae-undocumented) Missing documentation for "timeZone".
-// dist/operations.d.ts:44:5 - (ae-undocumented) Missing documentation for "workflowType".
-// dist/operations.d.ts:45:5 - (ae-undocumented) Missing documentation for "input".
-// dist/operations.d.ts:46:5 - (ae-undocumented) Missing documentation for "overlapPolicy".
-// dist/operations.d.ts:47:5 - (ae-undocumented) Missing documentation for "catchUpPolicy".
-// dist/operations.d.ts:48:5 - (ae-undocumented) Missing documentation for "catchUpWindowMs".
-// dist/operations.d.ts:49:5 - (ae-undocumented) Missing documentation for "state".
-// dist/operations.d.ts:50:5 - (ae-undocumented) Missing documentation for "error".
-// dist/operations.d.ts:51:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/operations.d.ts:52:5 - (ae-undocumented) Missing documentation for "nextFireAt".
-// dist/operations.d.ts:53:5 - (ae-undocumented) Missing documentation for "lastFiredAt".
-// dist/operations.d.ts:54:5 - (ae-undocumented) Missing documentation for "bufferedFor".
-// dist/operations.d.ts:60:5 - (ae-undocumented) Missing documentation for "name".
-// dist/operations.d.ts:61:5 - (ae-undocumented) Missing documentation for "cronExpression".
-// dist/operations.d.ts:62:5 - (ae-undocumented) Missing documentation for "workflowType".
-// dist/operations.d.ts:63:5 - (ae-undocumented) Missing documentation for "input".
-// dist/operations.d.ts:64:5 - (ae-undocumented) Missing documentation for "timeZone".
-// dist/operations.d.ts:65:5 - (ae-undocumented) Missing documentation for "overlapPolicy".
-// dist/operations.d.ts:66:5 - (ae-undocumented) Missing documentation for "catchUpPolicy".
-// dist/operations.d.ts:67:5 - (ae-undocumented) Missing documentation for "catchUpWindowMs".
-// dist/operations.d.ts:68:5 - (ae-undocumented) Missing documentation for "startAt".
-// dist/operations.d.ts:75:5 - (ae-undocumented) Missing documentation for "scheduledFor".
-// dist/operations.d.ts:76:5 - (ae-undocumented) Missing documentation for "outcome".
-// dist/operations.d.ts:77:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/operations.d.ts:78:5 - (ae-undocumented) Missing documentation for "cancelledRunIds".
-// dist/operations.d.ts:85:5 - (ae-undocumented) Missing documentation for "from".
-// dist/operations.d.ts:86:5 - (ae-undocumented) Missing documentation for "to".
-// dist/operations.d.ts:87:5 - (ae-undocumented) Missing documentation for "overlapPolicy".
-// dist/operations.d.ts:132:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/operations.d.ts:133:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/operations.d.ts:27:5 - (ae-undocumented) Missing documentation for "taskId".
+// dist/operations.d.ts:28:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/operations.d.ts:29:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/operations.d.ts:30:5 - (ae-undocumented) Missing documentation for "taskType".
+// dist/operations.d.ts:31:5 - (ae-undocumented) Missing documentation for "reclaimCount".
+// dist/operations.d.ts:32:5 - (ae-undocumented) Missing documentation for "quarantinedAt".
+// dist/operations.d.ts:33:5 - (ae-undocumented) Missing documentation for "reason".
+// dist/operations.d.ts:40:5 - (ae-undocumented) Missing documentation for "scope".
+// dist/operations.d.ts:41:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/operations.d.ts:42:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/operations.d.ts:43:5 - (ae-undocumented) Missing documentation for "reason".
+// dist/operations.d.ts:44:5 - (ae-undocumented) Missing documentation for "pausedAt".
+// dist/operations.d.ts:51:5 - (ae-undocumented) Missing documentation for "scope".
+// dist/operations.d.ts:52:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/operations.d.ts:53:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/operations.d.ts:54:5 - (ae-undocumented) Missing documentation for "reason".
+// dist/operations.d.ts:60:5 - (ae-undocumented) Missing documentation for "scheduleId".
+// dist/operations.d.ts:61:5 - (ae-undocumented) Missing documentation for "name".
+// dist/operations.d.ts:62:5 - (ae-undocumented) Missing documentation for "cronExpression".
+// dist/operations.d.ts:63:5 - (ae-undocumented) Missing documentation for "timeZone".
+// dist/operations.d.ts:64:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/operations.d.ts:65:5 - (ae-undocumented) Missing documentation for "input".
+// dist/operations.d.ts:66:5 - (ae-undocumented) Missing documentation for "overlapPolicy".
+// dist/operations.d.ts:67:5 - (ae-undocumented) Missing documentation for "catchUpPolicy".
+// dist/operations.d.ts:68:5 - (ae-undocumented) Missing documentation for "catchUpWindowMs".
+// dist/operations.d.ts:69:5 - (ae-undocumented) Missing documentation for "state".
+// dist/operations.d.ts:70:5 - (ae-undocumented) Missing documentation for "error".
+// dist/operations.d.ts:71:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/operations.d.ts:72:5 - (ae-undocumented) Missing documentation for "nextFireAt".
+// dist/operations.d.ts:73:5 - (ae-undocumented) Missing documentation for "lastFiredAt".
+// dist/operations.d.ts:74:5 - (ae-undocumented) Missing documentation for "bufferedFor".
+// dist/operations.d.ts:80:5 - (ae-undocumented) Missing documentation for "name".
+// dist/operations.d.ts:81:5 - (ae-undocumented) Missing documentation for "cronExpression".
+// dist/operations.d.ts:82:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/operations.d.ts:83:5 - (ae-undocumented) Missing documentation for "input".
+// dist/operations.d.ts:84:5 - (ae-undocumented) Missing documentation for "timeZone".
+// dist/operations.d.ts:85:5 - (ae-undocumented) Missing documentation for "overlapPolicy".
+// dist/operations.d.ts:86:5 - (ae-undocumented) Missing documentation for "catchUpPolicy".
+// dist/operations.d.ts:87:5 - (ae-undocumented) Missing documentation for "catchUpWindowMs".
+// dist/operations.d.ts:88:5 - (ae-undocumented) Missing documentation for "startAt".
+// dist/operations.d.ts:95:5 - (ae-undocumented) Missing documentation for "scheduledFor".
+// dist/operations.d.ts:96:5 - (ae-undocumented) Missing documentation for "outcome".
+// dist/operations.d.ts:97:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/operations.d.ts:98:5 - (ae-undocumented) Missing documentation for "cancelledRunIds".
+// dist/operations.d.ts:105:5 - (ae-undocumented) Missing documentation for "from".
+// dist/operations.d.ts:106:5 - (ae-undocumented) Missing documentation for "to".
+// dist/operations.d.ts:107:5 - (ae-undocumented) Missing documentation for "overlapPolicy".
+// dist/operations.d.ts:162:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/operations.d.ts:163:5 - (ae-undocumented) Missing documentation for "clock".
 // dist/quota-guard.d.ts:13:5 - (ae-undocumented) Missing documentation for "status".
 // dist/quota-guard.d.ts:14:5 - (ae-undocumented) Missing documentation for "code".
 // dist/quota-guard.d.ts:15:5 - (ae-undocumented) Missing documentation for "message".
@@ -730,25 +1162,43 @@ export function validateOpenApiDocument(document: unknown): string[];
 // dist/quota-guard.d.ts:35:5 - (ae-undocumented) Missing documentation for "queueName".
 // dist/quota-guard.d.ts:36:5 - (ae-undocumented) Missing documentation for "maxQueueDepth".
 // dist/quota-guard.d.ts:37:5 - (ae-undocumented) Missing documentation for "quotaRetryAfterSeconds".
-// dist/routes.d.ts:7:5 - (ae-undocumented) Missing documentation for "status".
-// dist/routes.d.ts:8:5 - (ae-undocumented) Missing documentation for "body".
-// dist/routes.d.ts:14:5 - (ae-undocumented) Missing documentation for "namespaceId".
-// dist/routes.d.ts:15:5 - (ae-undocumented) Missing documentation for "params".
-// dist/routes.d.ts:16:5 - (ae-undocumented) Missing documentation for "query".
-// dist/routes.d.ts:17:5 - (ae-undocumented) Missing documentation for "headers".
-// dist/routes.d.ts:18:5 - (ae-undocumented) Missing documentation for "body".
-// dist/routes.d.ts:24:5 - (ae-undocumented) Missing documentation for "description".
-// dist/routes.d.ts:25:5 - (ae-undocumented) Missing documentation for "schema".
-// dist/routes.d.ts:32:5 - (ae-undocumented) Missing documentation for "method".
-// dist/routes.d.ts:33:5 - (ae-undocumented) Missing documentation for "path".
-// dist/routes.d.ts:34:5 - (ae-undocumented) Missing documentation for "operationId".
-// dist/routes.d.ts:35:5 - (ae-undocumented) Missing documentation for "summary".
-// dist/routes.d.ts:36:5 - (ae-undocumented) Missing documentation for "body".
-// dist/routes.d.ts:37:5 - (ae-undocumented) Missing documentation for "query".
-// dist/routes.d.ts:38:5 - (ae-undocumented) Missing documentation for "headerParameters".
-// dist/routes.d.ts:42:5 - (ae-undocumented) Missing documentation for "responses".
-// dist/routes.d.ts:43:5 - (ae-undocumented) Missing documentation for "execute".
-// dist/routes.d.ts:65:5 - (ae-undocumented) Missing documentation for "body".
+// dist/routes.d.ts:8:5 - (ae-undocumented) Missing documentation for "status".
+// dist/routes.d.ts:9:5 - (ae-undocumented) Missing documentation for "body".
+// dist/routes.d.ts:15:5 - (ae-undocumented) Missing documentation for "namespaceId".
+// dist/routes.d.ts:16:5 - (ae-undocumented) Missing documentation for "params".
+// dist/routes.d.ts:17:5 - (ae-undocumented) Missing documentation for "query".
+// dist/routes.d.ts:18:5 - (ae-undocumented) Missing documentation for "headers".
+// dist/routes.d.ts:19:5 - (ae-undocumented) Missing documentation for "body".
+// dist/routes.d.ts:25:5 - (ae-undocumented) Missing documentation for "description".
+// dist/routes.d.ts:26:5 - (ae-undocumented) Missing documentation for "schema".
+// dist/routes.d.ts:34:5 - (ae-undocumented) Missing documentation for "namespace".
+// dist/routes.d.ts:35:5 - (ae-undocumented) Missing documentation for "target".
+// dist/routes.d.ts:36:5 - (ae-undocumented) Missing documentation for "details".
+// dist/routes.d.ts:43:5 - (ae-undocumented) Missing documentation for "action".
+// dist/routes.d.ts:44:5 - (ae-undocumented) Missing documentation for "describe".
+// dist/routes.d.ts:52:5 - (ae-undocumented) Missing documentation for "method".
+// dist/routes.d.ts:53:5 - (ae-undocumented) Missing documentation for "path".
+// dist/routes.d.ts:54:5 - (ae-undocumented) Missing documentation for "operationId".
+// dist/routes.d.ts:55:5 - (ae-undocumented) Missing documentation for "summary".
+// dist/routes.d.ts:56:5 - (ae-undocumented) Missing documentation for "scope".
+// dist/routes.d.ts:57:5 - (ae-undocumented) Missing documentation for "audit".
+// dist/routes.d.ts:58:5 - (ae-undocumented) Missing documentation for "body".
+// dist/routes.d.ts:59:5 - (ae-undocumented) Missing documentation for "query".
+// dist/routes.d.ts:60:5 - (ae-undocumented) Missing documentation for "headerParameters".
+// dist/routes.d.ts:64:5 - (ae-undocumented) Missing documentation for "responses".
+// dist/routes.d.ts:65:5 - (ae-undocumented) Missing documentation for "execute".
+// dist/routes.d.ts:96:5 - (ae-undocumented) Missing documentation for "method".
+// dist/routes.d.ts:97:5 - (ae-undocumented) Missing documentation for "path".
+// dist/routes.d.ts:98:5 - (ae-undocumented) Missing documentation for "operationId".
+// dist/routes.d.ts:99:5 - (ae-undocumented) Missing documentation for "summary".
+// dist/routes.d.ts:100:5 - (ae-undocumented) Missing documentation for "scope".
+// dist/routes.d.ts:101:5 - (ae-undocumented) Missing documentation for "audit".
+// dist/routes.d.ts:102:5 - (ae-undocumented) Missing documentation for "body".
+// dist/routes.d.ts:103:5 - (ae-undocumented) Missing documentation for "query".
+// dist/routes.d.ts:104:5 - (ae-undocumented) Missing documentation for "headerParameters".
+// dist/routes.d.ts:108:5 - (ae-undocumented) Missing documentation for "responses".
+// dist/routes.d.ts:109:5 - (ae-undocumented) Missing documentation for "handle".
+// dist/routes.d.ts:129:5 - (ae-undocumented) Missing documentation for "body".
 // dist/run-service.d.ts:20:5 - (ae-undocumented) Missing documentation for "idempotencyKey".
 // dist/run-service.d.ts:21:5 - (ae-undocumented) Missing documentation for "runId".
 // dist/run-service.d.ts:42:5 - (ae-undocumented) Missing documentation for "workflowType".
@@ -810,32 +1260,35 @@ export function validateOpenApiDocument(document: unknown): string[];
 // dist/run-service.d.ts:340:5 - (ae-undocumented) Missing documentation for "tracing".
 // dist/run-service.d.ts:341:5 - (ae-undocumented) Missing documentation for "workflows".
 // dist/run-service.d.ts:342:5 - (ae-undocumented) Missing documentation for "updateWait".
-// dist/server.d.ts:53:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/server.d.ts:54:5 - (ae-undocumented) Missing documentation for "maxBodyBytes".
-// dist/server.d.ts:55:5 - (ae-undocumented) Missing documentation for "apiKeys".
-// dist/server.d.ts:56:5 - (ae-undocumented) Missing documentation for "service".
-// dist/server.d.ts:57:5 - (ae-undocumented) Missing documentation for "quotaGuard".
-// dist/server.d.ts:58:5 - (ae-undocumented) Missing documentation for "maxQueueDepth".
-// dist/server.d.ts:59:5 - (ae-undocumented) Missing documentation for "tracing".
-// dist/server.d.ts:60:5 - (ae-undocumented) Missing documentation for "health".
-// dist/server.d.ts:61:5 - (ae-undocumented) Missing documentation for "metrics".
-// dist/server.d.ts:62:5 - (ae-undocumented) Missing documentation for "logger".
-// dist/server.d.ts:63:5 - (ae-undocumented) Missing documentation for "streamPollMs".
-// dist/server.d.ts:64:5 - (ae-undocumented) Missing documentation for "sideHandler".
-// dist/server.d.ts:65:5 - (ae-undocumented) Missing documentation for "workflows".
-// dist/server.d.ts:66:5 - (ae-undocumented) Missing documentation for "maxStreamsPerNamespace".
-// dist/server.d.ts:67:5 - (ae-undocumented) Missing documentation for "maxStreamLifetimeMs".
-// dist/server.d.ts:68:5 - (ae-undocumented) Missing documentation for "authThrottle".
-// dist/server.d.ts:72:5 - (ae-undocumented) Missing documentation for "metricsToken".
-// dist/server.d.ts:73:5 - (ae-undocumented) Missing documentation for "metricsCacheMs".
-// dist/server.d.ts:74:5 - (ae-undocumented) Missing documentation for "nowMs".
-// dist/server.d.ts:75:5 - (ae-undocumented) Missing documentation for "readPool".
-// dist/server.d.ts:76:5 - (ae-undocumented) Missing documentation for "readYourWritesMs".
-// dist/server.d.ts:82:5 - (ae-undocumented) Missing documentation for "listener".
-// dist/server.d.ts:83:5 - (ae-undocumented) Missing documentation for "apiKeys".
-// dist/server.d.ts:84:5 - (ae-undocumented) Missing documentation for "routes".
-// dist/server.d.ts:85:5 - (ae-undocumented) Missing documentation for "openApiDocument".
-// dist/server.d.ts:86:5 - (ae-undocumented) Missing documentation for "metrics".
+// dist/server.d.ts:63:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/server.d.ts:64:5 - (ae-undocumented) Missing documentation for "maxBodyBytes".
+// dist/server.d.ts:65:5 - (ae-undocumented) Missing documentation for "apiKeys".
+// dist/server.d.ts:66:5 - (ae-undocumented) Missing documentation for "service".
+// dist/server.d.ts:67:5 - (ae-undocumented) Missing documentation for "quotaGuard".
+// dist/server.d.ts:68:5 - (ae-undocumented) Missing documentation for "maxQueueDepth".
+// dist/server.d.ts:69:5 - (ae-undocumented) Missing documentation for "tracing".
+// dist/server.d.ts:70:5 - (ae-undocumented) Missing documentation for "health".
+// dist/server.d.ts:71:5 - (ae-undocumented) Missing documentation for "metrics".
+// dist/server.d.ts:72:5 - (ae-undocumented) Missing documentation for "logger".
+// dist/server.d.ts:73:5 - (ae-undocumented) Missing documentation for "streamPollMs".
+// dist/server.d.ts:74:5 - (ae-undocumented) Missing documentation for "sideHandler".
+// dist/server.d.ts:75:5 - (ae-undocumented) Missing documentation for "workflows".
+// dist/server.d.ts:76:5 - (ae-undocumented) Missing documentation for "maxStreamsPerNamespace".
+// dist/server.d.ts:77:5 - (ae-undocumented) Missing documentation for "maxStreamLifetimeMs".
+// dist/server.d.ts:78:5 - (ae-undocumented) Missing documentation for "authThrottle".
+// dist/server.d.ts:82:5 - (ae-undocumented) Missing documentation for "metricsToken".
+// dist/server.d.ts:83:5 - (ae-undocumented) Missing documentation for "metricsCacheMs".
+// dist/server.d.ts:84:5 - (ae-undocumented) Missing documentation for "nowMs".
+// dist/server.d.ts:85:5 - (ae-undocumented) Missing documentation for "readPool".
+// dist/server.d.ts:86:5 - (ae-undocumented) Missing documentation for "readYourWritesMs".
+// dist/server.d.ts:87:5 - (ae-undocumented) Missing documentation for "auditLog".
+// dist/server.d.ts:88:5 - (ae-undocumented) Missing documentation for "admin".
+// dist/server.d.ts:94:5 - (ae-undocumented) Missing documentation for "listener".
+// dist/server.d.ts:95:5 - (ae-undocumented) Missing documentation for "apiKeys".
+// dist/server.d.ts:96:5 - (ae-undocumented) Missing documentation for "auditLog".
+// dist/server.d.ts:97:5 - (ae-undocumented) Missing documentation for "routes".
+// dist/server.d.ts:98:5 - (ae-undocumented) Missing documentation for "openApiDocument".
+// dist/server.d.ts:99:5 - (ae-undocumented) Missing documentation for "metrics".
 
 // (No @packageDocumentation comment for this package)
 

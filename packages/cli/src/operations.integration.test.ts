@@ -5,6 +5,7 @@ import { createTaskQueue } from "@dee/core";
 import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.ts";
 import type { CliIo } from "./io.ts";
 import { main } from "./main.ts";
+import { issueTestKey } from "../../api/src/test-keys.ts";
 
 function captureIo(env: Record<string, string | undefined>) {
   const out: string[] = [];
@@ -41,7 +42,7 @@ describe("wf pause, resume and schedule against a real api", () => {
         });
         api.server.closeAllConnections();
       });
-    const issued = await api.apiKeys.issue("cli-operations");
+    const issued = await issueTestKey(api.apiKeys, "cli-operations");
     env = { WF_API_URL: `http://127.0.0.1:${String(port)}`, WF_API_KEY: issued.key };
   });
 

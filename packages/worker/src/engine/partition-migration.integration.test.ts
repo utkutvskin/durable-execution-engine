@@ -46,7 +46,10 @@ describe("converting run_events to a partitioned table", () => {
   beforeAll(async () => {
     database = await createIsolatedDatabase();
     pool = database.pool;
-    expect(await migrateDown(pool)).toEqual(["0037_partitioned_run_events"]);
+    expect(await migrateDown(pool, undefined, 2)).toEqual([
+      "0038_key_scopes_and_audit_log",
+      "0037_partitioned_run_events",
+    ]);
     const namespace = await pool.query<{ id: string }>(
       "insert into namespaces (name) values ('default') returning id",
     );
@@ -121,7 +124,10 @@ describe("converting run_events to a partitioned table", () => {
        from run_events`,
     );
 
-    expect(await migrateUp(pool)).toEqual(["0037_partitioned_run_events"]);
+    expect(await migrateUp(pool)).toEqual([
+      "0037_partitioned_run_events",
+      "0038_key_scopes_and_audit_log",
+    ]);
 
     expect(await count("select count(*) from run_events")).toBe(eventsBefore);
     expect(await count("select count(*) from run_events_legacy")).toBe(eventsBefore);

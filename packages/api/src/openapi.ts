@@ -101,6 +101,7 @@ export function buildOpenApiDocument(
       operationId: route.operationId,
       summary: route.summary,
       security: [{ bearerAuth: [] }],
+      "x-required-scope": route.scope,
       ...(parameters.length > 0 ? { parameters } : {}),
       ...(route.body === undefined
         ? {}

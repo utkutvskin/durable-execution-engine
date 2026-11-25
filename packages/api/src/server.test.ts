@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.ts";
 import { validateOpenApiDocument } from "./openapi-validator.ts";
 import { createApiServer } from "./server.ts";
+import { issueTestKey } from "./test-keys.ts";
 
 interface Reply {
   readonly status: number;
@@ -62,7 +63,7 @@ describe("http api", () => {
         });
         api.server.closeAllConnections();
       });
-    issueKey = async (namespace) => (await api.apiKeys.issue(namespace)).key;
+    issueKey = async (namespace) => (await issueTestKey(api.apiKeys, namespace)).key;
     keyA = await issueKey("namespace-a");
     keyB = await issueKey("namespace-b");
   });
@@ -121,7 +122,8 @@ describe("http api", () => {
     });
 
     it("answers 401 for a revoked key", async () => {
-      const issued = await createApiServer(database.pool, { queueName: "default" }).apiKeys.issue(
+      const issued = await issueTestKey(
+        createApiServer(database.pool, { queueName: "default" }).apiKeys,
         "revoked-ns",
       );
       expect((await call(issued.key, "GET", "/v1/runs")).status).toBe(200);

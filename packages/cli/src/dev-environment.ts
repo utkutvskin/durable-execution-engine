@@ -81,7 +81,9 @@ export async function startDevEnvironment(options: DevEnvironmentOptions): Promi
     await migrateUp(options.pool);
   }
   const namespace = options.namespace ?? "default";
-  const issued = await createApiKeyStore(options.pool).issue(namespace, "wf dev");
+  const keys = createApiKeyStore(options.pool);
+  await keys.ensureNamespace(namespace);
+  const issued = await keys.issue(namespace, { label: "wf dev" });
   const queueName = options.queueName ?? "default";
   const engine = startEngine({
     pool: options.pool,

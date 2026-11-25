@@ -5,6 +5,7 @@ import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/t
 import { createApiKeyStore } from "./api-keys.ts";
 import { createRunService, DEFAULT_READ_YOUR_WRITES_MS, type RunService } from "./run-service.ts";
 import { createApiServer } from "./server.ts";
+import { issueTestKey } from "./test-keys.ts";
 
 describe("reads from a read replica", () => {
   let primary: IsolatedSchema;
@@ -124,7 +125,7 @@ describe("reads from a read replica", () => {
       [namespaceId, replicated],
     );
     const keys = createApiKeyStore(primary.pool);
-    const issued = await keys.issue("default", "replica test");
+    const issued = await issueTestKey(keys, "default", { label: "replica test" });
     const { server } = createApiServer(primary.pool, {
       queueName: "default",
       apiKeys: keys,

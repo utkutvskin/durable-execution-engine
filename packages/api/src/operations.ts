@@ -1,5 +1,6 @@
 import {
   ScheduleNotFoundError,
+  createJanitor,
   createPauseControl,
   createScheduleManager,
   cronTimesBetween,
@@ -12,6 +13,7 @@ import {
   type PauseScope,
   type PauseTarget,
   type Pool,
+  type QuarantinedTask,
   type ScheduleRecord,
   type ScheduleTrigger,
   type ScheduleTriggerRecord,
@@ -33,6 +35,31 @@ export class InvalidBackfillError extends Error {
     super(message);
     this.name = "InvalidBackfillError";
   }
+}
+
+/**
+ * Raised when a quarantined task does not exist in the caller's namespace,
+ * or was released already.
+ */
+export class QuarantinedTaskNotFoundError extends Error {
+  constructor(taskId: string) {
+    super(`quarantined task ${taskId} not found`);
+    this.name = "QuarantinedTaskNotFoundError";
+  }
+}
+
+/**
+ * A quarantined task as the api shows it: a task that is never delivered
+ * again until an operator releases it.
+ */
+export interface QuarantinedTaskDescription {
+  readonly taskId: string;
+  readonly runId: string;
+  readonly queueName: string;
+  readonly taskType: string;
+  readonly reclaimCount: number;
+  readonly quarantinedAt: string;
+  readonly reason: string;
 }
 
 /**
@@ -168,6 +195,18 @@ export interface Operations {
     scheduleId: string,
     request: BackfillRequest,
   ): Promise<readonly TriggerDescription[]>;
+
+  /** Lists the namespace's quarantined tasks, oldest first. */
+  listQuarantinedTasks(namespaceId: string): Promise<readonly QuarantinedTaskDescription[]>;
+
+  /**
+   * Puts a quarantined task back on its queue with a fresh reclaim budget.
+   * Rejects with `QuarantinedTaskNotFoundError`.
+   */
+  releaseQuarantinedTask(
+    namespaceId: string,
+    taskId: string,
+  ): Promise<{ readonly taskId: string; readonly runId: string }>;
 }
 
 /**
@@ -188,6 +227,18 @@ function describePause(pause: PauseRecord): PauseDescription {
     runId: pause.runId,
     reason: pause.reason,
     pausedAt: pause.pausedAt.toISOString(),
+  };
+}
+
+function describeQuarantined(task: QuarantinedTask): QuarantinedTaskDescription {
+  return {
+    taskId: task.taskId,
+    runId: task.runId,
+    queueName: task.queueName,
+    taskType: task.taskType,
+    reclaimCount: task.reclaimCount,
+    quarantinedAt: task.quarantinedAt.toISOString(),
+    reason: task.reason,
   };
 }
 
@@ -241,6 +292,7 @@ export function createOperations(pool: Pool, options: OperationsOptions): Operat
     queueName: options.queueName,
     clock: options.clock ?? systemClock,
   });
+  const janitor = createJanitor(pool, options.clock === undefined ? {} : { clock: options.clock });
 
   function targetOf(namespaceId: string, request: PauseRequest): PauseTarget {
     if (request.scope === "run") {
@@ -344,6 +396,25 @@ export function createOperations(pool: Pool, options: OperationsOptions): Operat
         ...(request.overlapPolicy === undefined ? {} : { overlapPolicy: request.overlapPolicy }),
       });
       return report.triggers.map(describeTrigger);
+    },
+
+    async listQuarantinedTasks(namespaceId) {
+      return (await janitor.listQuarantined(namespaceId)).map(describeQuarantined);
+    },
+
+    async releaseQuarantinedTask(namespaceId, taskId) {
+      if (!UUID_PATTERN.test(taskId)) {
+        throw new QuarantinedTaskNotFoundError(taskId);
+      }
+      const owned = await pool.query<{ run_id: string }>(
+        "select run_id from tasks where id = $1 and namespace_id = $2 and state = 'QUARANTINED'",
+        [taskId, namespaceId],
+      );
+      const runId = owned.rows[0]?.run_id;
+      if (runId === undefined || !(await janitor.releaseQuarantined(taskId, namespaceId))) {
+        throw new QuarantinedTaskNotFoundError(taskId);
+      }
+      return { taskId, runId };
     },
   };
 }

@@ -451,6 +451,60 @@ describe("janitor", () => {
       expect(delivered.map((task) => task.id)).toEqual([taskId]);
     });
 
+    it("releases only within the given namespace", async () => {
+      const clock = movableClock();
+      const queue = createTaskQueue(database.pool, { clock });
+      const janitor = createJanitor(database.pool, { clock });
+      const other = await database.pool.query<{ id: string }>(
+        "insert into namespaces (name) values ('release-elsewhere') returning id",
+      );
+      const runId = await createRun(START);
+      const taskId = await queue.enqueue({
+        namespaceId,
+        runId,
+        queueName: "q",
+        taskType: "STEP_TASK",
+      });
+      for (let crash = 0; crash < 3; crash += 1) {
+        await crashOnce(queue, janitor, clock);
+      }
+      expect(await janitor.releaseQuarantined(taskId, other.rows[0]?.id)).toBe(false);
+      expect(await janitor.releaseQuarantined("not-a-uuid")).toBe(false);
+      expect(await taskRow(taskId)).toMatchObject({ state: "QUARANTINED" });
+      expect(await janitor.releaseQuarantined(taskId, namespaceId)).toBe(true);
+      expect(await taskRow(taskId)).toMatchObject({ state: "PENDING", reclaim_count: 0 });
+    });
+
+    it("merges a released workflow task into the pending one its run already has", async () => {
+      const clock = movableClock();
+      const queue = createTaskQueue(database.pool, { clock });
+      const janitor = createJanitor(database.pool, { clock });
+      const runId = await createRun(START);
+      const quarantined = await queue.enqueue({
+        namespaceId,
+        runId,
+        queueName: "q",
+        taskType: "WORKFLOW_TASK",
+      });
+      for (let crash = 0; crash < 3; crash += 1) {
+        await crashOnce(queue, janitor, clock);
+      }
+      expect(await taskRow(quarantined)).toMatchObject({ state: "QUARANTINED" });
+      const pending = await queue.enqueue({
+        namespaceId,
+        runId,
+        queueName: "q",
+        taskType: "WORKFLOW_TASK",
+      });
+      expect(pending).not.toBe(quarantined);
+
+      expect(await janitor.releaseQuarantined(quarantined)).toBe(true);
+      expect(await taskRow(quarantined)).toMatchObject({ state: "COMPLETED" });
+      expect(await taskRow(pending)).toMatchObject({ state: "PENDING" });
+      const delivered = await queue.dequeue({ queueName: "q", visibilityTimeoutMs: 10_000 });
+      expect(delivered.map((task) => task.id)).toEqual([pending]);
+    });
+
     it("does not treat a run with a quarantined task as stalled", async () => {
       const clock = movableClock();
       const queue = createTaskQueue(database.pool, { clock });

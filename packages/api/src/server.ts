@@ -4,7 +4,15 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { z } from "zod";
 import type { Pool } from "@dee/core";
-import { createApiKeyStore, type ApiKeyStore, type AuthenticatedNamespace } from "./api-keys.ts";
+import {
+  createApiKeyStore,
+  scopeAllows,
+  type ApiKeyStore,
+  type AuthenticatedNamespace,
+} from "./api-keys.ts";
+import { createAdminService, type AdminService } from "./admin.ts";
+import { createAdminRoutes } from "./admin-routes.ts";
+import { createAuditLog, type AuditLog } from "./audit-log.ts";
 import { buildOpenApiDocument, type JsonObject } from "./openapi.ts";
 import {
   METRICS_CONTENT_TYPE,
@@ -26,6 +34,7 @@ import {
   type ErrorResult,
   type RawRequest,
   type Route,
+  type RouteResult,
 } from "./routes.ts";
 import { createRunService, type RunService } from "./run-service.ts";
 
@@ -68,6 +77,14 @@ export type SideHandler = (request: IncomingMessage, response: ServerResponse) =
  * of a type the registry does not know answers 400. `nowMs` replaces the
  * monotonic clock of the throttle, the metrics cache and the stream lifetime.
  *
+ * Every key has a scope (see `ApiKeyScope`): a route needs `read` for a
+ * get, `operate` for a post and `admin` under `/v1/admin`, and a weaker key
+ * is answered 403 before its body is read. An expired key is answered 401
+ * like an unknown one. Each successful admin or operator action (a route
+ * with `audit`) is appended to `auditLog` with the calling key as its actor;
+ * the entry is written after the action, so a failed write is logged and
+ * the action stands. `admin` replaces the service behind the admin routes.
+ *
  * `readPool` is a pool on a read replica: run lists, run descriptions,
  * histories (the ui's reads among them) and the metrics scrape read from it,
  * with read-your-writes for `readYourWritesMs` after a start or signal (see
@@ -95,6 +112,8 @@ export interface ApiOptions {
   readonly nowMs?: () => number;
   readonly readPool?: Pool;
   readonly readYourWritesMs?: number;
+  readonly auditLog?: AuditLog;
+  readonly admin?: AdminService;
 }
 
 /**
@@ -103,6 +122,7 @@ export interface ApiOptions {
 export interface ApiHandler {
   readonly listener: (request: IncomingMessage, response: ServerResponse) => void;
   readonly apiKeys: ApiKeyStore;
+  readonly auditLog: AuditLog;
   readonly routes: readonly Route[];
   readonly openApiDocument: JsonObject;
   readonly metrics: EngineMetrics;
@@ -287,7 +307,9 @@ export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler {
         ? {}
         : { readYourWritesMs: options.readYourWritesMs }),
     });
-  const routes = createRoutes(service);
+  const auditLog = options.auditLog ?? createAuditLog(pool);
+  const admin = options.admin ?? createAdminService(pool, apiKeys, auditLog);
+  const routes = [...createRoutes(service), ...createAdminRoutes(admin)];
   const openApiDocument = buildOpenApiDocument(routes);
   const quotaGuard =
     options.quotaGuard ??
@@ -612,8 +634,22 @@ export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler {
       return;
     }
 
+    if (!scopeAllows(identity.scope, match.route.scope)) {
+      sendError(
+        response,
+        403,
+        "forbidden",
+        `this api key has the ${identity.scope} scope and ${match.route.operationId} needs ${match.route.scope}`,
+      );
+      return;
+    }
+
     const kind: RequestKind =
-      method === "get" ? "read" : match.route.operationId === "startRun" ? "start" : "write";
+      method === "get" || match.route.scope === "admin"
+        ? "read"
+        : match.route.operationId === "startRun"
+          ? "start"
+          : "write";
     const rejection = await quotaGuard.check(identity.namespaceId, kind);
     if (rejection !== undefined) {
       send(
@@ -638,11 +674,45 @@ export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler {
       body: method === "post" ? await readBody(request, maxBodyBytes) : undefined,
     };
     const result = await match.route.execute(rawRequest);
+    if (match.route.audit !== undefined && result.status < 400) {
+      await audit(match.route, identity, rawRequest, result);
+    }
     send(response, result.status, result.body);
+  }
+
+  async function audit(
+    route: Route,
+    identity: AuthenticatedNamespace,
+    request: RawRequest,
+    result: RouteResult,
+  ): Promise<void> {
+    const spec = route.audit;
+    if (spec === undefined) {
+      return;
+    }
+    try {
+      const described = spec.describe?.(request, result) ?? {};
+      const firstParam = Object.values(request.params)[0];
+      const body = request.body;
+      await auditLog.record({
+        actor: identity,
+        action: spec.action,
+        namespace: described.namespace === undefined ? identity.namespace : described.namespace,
+        target: described.target === undefined ? (firstParam ?? null) : described.target,
+        details:
+          described.details ??
+          (typeof body === "object" && body !== null && !Array.isArray(body)
+            ? (body as Record<string, unknown>)
+            : {}),
+      });
+    } catch (error) {
+      logger.error("audit log write failed", { action: spec.action, error });
+    }
   }
 
   return {
     apiKeys,
+    auditLog,
     routes,
     openApiDocument,
     metrics,

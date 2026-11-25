@@ -89,9 +89,12 @@ export interface Janitor {
 
   /**
    * Puts a quarantined task back into the queue with a fresh reclaim budget.
-   * Resolves `false` when the task is not quarantined.
+   * Resolves `false` when the task is not quarantined, or belongs to another
+   * namespace than `namespaceId` when one is given. A workflow task whose
+   * run already has a pending workflow task is merged into it by the
+   * pending task trigger, so the run gets one decision.
    */
-  releaseQuarantined(taskId: string): Promise<boolean>;
+  releaseQuarantined(taskId: string, namespaceId?: string): Promise<boolean>;
 
   /** Lists the stalled runs without changing anything. */
   findStalledRuns(options: StalledRunOptions): Promise<StalledRun[]>;
@@ -185,6 +188,8 @@ function toStalledRun(row: StalledRow): StalledRun {
   return { runId: row.run_id, namespaceId: row.namespace_id, workflowType: row.workflow_type };
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function assertNonNegativeInteger(name: string, value: number): void {
   if (!Number.isInteger(value) || value < 0) {
     throw new RangeError(`${name} must be a non-negative integer, got ${String(value)}`);
@@ -265,14 +270,17 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
     }));
   }
 
-  async function releaseQuarantined(taskId: string): Promise<boolean> {
+  async function releaseQuarantined(taskId: string, namespaceId?: string): Promise<boolean> {
+    if (!UUID_PATTERN.test(taskId)) {
+      return false;
+    }
     const now = instant();
     const result = await pool.query(
       `update tasks
        set state = 'PENDING', reclaim_count = 0, quarantined_at = null, quarantine_reason = null,
            visible_at = coalesce($2::timestamptz, now()), updated_at = coalesce($2::timestamptz, now())
-       where id = $1 and state = 'QUARANTINED'`,
-      [taskId, now],
+       where id = $1 and state = 'QUARANTINED' and ($3::uuid is null or namespace_id = $3)`,
+      [taskId, now, namespaceId ?? null],
     );
     return result.rowCount === 1;
   }

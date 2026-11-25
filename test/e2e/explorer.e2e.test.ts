@@ -31,6 +31,7 @@ import {
 } from "../../packages/core/src/db/test-harness.ts";
 import { planBrowser } from "./browser.ts";
 import { createUiHandler } from "../../apps/ui/src/server.ts";
+import { issueTestKey } from "../../packages/api/src/test-keys.ts";
 
 const STEP_QUEUE = "default/steps";
 const BROWSER = planBrowser({ env: process.env });
@@ -218,7 +219,7 @@ describe.skipIf(BROWSER.mode === "skip")("run explorer in a browser", () => {
     });
     await new Promise<void>((resolve) => api.server.listen(0, "127.0.0.1", resolve));
     baseUrl = `http://127.0.0.1:${String((api.server.address() as AddressInfo).port)}`;
-    const issued = await api.apiKeys.issue("shop");
+    const issued = await issueTestKey(api.apiKeys, "shop");
     key = issued.key;
     namespaceId = issued.namespaceId;
     browser = await chromium.launch({ executablePath: BROWSER.path, args: ["--no-sandbox"] });
@@ -439,7 +440,7 @@ describe.skipIf(BROWSER.mode === "skip")("run explorer in a browser", () => {
   }, 30_000);
 
   it("filters the run list by status and workflow type and pages with load more", async () => {
-    const other = await api.apiKeys.issue("paging");
+    const other = await issueTestKey(api.apiKeys, "paging");
     for (let index = 0; index < 27; index += 1) {
       await startRun("paged", { index }, other.key);
     }
@@ -469,7 +470,7 @@ describe.skipIf(BROWSER.mode === "skip")("run explorer in a browser", () => {
   }, 60_000);
 
   it("searches runs by their search attributes and names the position of a bad query", async () => {
-    const searcher = await api.apiKeys.issue("searching");
+    const searcher = await issueTestKey(api.apiKeys, "searching");
     const startWith = async (searchAttributes: Record<string, unknown>): Promise<string> => {
       const response = await fetch(`${baseUrl}/v1/runs`, {
         method: "POST",

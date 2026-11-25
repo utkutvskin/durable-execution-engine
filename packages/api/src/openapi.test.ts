@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { buildOpenApiDocument } from "./openapi.ts";
 import { validateOpenApiDocument } from "./openapi-validator.ts";
+import { createAdminRoutes } from "./admin-routes.ts";
+import type { AdminService } from "./admin.ts";
 import { createRoutes } from "./routes.ts";
 import type { RunService } from "./run-service.ts";
 
 const unusedService = {} as RunService;
-const routes = createRoutes(unusedService);
+const routes = [...createRoutes(unusedService), ...createAdminRoutes({} as AdminService)];
 const document = buildOpenApiDocument(routes);
 
 function clone(): Record<string, unknown> {
@@ -27,6 +29,14 @@ describe("generated openapi document", () => {
 
   it("covers the endpoints of the product surface and the ui", () => {
     expect(routes.map((route) => route.operationId).sort()).toEqual([
+      "adminCreateNamespace",
+      "adminGetQuota",
+      "adminIssueKey",
+      "adminListAuditLog",
+      "adminListKeys",
+      "adminListNamespaces",
+      "adminRevokeKey",
+      "adminSetQuota",
       "backfillSchedule",
       "cancelRun",
       "createEventTrigger",
@@ -38,12 +48,14 @@ describe("generated openapi document", () => {
       "listDeadLetters",
       "listEventTriggers",
       "listPauses",
+      "listQuarantinedTasks",
       "listRuns",
       "listScheduleTriggers",
       "listSchedules",
       "pause",
       "pauseSchedule",
       "queryRun",
+      "releaseQuarantinedTask",
       "requeueDeadLetter",
       "resume",
       "resumeSchedule",
@@ -54,6 +66,20 @@ describe("generated openapi document", () => {
       "terminateRun",
       "updateRun",
     ]);
+  });
+
+  it("names the scope every operation needs: read for gets, admin under /v1/admin, operate otherwise", () => {
+    const paths = document["paths"] as Record<string, Record<string, Record<string, unknown>>>;
+    for (const [path, item] of Object.entries(paths)) {
+      for (const [method, operation] of Object.entries(item)) {
+        const expected = path.startsWith("/v1/admin/")
+          ? "admin"
+          : method === "get"
+            ? "read"
+            : "operate";
+        expect(operation["x-required-scope"], `${method} ${path}`).toBe(expected);
+      }
+    }
   });
 
   it("requires the bearer scheme on every operation and documents the idempotency header", () => {

@@ -13,6 +13,7 @@ import { systemClock } from "../../core/src/workflow/sources.ts";
 import { createWorkflowRegistry } from "../../core/src/workflow/workflow-registry.ts";
 import { createRunService } from "./run-service.ts";
 import { createApiServer } from "./server.ts";
+import { issueTestKey } from "./test-keys.ts";
 
 interface Reply {
   readonly status: number;
@@ -127,8 +128,8 @@ describe("update and query endpoints", () => {
         });
         api.server.closeAllConnections();
       });
-    key = (await api.apiKeys.issue("updates")).key;
-    otherKey = (await api.apiKeys.issue("someone-else")).key;
+    key = (await issueTestKey(api.apiKeys, "updates")).key;
+    otherKey = (await issueTestKey(api.apiKeys, "someone-else")).key;
   });
 
   beforeEach(() => {

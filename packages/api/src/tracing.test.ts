@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.ts";
 import { createTracingProvider, parseTraceparent, type TracingProvider } from "@dee/core";
 import { createApiServer } from "./server.ts";
+import { issueTestKey } from "./test-keys.ts";
 
 interface ExportedSpan {
   readonly name: string;
@@ -42,7 +43,7 @@ describe("api tracing", () => {
         });
         api.server.closeAllConnections();
       });
-    key = (await api.apiKeys.issue("traced")).key;
+    key = (await issueTestKey(api.apiKeys, "traced")).key;
   });
 
   afterAll(async () => {

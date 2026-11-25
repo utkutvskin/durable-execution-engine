@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDeadLetterQueue, createPostgresEventStore } from "@dee/core";
 import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.ts";
 import { createApiServer } from "./server.ts";
+import { issueTestKey } from "./test-keys.ts";
 
 interface SseFrame {
   readonly event: string;
@@ -80,10 +81,10 @@ describe("api endpoints behind the web ui", () => {
         });
         api.server.closeAllConnections();
       });
-    const issuedA = await api.apiKeys.issue("namespace-a");
+    const issuedA = await issueTestKey(api.apiKeys, "namespace-a");
     keyA = issuedA.key;
     namespaceA = issuedA.namespaceId;
-    keyB = (await api.apiKeys.issue("namespace-b")).key;
+    keyB = (await issueTestKey(api.apiKeys, "namespace-b")).key;
   });
 
   afterAll(async () => {

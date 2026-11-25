@@ -2,6 +2,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createIsolatedDatabase, type IsolatedSchema } from "../../core/src/db/test-harness.ts";
 import { createApiServer } from "./server.ts";
+import { issueTestKey } from "./test-keys.ts";
 
 interface Reply {
   readonly status: number;
@@ -70,8 +71,8 @@ describe("visibility queries over http", () => {
         });
         api.server.closeAllConnections();
       });
-    key = (await api.apiKeys.issue("visibility")).key;
-    otherKey = (await api.apiKeys.issue("elsewhere")).key;
+    key = (await issueTestKey(api.apiKeys, "visibility")).key;
+    otherKey = (await issueTestKey(api.apiKeys, "elsewhere")).key;
   });
 
   afterAll(async () => {
