@@ -111,12 +111,17 @@ describe("archival of a dropped partition", () => {
       );
       const eventsBefore = await count("select count(*) from run_events");
       expect(await exists(archivedTo)).toBe(false);
+      expect(
+        await count("select count(*) from pg_class where oid = to_regclass('run_events_legacy')"),
+      ).toBe(1);
 
       clock.shift(2 * DAY_MS + 2 * HOUR_MS);
       await waitUntil(() => exists(archivedTo), "the archive of the legacy partition");
       await waitUntil(
         async () =>
-          (await count("select count(*) from pg_class where relname = 'run_events_legacy'")) === 0,
+          (await count(
+            "select count(*) from pg_class where oid = to_regclass('run_events_legacy')",
+          )) === 0,
         "the legacy partition to be dropped",
       );
 
