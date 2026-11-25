@@ -23,6 +23,7 @@ The ui is then on the same origin as the api, so there is no CORS. The files in 
 - **Pause.** The run page shows a hint when a pause holds the run back (its own, its queue's or the namespace's) and a "pause run" button that turns into "resume run" while the run's own pause is in force.
 - **Schedules and pauses.** A page with the namespace's pauses, each with a resume button, buttons that pause the API's queue or the namespace (after a confirmation), and the schedules with their cron, overlap policy, state and next fire time, a pause or resume button and a backfill form whose two times are read as UTC.
 - **Dead letters.** The step tasks that ran out of attempts, with a requeue button. Since day 37 the failure is already final for the workflow, so a requeue only acknowledges the entry.
+- **Quarantine.** The tasks the engine stopped delivering (`GET /v1/quarantined-tasks`), with their run, type, queue, reason and quarantine time, and a release button that asks for confirmation and puts the task back on its queue. A key without the `operate` scope sees the list, and a release shows the API's 403 message in the banner and leaves the task quarantined.
 
 Run data is always inserted as text nodes, never as markup, so an input such as `<img onerror=...>` is displayed and not executed.
 
@@ -35,7 +36,8 @@ Run data is always inserted as text nodes, never as markup, so an input such as 
 
 - Nothing starts the api, the ui and a worker together in a running process yet; the entry points are a later day.
 - There is no list level stream: the run list polls.
-- The quarantined tasks of the janitor (`docs/API.md`, poison pills) have no ui or endpoint; only dead letters do.
+- The UI does not read the key's scope, so buttons a `read` key may not use are shown and answer with the API's 403 message.
+- Namespaces, keys, quotas and the audit log have no page; they are managed with the `wf namespace`, `wf keys`, `wf quota` and `wf audit` commands (`docs/CLI.md`).
 - A run's workflow code can only be decided in a process that does not also need `setTimeout` in the same tick: workflow decisions patch the global `setTimeout`, `Date.now` and `Math.random` while they run. The api handler uses `node:timers` and `node:perf_hooks` for this reason, and a pool shared with it must be created with `idleTimeoutMillis: 0`.
 
 ## Hardening (day 38)

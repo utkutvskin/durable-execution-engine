@@ -34,50 +34,71 @@ Probes need no key: `GET /health`, `GET /ready`. `GET /metrics` needs none unles
 
 ## Authentication and namespaces
 
-Every endpoint under `/v1` needs `Authorization: Bearer <key>`. A key belongs to exactly one namespace and every query filters on it. A run of another namespace answers 404, exactly like a run that does not exist. Missing, unknown and revoked keys answer 401 with `WWW-Authenticate: Bearer realm="dee"`.
+Every endpoint under `/v1` needs `Authorization: Bearer <key>`. A key belongs to exactly one namespace and every query filters on it. A run of another namespace answers 404, exactly like a run that does not exist. Missing, unknown, revoked and expired keys answer 401 with `WWW-Authenticate: Bearer realm="dee"`.
 
-Keys are issued from code until an admin surface exists:
+Every key has a scope:
+
+| Scope     | May call                                                                                                                     |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `read`    | every `GET` of its namespace, the run stream and queries                                                                     |
+| `operate` | also every `POST` of its namespace: starts, signals, updates, events, cancel, terminate, pauses, schedules, requeue, release |
+| `admin`   | also everything under `/v1/admin`, which acts on any namespace                                                               |
+
+A key whose scope is too weak answers 403 `forbidden` with a message that names the scope the operation needs, before its body is read. The OpenAPI document lists the scope of every operation as `x-required-scope`. Keys issued before scopes existed are `admin` keys. A key can carry an expiry (`expiresAt`) and records `lastUsedAt`, written at most once a minute per key.
+
+Namespaces and keys are created through the admin endpoints (`wf namespace create`, `wf keys issue`, see `docs/CLI.md`) or from code. Issuing a key never creates its namespace: a missing one answers 404 `namespace_not_found`.
 
 ```ts
-const { key } = await apiKeys.issue("acme", "ci pipeline");
+await apiKeys.createNamespace("acme");
+const { key } = await apiKeys.issue("acme", { scope: "operate", label: "ci pipeline" });
 ```
 
 The key is shown once; only its sha256 hash is stored.
 
 ## Endpoints
 
-| Method | Path                                      | Operation              | Success |
-| ------ | ----------------------------------------- | ---------------------- | ------- |
-| POST   | `/v1/runs`                                | `startRun`             | 201/200 |
-| GET    | `/v1/runs`                                | `listRuns`             | 200     |
-| GET    | `/v1/runs/{runId}`                        | `describeRun`          | 200     |
-| GET    | `/v1/runs/{runId}/history`                | `getHistory`           | 200     |
-| POST   | `/v1/runs/{runId}/signal`                 | `signalRun`            | 200     |
-| POST   | `/v1/signal-with-start`                   | `signalWithStart`      | 201/200 |
-| POST   | `/v1/events`                              | `sendEvent`            | 202     |
-| POST   | `/v1/event-triggers`                      | `createEventTrigger`   | 201     |
-| GET    | `/v1/event-triggers`                      | `listEventTriggers`    | 200     |
-| POST   | `/v1/runs/{runId}/updates/{updateName}`   | `updateRun`            | 200/202 |
-| GET    | `/v1/runs/{runId}/queries/{queryName}`    | `queryRun`             | 200     |
-| POST   | `/v1/runs/{runId}/cancel`                 | `cancelRun`            | 202     |
-| POST   | `/v1/runs/{runId}/terminate`              | `terminateRun`         | 200     |
-| GET    | `/v1/namespace`                           | `describeNamespace`    | 200     |
-| GET    | `/v1/dead-letters`                        | `listDeadLetters`      | 200     |
-| POST   | `/v1/dead-letters/{deadLetterId}/requeue` | `requeueDeadLetter`    | 200     |
-| POST   | `/v1/pauses`                              | `pause`                | 201/200 |
-| POST   | `/v1/pauses/resume`                       | `resume`               | 200     |
-| GET    | `/v1/pauses`                              | `listPauses`           | 200     |
-| POST   | `/v1/schedules`                           | `createSchedule`       | 201     |
-| GET    | `/v1/schedules`                           | `listSchedules`        | 200     |
-| GET    | `/v1/schedules/{scheduleId}`              | `getSchedule`          | 200     |
-| GET    | `/v1/schedules/{scheduleId}/triggers`     | `listScheduleTriggers` | 200     |
-| POST   | `/v1/schedules/{scheduleId}/pause`        | `pauseSchedule`        | 200     |
-| POST   | `/v1/schedules/{scheduleId}/resume`       | `resumeSchedule`       | 200     |
-| POST   | `/v1/schedules/{scheduleId}/backfill`     | `backfillSchedule`     | 200     |
-| GET    | `/v1/runs/{runId}/stream`                 | not in OpenAPI         | 200     |
-| GET    | `/openapi.json`                           | public                 | 200     |
+| Method | Path                                      | Operation                | Success |
+| ------ | ----------------------------------------- | ------------------------ | ------- |
+| POST   | `/v1/runs`                                | `startRun`               | 201/200 |
+| GET    | `/v1/runs`                                | `listRuns`               | 200     |
+| GET    | `/v1/runs/{runId}`                        | `describeRun`            | 200     |
+| GET    | `/v1/runs/{runId}/history`                | `getHistory`             | 200     |
+| POST   | `/v1/runs/{runId}/signal`                 | `signalRun`              | 200     |
+| POST   | `/v1/signal-with-start`                   | `signalWithStart`        | 201/200 |
+| POST   | `/v1/events`                              | `sendEvent`              | 202     |
+| POST   | `/v1/event-triggers`                      | `createEventTrigger`     | 201     |
+| GET    | `/v1/event-triggers`                      | `listEventTriggers`      | 200     |
+| POST   | `/v1/runs/{runId}/updates/{updateName}`   | `updateRun`              | 200/202 |
+| GET    | `/v1/runs/{runId}/queries/{queryName}`    | `queryRun`               | 200     |
+| POST   | `/v1/runs/{runId}/cancel`                 | `cancelRun`              | 202     |
+| POST   | `/v1/runs/{runId}/terminate`              | `terminateRun`           | 200     |
+| GET    | `/v1/namespace`                           | `describeNamespace`      | 200     |
+| GET    | `/v1/dead-letters`                        | `listDeadLetters`        | 200     |
+| POST   | `/v1/dead-letters/{deadLetterId}/requeue` | `requeueDeadLetter`      | 200     |
+| POST   | `/v1/pauses`                              | `pause`                  | 201/200 |
+| POST   | `/v1/pauses/resume`                       | `resume`                 | 200     |
+| GET    | `/v1/pauses`                              | `listPauses`             | 200     |
+| POST   | `/v1/schedules`                           | `createSchedule`         | 201     |
+| GET    | `/v1/schedules`                           | `listSchedules`          | 200     |
+| GET    | `/v1/schedules/{scheduleId}`              | `getSchedule`            | 200     |
+| GET    | `/v1/schedules/{scheduleId}/triggers`     | `listScheduleTriggers`   | 200     |
+| POST   | `/v1/schedules/{scheduleId}/pause`        | `pauseSchedule`          | 200     |
+| POST   | `/v1/schedules/{scheduleId}/resume`       | `resumeSchedule`         | 200     |
+| POST   | `/v1/schedules/{scheduleId}/backfill`     | `backfillSchedule`       | 200     |
+| GET    | `/v1/quarantined-tasks`                   | `listQuarantinedTasks`   | 200     |
+| POST   | `/v1/quarantined-tasks/{taskId}/release`  | `releaseQuarantinedTask` | 200     |
+| GET    | `/v1/admin/namespaces`                    | `adminListNamespaces`    | 200     |
+| POST   | `/v1/admin/namespaces`                    | `adminCreateNamespace`   | 201/200 |
+| GET    | `/v1/admin/namespaces/{namespace}/keys`   | `adminListKeys`          | 200     |
+| POST   | `/v1/admin/namespaces/{namespace}/keys`   | `adminIssueKey`          | 201     |
+| POST   | `/v1/admin/keys/{keyId}/revoke`           | `adminRevokeKey`         | 200     |
+| GET    | `/v1/admin/namespaces/{namespace}/quota`  | `adminGetQuota`          | 200     |
+| POST   | `/v1/admin/namespaces/{namespace}/quota`  | `adminSetQuota`          | 200     |
+| GET    | `/v1/admin/audit-log`                     | `adminListAuditLog`      | 200     |
+| GET    | `/v1/runs/{runId}/stream`                 | not in OpenAPI           | 200     |
+| GET    | `/openapi.json`                           | public                   | 200     |
 
-Errors are `{ "error": { "code", "message", "details"? } }`. 400 is a validation failure or a malformed body or cursor, a visibility query that does not parse (`invalid_query`, see below), invalid search attributes, a rejected or unknown update or an unknown query, 409 a closed run, a compacted history, a reused idempotency key with a different request or a workflow key of another type, 413 a body over 1 MiB, and 501 an update or query to an API that does not have the workflow's code.
+Errors are `{ "error": { "code", "message", "details"? } }`. 403 is a key whose scope does not allow the operation. 400 is a validation failure or a malformed body or cursor, a visibility query that does not parse (`invalid_query`, see below), invalid search attributes, a rejected or unknown update or an unknown query, 409 a closed run, a compacted history, a reused idempotency key with a different request or a workflow key of another type, 413 a body over 1 MiB, and 501 an update or query to an API that does not have the workflow's code.
 
 ## Updates and queries
 
@@ -146,6 +167,21 @@ const order = defineWorkflow("order", async (ctx, input: { orderId: string }) =>
 ## Dead letters
 
 `GET /v1/dead-letters?limit=&cursor=` lists the namespace's step tasks that used all their attempts, oldest first, one page at a time (the namespace filter, the order and the limit run in SQL). A page holds `limit` entries (default 500, at most 1,000) and carries `nextCursor` when more follow. `POST /v1/dead-letters/{deadLetterId}/requeue` puts one back on its queue and answers `{ "taskId" }`; the step already failed for its workflow, so the task is acknowledged without running the step again (see `docs/CONCEPTS.md`); an unknown id, an id of another namespace and an entry that was requeued already all answer 404.
+
+## Quarantined tasks
+
+`GET /v1/quarantined-tasks` lists the namespace's tasks that are no longer delivered (see "Poison pills" below), oldest first, with their reason and reclaim count. `POST /v1/quarantined-tasks/{taskId}/release` puts one back on its queue with a fresh reclaim budget and answers `{ "taskId", "runId" }`; a workflow task whose run already has a pending one is merged into it, so the run gets one decision. An unknown id, an id of another namespace and a task that was released already answer 404.
+
+## Admin endpoints and the audit log
+
+The routes under `/v1/admin` need an `admin` key and act on the namespace named in their path or body, not on the caller's:
+
+- `POST /v1/admin/namespaces` with `{ "name" }` creates a namespace (201, or 200 when it exists). `GET` lists them with their number of active keys.
+- `POST /v1/admin/namespaces/{namespace}/keys` with `{ "scope", "label"?, "expiresAt"? }` issues a key and answers it once with its secret in `key`; an expiry that is not in the future answers 400 `invalid_key`. `GET` lists the keys without secrets: scope, label, creation, expiry, last use and revocation. `POST /v1/admin/keys/{keyId}/revoke` revokes one (404 when it does not exist or was revoked already).
+- `GET /v1/admin/namespaces/{namespace}/quota` reads the limits and the current usage. `POST` changes the limits it is given (`maxConcurrentRuns`, `maxPendingTasks`, `ratePerSecond`, `burst`); `null` removes a limit and a limit left out keeps its value.
+- `GET /v1/admin/audit-log?namespace=&cursor=&limit=` reads the audit log newest first, `limit` up to 500 (default 100), with `nextCursor` when a full page came back.
+
+Every successful admin and operator action is appended to the audit log: `namespace.create`, `key.issue`, `key.revoke`, `quota.set`, `run.cancel`, `run.terminate`, `pause.create`, `pause.resume`, `schedule.create`, `schedule.pause`, `schedule.resume`, `schedule.backfill`, `dead_letter.requeue` and `task.release`. An entry holds the actor (key id, label, namespace and scope, copied so it stays readable after the key is revoked), the namespace acted on, the target (a run, schedule, key or task id) and the request body as details; an issued key's secret is never recorded. Refused and failed requests are not recorded. Starts, signals, updates and events are application traffic and are not audited. The `audit_log` table refuses updates and deletes.
 
 ## Idempotent start
 
@@ -238,7 +274,7 @@ The rate limit is kept in Postgres and shared by every api process on the databa
 
 ## Poison pills
 
-A task whose lease expires without an ack is reclaimed by the janitor. After `poisonThreshold` reclaims (default 3) the task is set to `QUARANTINED` instead of `PENDING` and is never delivered again, so a task that crashes every worker that takes it cannot hold up the queue. `janitor.listQuarantined(namespaceId?)` lists them and `janitor.releaseQuarantined(taskId)` puts one back with a fresh budget. A run whose only open task is quarantined is not recovered as a stalled run.
+A task whose lease expires without an ack is reclaimed by the janitor. After `poisonThreshold` reclaims (default 3) the task is set to `QUARANTINED` instead of `PENDING` and is never delivered again, so a task that crashes every worker that takes it cannot hold up the queue. `GET /v1/quarantined-tasks`, `wf quarantine list` and the UI's quarantine page list them, and `POST /v1/quarantined-tasks/{taskId}/release`, `wf quarantine release` or the page's release button puts one back with a fresh budget (from code: `janitor.listQuarantined(namespaceId?)` and `janitor.releaseQuarantined(taskId, namespaceId?)`). A run whose only open task is quarantined is not recovered as a stalled run.
 
 ## Worker backpressure
 

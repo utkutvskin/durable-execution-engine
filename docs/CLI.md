@@ -19,6 +19,7 @@ npx wf help
 | `wf run update <runId> <name>`                 | Sends an update and prints its result: `--argument`, `--update-id`, `--wait-ms` |
 | `wf run query <runId> <name>`                  | Answers a query from the run's current state: `--argument <json>`               |
 | `wf run cancel <runId>`                        | Requests a graceful cancellation: `--reason <text>`                             |
+| `wf run terminate <runId>`                     | Closes a run at once, without compensation: `--reason <text>`                   |
 | `wf run describe <runId>`                      | Shows a run: `--history` adds its events, `--json` prints json                  |
 | `wf run list`                                  | Lists runs: `--status`, `--type`, `--query`, `--limit`, `--cursor`              |
 | `wf pause run <id>\|queue [name]\|namespace`   | Holds work back: `--reason <text>`; `wf pause list` lists the pauses            |
@@ -27,6 +28,13 @@ npx wf help
 | `wf schedule list\|describe <id>`              | Lists schedules, or shows one with its latest ten triggers                      |
 | `wf schedule pause\|resume <id>`               | Stops a schedule, or starts it from the next match after now                    |
 | `wf schedule backfill <id>`                    | Starts every trigger of `--from` to `--to` once: `--overlap <policy>`           |
+| `wf dlq list\|requeue <id>`                    | Lists the dead letters, or puts one back on its queue with a fresh retry budget |
+| `wf quarantine list\|release <taskId>`         | Lists the quarantined tasks, or puts one back on its queue                      |
+| `wf namespace create <name>\|list`             | Creates a namespace, or lists them (admin key)                                  |
+| `wf keys issue <namespace> --scope <s>`        | Issues a key: `--label`, `--expires-in <s>` or `--expires-at` (admin key)       |
+| `wf keys list <namespace>\|revoke <keyId>`     | Lists a namespace's keys, or revokes one (admin key)                            |
+| `wf quota get\|set <namespace>`                | Shows or changes a namespace's limits (admin key)                               |
+| `wf audit list`                                | Admin and operator actions, newest first: `--namespace`, `--limit` (admin key)  |
 | `wf history export <runId>`                    | Prints the run's whole history as a history export: `--out <file>`              |
 | `wf history import <file...> --out <dir>`      | Turns run event archives into one history export per run                        |
 | `wf replay --module <path> <file...>`          | Replays history exports against your code, exits 1 on non-determinism           |
@@ -35,6 +43,20 @@ npx wf help
 `wf run update` prints the handler's result as JSON and exits 0. It exits 1 when the handler threw (the error goes to stderr), when the wait ended before the handler ran, and when the validator rejected the argument, which writes nothing. `--json` prints the whole answer, `--wait-ms` takes 0 to 60000. See `docs/API.md` for the semantics. `wf run list --query "status = 'FAILED' and customerId = 'c-1'"` filters with the visibility query grammar of `docs/API.md` and prints each run's search attributes after its start time; a query that does not parse exits 1 with the API's message, which names the position. `--limit` must be a whole number from 1 to 200 (usage error otherwise). `--wait` polls the run and, when the API answers 429, sleeps for the `Retry-After` it gave (never past the wait timeout) instead of failing. Run ids are percent encoded in URLs, `wf run describe --history` reads every history page, and an API answer that is not JSON (a proxy's error page) is reported as one line with its status and a short preview, with no stack trace.
 
 `wf pause queue` without a name pauses the API's own queue. `--overlap` takes `skip`, `buffer_one`, `cancel_other` or `allow_all` and `--catch-up` takes `latest_only` or `all`; anything else, a missing `--from` or `--to`, or an instant that does not parse is a usage error (exit 2). A repeated `wf schedule backfill` prints `0 triggers handled, 0 runs started`. Every one of these commands takes `--json`. See `docs/API.md` for the semantics.
+
+## Admin and operator commands
+
+The api key decides what these commands may do: a `read` key may list, an `operate` key may also terminate runs, requeue dead letters and release quarantined tasks, and an `admin` key may also run `wf namespace`, `wf keys`, `wf quota` and `wf audit`. A command the key's scope does not allow exits 1 with the API's message, which names the scope it needs (`terminateRun needs operate`). The key `wf serve` registers or issues and the one `wf dev` writes are `admin` keys.
+
+```sh
+wf namespace create acme
+wf keys issue acme --scope operate --label ci --expires-in 2592000
+wf keys list acme
+wf quota set acme --max-concurrent-runs 100 --rate-per-second none
+wf audit list --namespace acme --limit 20
+```
+
+`wf keys issue` prints the secret on the first line and a summary on the second; the secret is not shown again, and `--json` prints both as one object. Issuing a key for a namespace that does not exist exits 1: create it first. `--scope` is required and takes `read`, `operate` or `admin`; `--expires-in` and `--expires-at` exclude each other. `wf quota set` changes only the limits it is given, and `none` removes one; without any limit flag it is a usage error. `wf audit list` prints each action with its time, namespace, target and actor (the key's label, or its id when it has none, with its scope and namespace). Every one of these commands takes `--json`.
 
 ## History export and replay
 
