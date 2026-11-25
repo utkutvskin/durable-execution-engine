@@ -8,16 +8,26 @@ import { runCommand } from "./commands/run.ts";
 import { historyCommand, type HistoryHooks } from "./commands/history.ts";
 import { replayCommand } from "./commands/replay.ts";
 import {
+  dlqCommand,
   pauseCommand,
+  quarantineCommand,
   resumeCommand,
   scheduleCommand,
   type OperationsHooks,
 } from "./commands/operations.ts";
+import {
+  auditCommand,
+  keysCommand,
+  namespaceCommand,
+  quotaCommand,
+  type AdminHooks,
+} from "./commands/admin.ts";
 
 /**
  * Replacements for the effects commands reach for, used by tests.
  */
-export interface CliHooks extends ProcessHooks, HistoryHooks, DatabaseHooks, OperationsHooks {}
+export interface CliHooks
+  extends ProcessHooks, HistoryHooks, DatabaseHooks, OperationsHooks, AdminHooks {}
 
 /**
  * The text `wf help` prints.
@@ -34,6 +44,7 @@ commands:
   run update <id> <name>  send an update and print its result (--argument json, --update-id id, --wait-ms n)
   run query <id> <name>   answer a query from the run's current state (--argument json)
   run cancel <id>         request cancellation (--reason text)
+  run terminate <id>      close a run at once, without compensation (--reason text)
   run describe <id>       show a run (--history for its events)
   run list                list runs (--status s, --type t, --query q, --limit n)
   pause <what>            hold back run <id>, queue [name] or namespace (--reason text); pause list
@@ -44,6 +55,20 @@ commands:
   schedule describe <id>  show a schedule and its latest triggers
   schedule pause <id>     stop a schedule; schedule resume <id> starts it from the next match
   schedule backfill <id>  start every trigger of --from to --to once (--overlap p)
+  dlq list                list the step tasks that ran out of attempts
+  dlq requeue <id>        put a dead letter back on its queue with a fresh retry budget
+  quarantine list         list the tasks that are no longer delivered
+  quarantine release <id> put a quarantined task back on its queue
+admin commands (need an admin key):
+  namespace create <name> create a namespace; namespace list lists them
+  keys issue <namespace>  issue a key (--scope read|operate|admin, --label l,
+                          --expires-in seconds or --expires-at instant); printed once
+  keys list <namespace>   list a namespace's keys with their scope, expiry and last use
+  keys revoke <key id>    revoke a key
+  quota get <namespace>   show a namespace's limits and usage
+  quota set <namespace>   change limits (--max-concurrent-runs n, --max-pending-tasks n,
+                          --rate-per-second n, --burst n; none removes one)
+  audit list              admin and operator actions, newest first (--namespace n, --limit n)
   history export <id>     print the run's whole history as a history export (--out file)
   history import <file>   turn run event archives into history exports (--out dir)
   replay <file...>        replay history exports against --module code, exit 1 on non-determinism
@@ -123,6 +148,18 @@ export async function main(
         return await resumeCommand(rest, io, hooks);
       case "schedule":
         return await scheduleCommand(rest, io, hooks);
+      case "dlq":
+        return await dlqCommand(rest, io, hooks);
+      case "quarantine":
+        return await quarantineCommand(rest, io, hooks);
+      case "namespace":
+        return await namespaceCommand(rest, io, hooks);
+      case "keys":
+        return await keysCommand(rest, io, hooks);
+      case "quota":
+        return await quotaCommand(rest, io, hooks);
+      case "audit":
+        return await auditCommand(rest, io, hooks);
       case "history":
         return await historyCommand(rest, io, hooks);
       case "replay":

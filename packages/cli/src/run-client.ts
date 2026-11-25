@@ -100,6 +100,8 @@ export interface RunClient {
   /** Answers the query `name` from the run's current state. */
   query(runId: string, name: string, argument?: unknown): Promise<unknown>;
   cancel(runId: string, reason?: string): Promise<void>;
+  /** Closes an open run at once, without compensation. */
+  terminate(runId: string, reason?: string): Promise<void>;
   describe(runId: string): Promise<RunSnapshot>;
   history(runId: string): Promise<readonly HistoryItem[]>;
   listRuns(filter?: ListFilter): Promise<RunListPage>;
@@ -271,6 +273,13 @@ export function createApiClient(options: ApiClientOptions): RunClient {
       await call(
         "POST",
         `/v1/runs/${encodeURIComponent(runId)}/cancel`,
+        reason === undefined ? {} : { reason },
+      );
+    },
+    async terminate(runId, reason) {
+      await call(
+        "POST",
+        `/v1/runs/${encodeURIComponent(runId)}/terminate`,
         reason === undefined ? {} : { reason },
       );
     },

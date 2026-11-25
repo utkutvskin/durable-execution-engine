@@ -20,8 +20,8 @@ import {
 } from "./shared.ts";
 
 /**
- * Hooks of `wf pause`, `wf resume` and `wf schedule`: tests hand in a client
- * instead of a real api.
+ * Hooks of `wf pause`, `wf resume`, `wf schedule`, `wf dlq` and
+ * `wf quarantine`: tests hand in a client instead of a real api.
  */
 export interface OperationsHooks {
   readonly operations?: OperationsClient;
@@ -307,4 +307,86 @@ export async function scheduleCommand(
     default:
       throw new CliError(`unknown schedule action "${action}": use ${actions}`, 2);
   }
+}
+
+/**
+ * `wf dlq list` and `wf dlq requeue <id>`: shows the step tasks that ran out
+ * of attempts and puts one back on its queue with a fresh retry budget.
+ */
+export async function dlqCommand(
+  args: readonly string[],
+  io: CliIo,
+  hooks: OperationsHooks = {},
+): Promise<number> {
+  const parsed = parseCommand(args, CLIENT_OPTIONS);
+  const action = parsed.positionals[0];
+  if (action !== "list" && action !== "requeue") {
+    throw new CliError(
+      action === undefined
+        ? "missing dlq action: list or requeue"
+        : `unknown dlq action "${action}": use list or requeue`,
+      2,
+    );
+  }
+  if (action === "requeue") {
+    const deadLetterId = requirePositional(parsed, 1, "dead letter id");
+    const client = await operationsFor(parsed, io, hooks);
+    const taskId = await client.requeueDeadLetter(deadLetterId);
+    return emit(parsed, io, { taskId }, () => {
+      io.stdout(`requeued ${deadLetterId} as task ${taskId}`);
+    });
+  }
+  const client = await operationsFor(parsed, io, hooks);
+  const deadLetters = await client.listDeadLetters();
+  return emit(parsed, io, { deadLetters }, () => {
+    if (deadLetters.length === 0) {
+      io.stdout("the dead letter queue is empty");
+    }
+    for (const letter of deadLetters) {
+      io.stdout(
+        `${letter.id}  run ${letter.runId}  step ${letter.stepId}  ${String(letter.attempts)} attempts  ${letter.error.name}: ${letter.error.message}`,
+      );
+    }
+  });
+}
+
+/**
+ * `wf quarantine list` and `wf quarantine release <task id>`: shows the
+ * tasks that are no longer delivered and puts one back on its queue.
+ */
+export async function quarantineCommand(
+  args: readonly string[],
+  io: CliIo,
+  hooks: OperationsHooks = {},
+): Promise<number> {
+  const parsed = parseCommand(args, CLIENT_OPTIONS);
+  const action = parsed.positionals[0];
+  if (action !== "list" && action !== "release") {
+    throw new CliError(
+      action === undefined
+        ? "missing quarantine action: list or release"
+        : `unknown quarantine action "${action}": use list or release`,
+      2,
+    );
+  }
+  if (action === "release") {
+    const taskId = requirePositional(parsed, 1, "task id");
+    const client = await operationsFor(parsed, io, hooks);
+    const runId = await client.releaseQuarantined(taskId);
+    return emit(parsed, io, { taskId, runId }, () => {
+      io.stdout(`released task ${taskId} of run ${runId}`);
+    });
+  }
+  const client = await operationsFor(parsed, io, hooks);
+  const tasks = await client.listQuarantined();
+  return emit(parsed, io, { tasks }, () => {
+    if (tasks.length === 0) {
+      io.stdout("no task is quarantined");
+    }
+    for (const task of tasks) {
+      io.stdout(
+        `${task.taskId}  run ${task.runId}  ${task.taskType.padEnd(14)}${task.quarantinedAt}  ${task.reason}`,
+      );
+    }
+  });
 }

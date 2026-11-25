@@ -44,6 +44,10 @@ function fakeClient(calls: string[]): RunClient {
       calls.push(`signal ${runId} ${name} ${JSON.stringify(payload)}`);
       return Promise.resolve();
     },
+    terminate: (runId, reason) => {
+      calls.push(`terminate ${runId} ${String(reason)}`);
+      return Promise.resolve();
+    },
     cancel: (runId, reason) => {
       calls.push(`cancel ${runId} ${String(reason)}`);
       return Promise.resolve();

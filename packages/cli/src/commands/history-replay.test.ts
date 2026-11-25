@@ -49,6 +49,7 @@ function historyClient(history: readonly HistoryItem[]): RunClient {
     update: unused,
     query: unused,
     cancel: unused,
+    terminate: unused,
     describe: unused,
     listRuns: unused,
     waitForClose: unused,

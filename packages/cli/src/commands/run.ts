@@ -182,7 +182,7 @@ async function listRuns(parsed: ParsedCommand, io: CliIo, client: RunClient): Pr
 }
 
 /**
- * `wf run start|signal|update|query|cancel|describe|list`: drives runs
+ * `wf run start|signal|update|query|cancel|terminate|describe|list`: drives runs
  * through the api.
  * The api address and key come from `--api-url` and `--api-key`, the
  * environment (`WF_API_URL`, `WF_API_KEY`) or the state `wf dev` left in
@@ -213,7 +213,7 @@ export async function runCommand(
   const action = parsed.positionals[0];
   if (action === undefined) {
     throw new CliError(
-      "missing run action: start, signal, update, query, cancel, describe or list",
+      "missing run action: start, signal, update, query, cancel, terminate, describe or list",
       2,
     );
   }
@@ -247,6 +247,12 @@ export async function runCommand(
       io.stdout(`cancellation requested for ${runId}`);
       return 0;
     }
+    case "terminate": {
+      const runId = requirePositional(parsed, 1, "run id");
+      await client.terminate(runId, stringFlag(parsed, "reason"));
+      io.stdout(`terminated ${runId}`);
+      return 0;
+    }
     case "describe": {
       const runId = requirePositional(parsed, 1, "run id");
       const run = await client.describe(runId);
@@ -266,7 +272,7 @@ export async function runCommand(
       return listRuns(parsed, io, client);
     default:
       throw new CliError(
-        `unknown run action "${action}": use start, signal, update, query, cancel, describe or list`,
+        `unknown run action "${action}": use start, signal, update, query, cancel, terminate, describe or list`,
         2,
       );
   }

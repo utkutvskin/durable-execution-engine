@@ -63,8 +63,35 @@ export interface ScheduleDefinition {
 }
 
 /**
- * The operator surface of the api the `wf pause`, `wf resume` and
- * `wf schedule` commands use.
+ * A dead letter as the api reports it: a step task that ran out of
+ * attempts.
+ */
+export interface DeadLetterSnapshot {
+  readonly id: string;
+  readonly runId: string;
+  readonly stepId: string;
+  readonly attempts: number;
+  readonly error: { readonly name: string; readonly message: string };
+  readonly reason: string;
+  readonly createdAt: string;
+}
+
+/**
+ * A quarantined task as the api reports it.
+ */
+export interface QuarantinedTaskSnapshot {
+  readonly taskId: string;
+  readonly runId: string;
+  readonly queueName: string;
+  readonly taskType: string;
+  readonly reclaimCount: number;
+  readonly quarantinedAt: string;
+  readonly reason: string;
+}
+
+/**
+ * The operator surface of the api the `wf pause`, `wf resume`,
+ * `wf schedule`, `wf dlq` and `wf quarantine` commands use.
  */
 export interface OperationsClient {
   pause(
@@ -83,7 +110,16 @@ export interface OperationsClient {
     scheduleId: string,
     range: { readonly from: string; readonly to: string; readonly overlapPolicy?: string },
   ): Promise<readonly TriggerSnapshot[]>;
+  /** Every dead letter of the namespace, oldest first, following the pages. */
+  listDeadLetters(): Promise<readonly DeadLetterSnapshot[]>;
+  /** Requeues a dead letter and resolves with the new task id. */
+  requeueDeadLetter(deadLetterId: string): Promise<string>;
+  listQuarantined(): Promise<readonly QuarantinedTaskSnapshot[]>;
+  /** Releases a quarantined task and resolves with its run id. */
+  releaseQuarantined(taskId: string): Promise<string>;
 }
+
+const MAX_DEAD_LETTER_PAGES = 100;
 
 function scheduleIdPath(scheduleId: string, suffix = ""): string {
   return `/v1/schedules/${encodeURIComponent(scheduleId)}${suffix}`;
@@ -136,6 +172,43 @@ export function createOperationsClient(options: ApiClientOptions): OperationsCli
         triggers: TriggerSnapshot[];
       };
       return answer.triggers;
+    },
+    async listDeadLetters() {
+      const letters: DeadLetterSnapshot[] = [];
+      let cursor: string | undefined;
+      for (let page = 0; page < MAX_DEAD_LETTER_PAGES; page += 1) {
+        const query = cursor === undefined ? "" : `?cursor=${encodeURIComponent(cursor)}`;
+        const answer = (await call("GET", `/v1/dead-letters${query}`)) as {
+          deadLetters: DeadLetterSnapshot[];
+          nextCursor?: string;
+        };
+        letters.push(...answer.deadLetters);
+        cursor = answer.nextCursor;
+        if (cursor === undefined) {
+          break;
+        }
+      }
+      return letters;
+    },
+    async requeueDeadLetter(deadLetterId) {
+      const answer = (await call(
+        "POST",
+        `/v1/dead-letters/${encodeURIComponent(deadLetterId)}/requeue`,
+        {},
+      )) as { taskId: string };
+      return answer.taskId;
+    },
+    async listQuarantined() {
+      return ((await call("GET", "/v1/quarantined-tasks")) as { tasks: QuarantinedTaskSnapshot[] })
+        .tasks;
+    },
+    async releaseQuarantined(taskId) {
+      const answer = (await call(
+        "POST",
+        `/v1/quarantined-tasks/${encodeURIComponent(taskId)}/release`,
+        {},
+      )) as { runId: string };
+      return answer.runId;
     },
   };
 }
