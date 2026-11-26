@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import {
   createQuotaStore,
   type Logger,
+  type PayloadCodec,
   type Pool,
   type Tracing,
   type WorkflowRegistry,
@@ -30,6 +31,8 @@ export interface ServeEnvironmentOptions {
   readonly tracing?: Tracing | undefined;
   readonly workflows?: WorkflowRegistry | undefined;
   readonly readPool?: Pool | undefined;
+  readonly payloadCodec?: PayloadCodec | undefined;
+  readonly maskFields?: readonly string[] | undefined;
 }
 
 /**
@@ -104,6 +107,8 @@ export async function startServeEnvironment(
     ...(options.tracing === undefined ? {} : { tracing: options.tracing }),
     ...(options.workflows === undefined ? {} : { workflows: options.workflows }),
     ...(options.readPool === undefined ? {} : { readPool: options.readPool }),
+    ...(options.payloadCodec === undefined ? {} : { payloadCodec: options.payloadCodec }),
+    ...(options.maskFields === undefined ? {} : { maskFields: options.maskFields }),
     ...(options.limits.maxQueueDepth === undefined
       ? {}
       : { maxQueueDepth: options.limits.maxQueueDepth }),

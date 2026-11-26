@@ -259,6 +259,7 @@ export function resolveClientConfig(input: {
 export interface RunClient {
     // (undocumented)
     cancel(runId: string, reason?: string): Promise<void>;
+    decodePayloads?(payloads: readonly unknown[]): Promise<unknown[]>;
     // (undocumented)
     describe(runId: string): Promise<RunSnapshot>;
     // (undocumented)
@@ -412,11 +413,11 @@ export function writeDevState(cwd: string, state: DevState): Promise<void>;
 // dist/run-client.d.ts:98:5 - (ae-undocumented) Missing documentation for "describe".
 // dist/run-client.d.ts:99:5 - (ae-undocumented) Missing documentation for "history".
 // dist/run-client.d.ts:100:5 - (ae-undocumented) Missing documentation for "listRuns".
-// dist/run-client.d.ts:113:5 - (ae-undocumented) Missing documentation for "baseUrl".
-// dist/run-client.d.ts:114:5 - (ae-undocumented) Missing documentation for "apiKey".
-// dist/run-client.d.ts:115:5 - (ae-undocumented) Missing documentation for "fetch".
-// dist/run-client.d.ts:116:5 - (ae-undocumented) Missing documentation for "now".
-// dist/run-client.d.ts:117:5 - (ae-undocumented) Missing documentation for "sleep".
+// dist/run-client.d.ts:118:5 - (ae-undocumented) Missing documentation for "baseUrl".
+// dist/run-client.d.ts:119:5 - (ae-undocumented) Missing documentation for "apiKey".
+// dist/run-client.d.ts:120:5 - (ae-undocumented) Missing documentation for "fetch".
+// dist/run-client.d.ts:121:5 - (ae-undocumented) Missing documentation for "now".
+// dist/run-client.d.ts:122:5 - (ae-undocumented) Missing documentation for "sleep".
 
 // (No @packageDocumentation comment for this package)
 

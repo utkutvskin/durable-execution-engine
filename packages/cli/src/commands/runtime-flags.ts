@@ -1,5 +1,11 @@
 import {
+  composePayloadCodecs,
+  createEncryptionCodec,
+  createGzipPayloadCodec,
   createLogger,
+  createMaskingRedactor,
+  parseEncryptionKeys,
+  type PayloadCodec,
   createTracingProvider,
   type LogLevel,
   type Logger,
@@ -116,6 +122,7 @@ export interface RuntimeSettings {
   readonly logFormat: "json" | "text";
   readonly otlpEndpoint: string | undefined;
   readonly samplingRatio: number | undefined;
+  readonly maskFields: readonly string[];
 }
 
 const LOG_LEVELS: readonly LogLevel[] = ["debug", "info", "warn", "error"];
@@ -143,7 +150,48 @@ export function parseRuntimeSettings(parsed: ParsedCommand, env: Env): RuntimeSe
     logFormat: format,
     otlpEndpoint: flagOrEnv(parsed, "otlp-endpoint", env),
     samplingRatio: ratio,
+    maskFields: listOf(env["WF_MASK_FIELDS"]),
   };
+}
+
+function listOf(text: string | undefined): string[] {
+  return (text ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+/**
+ * Builds the payload codec of `serve` and `worker` from the environment
+ * only, never from flags, so keys stay out of process listings:
+ * `WF_ENCRYPTION_KEYS` holds `id:base64key` entries and turns on AES-256-GCM
+ * encryption, `WF_ENCRYPTION_ACTIVE_KEY` names the key that encrypts (by
+ * default the last entry), and `WF_PAYLOAD_GZIP=on` compresses before
+ * encrypting. `undefined` when neither is set.
+ */
+export function parsePayloadCodec(env: Env): PayloadCodec | undefined {
+  const codecs: PayloadCodec[] = [];
+  if (env["WF_PAYLOAD_GZIP"] === "on") {
+    codecs.push(createGzipPayloadCodec());
+  }
+  const spec = env["WF_ENCRYPTION_KEYS"];
+  if (spec !== undefined && spec.trim() !== "") {
+    try {
+      const keys = parseEncryptionKeys(spec);
+      const named = env["WF_ENCRYPTION_ACTIVE_KEY"]?.trim();
+      const activeKeyId = named === undefined || named === "" ? (keys.at(-1)?.id ?? "") : named;
+      codecs.push(createEncryptionCodec({ keys, activeKeyId }));
+    } catch (error) {
+      throw new CliError(
+        `WF_ENCRYPTION_KEYS is invalid: ${error instanceof Error ? error.message : String(error)}`,
+        2,
+      );
+    }
+  }
+  if (codecs.length === 0) {
+    return undefined;
+  }
+  return codecs.length === 1 ? codecs[0] : composePayloadCodecs(...codecs);
 }
 
 function textLine(line: string): string {
@@ -164,6 +212,9 @@ export function createCliLogger(settings: RuntimeSettings, io: CliIo, fields = {
   return createLogger({
     level: settings.logLevel,
     fields,
+    ...(settings.maskFields.length === 0
+      ? {}
+      : { redact: createMaskingRedactor(settings.maskFields) }),
     sink: (line) => {
       io.stdout(settings.logFormat === "json" ? line : textLine(line));
     },

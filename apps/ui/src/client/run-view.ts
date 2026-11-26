@@ -8,6 +8,7 @@ import {
   formatTimestamp,
 } from "./format.js";
 import { buildTimeline, mergeEntries, type HistoryEntry, type TimelineItem } from "./timeline.js";
+import { containsEncodedPayload, decodeForDisplay } from "./payloads.js";
 
 const RECONNECT_MS = 1000;
 
@@ -128,11 +129,7 @@ export function mountRunView(
         ? []
         : [h("p", { className: "hint waiting", testId: "pause-hint" }, paused)]),
     );
-    viewers.replaceChildren(
-      viewer("input-viewer", "input", description.input),
-      viewer("output-viewer", "output", description.result),
-      viewer("error-viewer", "error", description.error),
-    );
+    void showPayloads(description);
     cancelButton.disabled = !open;
     pauseButton.disabled = !open;
     pauseButton.textContent = ownPause() ? "resume run" : "pause run";
@@ -140,13 +137,32 @@ export function mountRunView(
     updateButton.disabled = !open;
   }
 
+  async function showPayloads(shown: RunDescription): Promise<void> {
+    const [input, result] = await decodeForDisplay(api, [shown.input, shown.result]);
+    if (description !== shown) {
+      return;
+    }
+    viewers.replaceChildren(
+      viewer("input-viewer", "input", input),
+      viewer("output-viewer", "output", result),
+      viewer("error-viewer", "error", shown.error),
+    );
+  }
+
+  async function showDetail(detail: HTMLElement, event: unknown): Promise<void> {
+    const [decoded] = await decodeForDisplay(api, [event]);
+    detail.textContent = formatJson(decoded);
+  }
+
   function renderItem(item: TimelineItem): HTMLElement {
+    const encoded = containsEncodedPayload(item.event);
     const detail = h(
       "pre",
       { className: "detail", testId: "timeline-detail" },
-      formatJson(item.event),
+      encoded ? "decoding" : formatJson(item.event),
     );
     detail.hidden = true;
+    let decoding: Promise<void> | undefined;
     return h(
       "li",
       {
@@ -155,6 +171,9 @@ export function mountRunView(
         attributes: { "data-type": item.type, "data-seq": String(item.sequenceNumber) },
         onClick: () => {
           detail.hidden = !detail.hidden;
+          if (encoded && !detail.hidden) {
+            decoding ??= showDetail(detail, item.event);
+          }
         },
       },
       h("span", { className: "seq" }, String(item.sequenceNumber)),

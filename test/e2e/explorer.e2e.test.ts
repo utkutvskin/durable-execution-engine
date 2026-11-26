@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -6,6 +7,7 @@ import {
   ConcurrencyError,
   createAttemptLog,
   createDeadLetterQueue,
+  createEncryptionCodec,
   createPool,
   createPostgresEventStore,
   createResultRecorder,
@@ -437,6 +439,64 @@ describe.skipIf(BROWSER.mode === "skip")("run explorer in a browser", () => {
     ]);
     await page.locator("[data-testid=run-status]", { hasText: "FAILED" }).waitFor();
     expect(await page.getByTestId("error-viewer").textContent()).toContain("card declined");
+  }, 30_000);
+
+  it("shows encrypted payloads decoded and masked only through the codec endpoint", async () => {
+    const codec = createEncryptionCodec({
+      keys: [{ id: "k1", key: randomBytes(32) }],
+      activeKeyId: "k1",
+    });
+    const sealed = createApiServer(serverPool, {
+      queueName: "default",
+      sideHandler: createUiHandler(),
+      logger: silentLogger,
+      payloadCodec: codec,
+      maskFields: ["cvv"],
+    });
+    await new Promise<void>((resolve) => sealed.server.listen(0, "127.0.0.1", resolve));
+    const sealedUrl = `http://127.0.0.1:${String((sealed.server.address() as AddressInfo).port)}`;
+    try {
+      const started = await fetch(`${sealedUrl}/v1/runs`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+        body: JSON.stringify({
+          workflowType: "unregistered",
+          input: { card: "card-4111", cvv: "cvv-123" },
+        }),
+      });
+      const runId = ((await started.json()) as { run: { runId: string } }).run.runId;
+      const decodes: string[] = [];
+      page.on("request", (request) => {
+        if (request.url().endsWith("/v1/codec/decode")) {
+          decodes.push(request.method());
+        }
+      });
+
+      await page.goto(`${sealedUrl}/ui/`);
+      await page.getByTestId("api-key-input").fill(key);
+      await page.getByTestId("sign-in").click();
+      await page.getByTestId("namespace-name").waitFor();
+      await page.goto(`${sealedUrl}/ui/#/runs/${runId}`);
+      await page.locator("[data-testid=input-viewer]", { hasText: "card-4111" }).waitFor();
+      await timelineItem("run_started").click();
+      await page.locator("[data-testid=timeline-detail]", { hasText: "card-4111" }).waitFor();
+
+      const shown = `${String(await page.getByTestId("input-viewer").textContent())}${String(
+        await page.getByTestId("timeline-detail").first().textContent(),
+      )}`;
+      expect(shown).toContain('"cvv": "[masked]"');
+      expect(shown).not.toContain("cvv-123");
+      expect(shown).not.toContain("aes-256-gcm");
+      expect(decodes.length).toBeGreaterThanOrEqual(2);
+      expect(decodes.every((method) => method === "POST")).toBe(true);
+    } finally {
+      sealed.server.closeAllConnections();
+      await new Promise<void>((resolve) => {
+        sealed.server.close(() => {
+          resolve();
+        });
+      });
+    }
   }, 30_000);
 
   it("filters the run list by status and workflow type and pages with load more", async () => {

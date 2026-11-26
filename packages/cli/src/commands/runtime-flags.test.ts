@@ -12,6 +12,7 @@ import {
   parseCompactionSettings,
   parseRetentionSettings,
   parseOpsSettings,
+  parsePayloadCodec,
   parseRuntimeSettings,
   parseServeLimits,
 } from "./runtime-flags.ts";
@@ -52,7 +53,47 @@ describe("runtime flags", () => {
       logFormat: "json",
       otlpEndpoint: undefined,
       samplingRatio: undefined,
+      maskFields: [],
     });
+  });
+
+  it("encrypts with the last key by default and reads the keys before it", () => {
+    const first = Buffer.alloc(32, 1).toString("base64");
+    const second = Buffer.alloc(32, 2).toString("base64");
+    const old = parsePayloadCodec({ WF_ENCRYPTION_KEYS: `k1:${first}` });
+    const codec = parsePayloadCodec({
+      WF_ENCRYPTION_KEYS: `k1:${first},k2:${second}`,
+      WF_PAYLOAD_GZIP: "on",
+      WF_ENCRYPTION_ACTIVE_KEY: "",
+    });
+
+    expect(codec?.encode({ card: "4111" })).toMatchObject({ keyId: "k2" });
+    expect(codec?.decode(old?.encode({ card: "4111" }))).toEqual({ card: "4111" });
+    expect(parsePayloadCodec({})).toBeUndefined();
+  });
+
+  it("rejects invalid encryption keys without echoing them", () => {
+    const short = Buffer.alloc(16, 9).toString("base64");
+
+    expect(() => parsePayloadCodec({ WF_ENCRYPTION_KEYS: `k1:${short}` })).toThrow(
+      /WF_ENCRYPTION_KEYS is invalid: encryption key "k1" must be 32 bytes, got 16/,
+    );
+    expect(() => parsePayloadCodec({ WF_ENCRYPTION_KEYS: "topsecret" })).not.toThrow(/topsecret/);
+  });
+
+  it("masks WF_MASK_FIELDS in every log line", () => {
+    const lines: string[] = [];
+    const io = {
+      stdout: (line: string) => lines.push(line),
+      stderr: () => undefined,
+      env: {},
+    } as unknown as Parameters<typeof createCliLogger>[1];
+    const settings = parseRuntimeSettings(parse(), { WF_MASK_FIELDS: "password, cvv" });
+
+    createCliLogger(settings, io).info("login", { user: "ada", password: "hunter2" });
+
+    expect(settings.maskFields).toEqual(["password", "cvv"]);
+    expect(JSON.parse(lines[0] ?? "{}")).toMatchObject({ user: "ada", password: "[masked]" });
   });
 
   it("reads level, format, endpoint and sampling from flags", () => {

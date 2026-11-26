@@ -18,6 +18,7 @@ import {
   createCliTracing,
   flagOrEnv,
   integerOption,
+  parsePayloadCodec,
   parseRuntimeSettings,
   parseServeLimits,
 } from "./runtime-flags.ts";
@@ -96,6 +97,8 @@ export async function serveCommand(
       tracing: tracing?.tracing,
       workflows,
       readPool,
+      payloadCodec: parsePayloadCodec(io.env),
+      maskFields: settings.maskFields,
     });
     try {
       logger.info("api listening", {

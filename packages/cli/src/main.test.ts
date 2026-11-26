@@ -262,6 +262,26 @@ describe("wf command line", () => {
     expect(listed.out[0]).toMatch(/\{"customerId":"c-1","amount":50\}$/);
   });
 
+  it("decodes an encrypted input and result through the codec endpoint before printing", async () => {
+    const { io, out } = captureIo();
+    const sealed = { $dee_codec: "aes-256-gcm", keyId: "k1", iv: "x", tag: "y", data: "z" };
+    const decoded: unknown[][] = [];
+    const encrypted: RunClient = {
+      ...fakeClient([]),
+      describe: () => Promise.resolve({ ...snapshot, input: sealed, result: sealed }),
+      decodePayloads: (payloads) => {
+        decoded.push([...payloads]);
+        return Promise.resolve([{ card: "4111" }, { charged: true }]);
+      },
+    };
+
+    expect(await main(["run", "describe", snapshot.runId], io, { client: encrypted })).toBe(0);
+
+    expect(decoded).toEqual([[sealed, sealed]]);
+    expect(out).toContain('input      {"card":"4111"}');
+    expect(out).toContain('result     {"charged":true}');
+  });
+
   it("prints machine readable output with --json", async () => {
     const { io, out } = captureIo();
     await main(["run", "describe", snapshot.runId, "--json"], io, { client: fakeClient([]) });

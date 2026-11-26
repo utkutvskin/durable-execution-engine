@@ -162,6 +162,8 @@ export interface ApiClient {
   namespace(): Promise<{ readonly id: string; readonly name: string }>;
   listRuns(filters: ListFilters, limit: number, cursor?: string): Promise<RunPage>;
   describeRun(runId: string): Promise<RunDescription>;
+  /** Decodes stored payloads through the codec endpoint, in order. */
+  decodePayloads(payloads: readonly unknown[]): Promise<unknown[]>;
   signalRun(runId: string, name: string, payload: unknown): Promise<void>;
   cancelRun(runId: string, reason: string): Promise<void>;
   /** Sends the update `name` and resolves with the api's answer. */
@@ -239,6 +241,12 @@ export function createApiClient(apiKey: string, fetchFn: typeof fetch, baseUrl =
     listRuns: (filters, limit, cursor) =>
       request("GET", `/v1/runs?${buildListQuery(filters, limit, cursor).toString()}`),
     describeRun: (runId) => request("GET", `/v1/runs/${encodeURIComponent(runId)}`),
+    async decodePayloads(payloads) {
+      const answer = await request<{ payloads: unknown[] }>("POST", "/v1/codec/decode", {
+        payloads,
+      });
+      return answer.payloads;
+    },
     async signalRun(runId, name, payload) {
       await request("POST", `/v1/runs/${encodeURIComponent(runId)}/signal`, {
         name,

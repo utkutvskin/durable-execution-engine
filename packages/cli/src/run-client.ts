@@ -111,6 +111,11 @@ export interface RunClient {
    * gave (at most until the timeout) instead of failing the wait.
    */
   waitForClose(runId: string, options?: WaitOptions): Promise<RunSnapshot>;
+  /**
+   * Decodes stored payloads through the api's codec endpoint
+   * (`POST /v1/codec/decode`), in order.
+   */
+  decodePayloads?(payloads: readonly unknown[]): Promise<unknown[]>;
 }
 
 /**
@@ -284,6 +289,12 @@ export function createApiClient(options: ApiClientOptions): RunClient {
       );
     },
     describe,
+    async decodePayloads(payloads) {
+      const answer = (await call("POST", "/v1/codec/decode", { payloads })) as {
+        payloads: unknown[];
+      };
+      return answer.payloads;
+    },
     async history(runId) {
       const events: HistoryItem[] = [];
       let cursor: string | undefined;

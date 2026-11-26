@@ -34,6 +34,7 @@ import {
   parseRetentionSettings,
   RETENTION_OPTIONS,
   parseOpsSettings,
+  parsePayloadCodec,
   parseRuntimeSettings,
 } from "./runtime-flags.ts";
 import {
@@ -294,11 +295,13 @@ export async function workerCommand(
       );
     }
     const queue = flagOrEnv(parsed, "queue", io.env);
+    const payloadCodec = parsePayloadCodec(io.env);
     const engine = startEngine({
       pool,
       workflows: module.workflows,
       steps: module.steps,
       concurrency,
+      ...(payloadCodec === undefined ? {} : { payloadCodec }),
       ...(queue === undefined ? {} : { queueName: queue }),
       ...(tracing === undefined ? {} : { tracing: tracing.tracing }),
       ...(compaction === undefined

@@ -1,3 +1,4 @@
+import { isEncodedPayload } from "@dee/core";
 import { CliError } from "../errors.ts";
 import { readDevState, resolveClientConfig } from "../config.ts";
 import type { CliIo } from "../io.ts";
@@ -54,7 +55,23 @@ export async function clientFor(
   return createApiClient({ baseUrl: config.apiUrl, apiKey: config.apiKey });
 }
 
-function printRun(io: CliIo, run: RunSnapshot): void {
+async function decodedForDisplay(client: RunClient, run: RunSnapshot): Promise<RunSnapshot> {
+  if (
+    client.decodePayloads === undefined ||
+    (!isEncodedPayload(run.input) && !isEncodedPayload(run.result))
+  ) {
+    return run;
+  }
+  const [input, result] = await client.decodePayloads([run.input ?? null, run.result ?? null]);
+  return {
+    ...run,
+    ...(run.input === undefined ? {} : { input }),
+    ...(run.result === undefined ? {} : { result }),
+  };
+}
+
+async function printRun(io: CliIo, client: RunClient, stored: RunSnapshot): Promise<void> {
+  const run = await decodedForDisplay(client, stored);
   io.stdout(`run        ${run.runId}`);
   io.stdout(`workflow   ${run.workflowType}`);
   io.stdout(`status     ${run.status}`);
@@ -126,7 +143,7 @@ async function startRun(parsed: ParsedCommand, io: CliIo, client: RunClient): Pr
     if (booleanFlag(parsed, "json")) {
       io.stdout(JSON.stringify(closed));
     } else {
-      printRun(io, closed);
+      await printRun(io, client, closed);
     }
     return closed.status === "COMPLETED" ? 0 : 1;
   }
@@ -259,7 +276,7 @@ export async function runCommand(
       if (booleanFlag(parsed, "json")) {
         io.stdout(JSON.stringify(run));
       } else {
-        printRun(io, run);
+        await printRun(io, client, run);
       }
       if (booleanFlag(parsed, "history")) {
         for (const item of await client.history(runId)) {
