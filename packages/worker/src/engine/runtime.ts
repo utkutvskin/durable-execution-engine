@@ -23,6 +23,7 @@ import {
   type ScheduleManager,
   type TaskType,
   type Tracing,
+  type PayloadCodec,
 } from "@dee/core";
 import { startCompactorLoop, type CompactorLoop } from "../compactor-loop.ts";
 import { startRetentionLoop, type RetentionLoop } from "../retention-loop.ts";
@@ -103,6 +104,11 @@ import {
  */
 export interface EngineOptions {
   readonly pool: Pool;
+  /**
+   * The codec of every user payload the engine writes and reads, for example
+   * `createEncryptionCodec`. Defaults to storing payloads as they are.
+   */
+  readonly payloadCodec?: PayloadCodec;
   readonly queueName?: string;
   readonly workflows: readonly AnyWorkflowDefinition[];
   readonly steps: readonly AnyStepDefinition[];
@@ -243,6 +249,7 @@ export function startEngine(options: EngineOptions): Engine {
     workflows: options.workflows,
     steps: options.steps,
     ...clockOption,
+    ...(options.payloadCodec === undefined ? {} : { payloadCodec: options.payloadCodec }),
     ...(options.random === undefined ? {} : { random: options.random }),
     ...(options.buildId === undefined ? {} : { buildId: options.buildId }),
     ...(options.maxCachedRuns === undefined ? {} : { maxCachedRuns: options.maxCachedRuns }),

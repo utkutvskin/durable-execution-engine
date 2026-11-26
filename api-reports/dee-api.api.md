@@ -17,6 +17,7 @@ import { NamespaceQuota } from '@dee/core';
 import { NamespaceUsage } from '@dee/core';
 import { OverlapPolicy } from '@dee/core';
 import { PauseScope } from '@dee/core';
+import { PayloadCodec } from '@dee/core';
 import { Pool } from '@dee/core';
 import { QuotaStore } from '@dee/core';
 import { RunConcurrencyState } from '@dee/core';
@@ -165,6 +166,7 @@ export interface ApiOptions {
     readonly health?: HealthChecks;
     // (undocumented)
     readonly logger?: Logger;
+    readonly maskFields?: readonly string[];
     // (undocumented)
     readonly maxBodyBytes?: number;
     // (undocumented)
@@ -181,6 +183,7 @@ export interface ApiOptions {
     readonly metricsToken?: string;
     // (undocumented)
     readonly nowMs?: () => number;
+    readonly payloadCodec?: PayloadCodec;
     // (undocumented)
     readonly queueName: string;
     // (undocumented)
@@ -640,6 +643,7 @@ export interface Operations {
 export interface OperationsOptions {
     // (undocumented)
     readonly clock?: ClockSource;
+    readonly payloadCodec?: PayloadCodec;
     // (undocumented)
     readonly queueName: string;
 }
@@ -874,8 +878,10 @@ export interface RunService extends Operations {
         readonly sequenceNumber: number;
     }>;
     createEventTrigger: (namespaceId: string, input: CreateEventTriggerInput) => Promise<EventTrigger>;
+    decodePayloads(payloads: readonly unknown[]): Promise<unknown[]>;
     describeNamespace(namespaceId: string): Promise<NamespaceDescription>;
     describeRun(namespaceId: string, runId: string): Promise<RunDescription>;
+    encodePayloads(payloads: readonly unknown[]): Promise<unknown[]>;
     getHistory(namespaceId: string, runId: string, page?: PageInput): Promise<HistoryPage>;
     listDeadLetters(namespaceId: string, page?: PageInput): Promise<DeadLetterPage>;
     listEventTriggers: (namespaceId: string) => Promise<EventTrigger[]>;
@@ -901,6 +907,8 @@ export interface RunService extends Operations {
 // @public
 export interface RunServiceOptions {
     readonly clock?: ClockSource;
+    readonly maskFields?: readonly string[];
+    readonly payloadCodec?: PayloadCodec;
     // (undocumented)
     readonly queueName: string;
     readonly readPool?: Pool;
@@ -1256,39 +1264,39 @@ export function validateOpenApiDocument(document: unknown): string[];
 // dist/run-service.d.ts:212:5 - (ae-undocumented) Missing documentation for "createdAt".
 // dist/run-service.d.ts:213:5 - (ae-undocumented) Missing documentation for "version".
 // dist/run-service.d.ts:214:5 - (ae-undocumented) Missing documentation for "event".
-// dist/run-service.d.ts:339:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/run-service.d.ts:340:5 - (ae-undocumented) Missing documentation for "tracing".
-// dist/run-service.d.ts:341:5 - (ae-undocumented) Missing documentation for "workflows".
-// dist/run-service.d.ts:342:5 - (ae-undocumented) Missing documentation for "updateWait".
-// dist/server.d.ts:63:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/server.d.ts:64:5 - (ae-undocumented) Missing documentation for "maxBodyBytes".
-// dist/server.d.ts:65:5 - (ae-undocumented) Missing documentation for "apiKeys".
-// dist/server.d.ts:66:5 - (ae-undocumented) Missing documentation for "service".
-// dist/server.d.ts:67:5 - (ae-undocumented) Missing documentation for "quotaGuard".
-// dist/server.d.ts:68:5 - (ae-undocumented) Missing documentation for "maxQueueDepth".
-// dist/server.d.ts:69:5 - (ae-undocumented) Missing documentation for "tracing".
-// dist/server.d.ts:70:5 - (ae-undocumented) Missing documentation for "health".
-// dist/server.d.ts:71:5 - (ae-undocumented) Missing documentation for "metrics".
-// dist/server.d.ts:72:5 - (ae-undocumented) Missing documentation for "logger".
-// dist/server.d.ts:73:5 - (ae-undocumented) Missing documentation for "streamPollMs".
-// dist/server.d.ts:74:5 - (ae-undocumented) Missing documentation for "sideHandler".
-// dist/server.d.ts:75:5 - (ae-undocumented) Missing documentation for "workflows".
-// dist/server.d.ts:76:5 - (ae-undocumented) Missing documentation for "maxStreamsPerNamespace".
-// dist/server.d.ts:77:5 - (ae-undocumented) Missing documentation for "maxStreamLifetimeMs".
-// dist/server.d.ts:78:5 - (ae-undocumented) Missing documentation for "authThrottle".
-// dist/server.d.ts:82:5 - (ae-undocumented) Missing documentation for "metricsToken".
-// dist/server.d.ts:83:5 - (ae-undocumented) Missing documentation for "metricsCacheMs".
-// dist/server.d.ts:84:5 - (ae-undocumented) Missing documentation for "nowMs".
-// dist/server.d.ts:85:5 - (ae-undocumented) Missing documentation for "readPool".
-// dist/server.d.ts:86:5 - (ae-undocumented) Missing documentation for "readYourWritesMs".
-// dist/server.d.ts:87:5 - (ae-undocumented) Missing documentation for "auditLog".
-// dist/server.d.ts:88:5 - (ae-undocumented) Missing documentation for "admin".
-// dist/server.d.ts:94:5 - (ae-undocumented) Missing documentation for "listener".
-// dist/server.d.ts:95:5 - (ae-undocumented) Missing documentation for "apiKeys".
+// dist/run-service.d.ts:348:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/run-service.d.ts:349:5 - (ae-undocumented) Missing documentation for "tracing".
+// dist/run-service.d.ts:350:5 - (ae-undocumented) Missing documentation for "workflows".
+// dist/run-service.d.ts:351:5 - (ae-undocumented) Missing documentation for "updateWait".
+// dist/server.d.ts:72:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/server.d.ts:73:5 - (ae-undocumented) Missing documentation for "maxBodyBytes".
+// dist/server.d.ts:74:5 - (ae-undocumented) Missing documentation for "apiKeys".
+// dist/server.d.ts:75:5 - (ae-undocumented) Missing documentation for "service".
+// dist/server.d.ts:76:5 - (ae-undocumented) Missing documentation for "quotaGuard".
+// dist/server.d.ts:77:5 - (ae-undocumented) Missing documentation for "maxQueueDepth".
+// dist/server.d.ts:78:5 - (ae-undocumented) Missing documentation for "tracing".
+// dist/server.d.ts:79:5 - (ae-undocumented) Missing documentation for "health".
+// dist/server.d.ts:80:5 - (ae-undocumented) Missing documentation for "metrics".
+// dist/server.d.ts:81:5 - (ae-undocumented) Missing documentation for "logger".
+// dist/server.d.ts:82:5 - (ae-undocumented) Missing documentation for "streamPollMs".
+// dist/server.d.ts:83:5 - (ae-undocumented) Missing documentation for "sideHandler".
+// dist/server.d.ts:84:5 - (ae-undocumented) Missing documentation for "workflows".
+// dist/server.d.ts:85:5 - (ae-undocumented) Missing documentation for "maxStreamsPerNamespace".
+// dist/server.d.ts:86:5 - (ae-undocumented) Missing documentation for "maxStreamLifetimeMs".
+// dist/server.d.ts:87:5 - (ae-undocumented) Missing documentation for "authThrottle".
+// dist/server.d.ts:91:5 - (ae-undocumented) Missing documentation for "metricsToken".
+// dist/server.d.ts:92:5 - (ae-undocumented) Missing documentation for "metricsCacheMs".
+// dist/server.d.ts:93:5 - (ae-undocumented) Missing documentation for "nowMs".
+// dist/server.d.ts:94:5 - (ae-undocumented) Missing documentation for "readPool".
+// dist/server.d.ts:95:5 - (ae-undocumented) Missing documentation for "readYourWritesMs".
 // dist/server.d.ts:96:5 - (ae-undocumented) Missing documentation for "auditLog".
-// dist/server.d.ts:97:5 - (ae-undocumented) Missing documentation for "routes".
-// dist/server.d.ts:98:5 - (ae-undocumented) Missing documentation for "openApiDocument".
-// dist/server.d.ts:99:5 - (ae-undocumented) Missing documentation for "metrics".
+// dist/server.d.ts:97:5 - (ae-undocumented) Missing documentation for "admin".
+// dist/server.d.ts:103:5 - (ae-undocumented) Missing documentation for "listener".
+// dist/server.d.ts:104:5 - (ae-undocumented) Missing documentation for "apiKeys".
+// dist/server.d.ts:105:5 - (ae-undocumented) Missing documentation for "auditLog".
+// dist/server.d.ts:106:5 - (ae-undocumented) Missing documentation for "routes".
+// dist/server.d.ts:107:5 - (ae-undocumented) Missing documentation for "openApiDocument".
+// dist/server.d.ts:108:5 - (ae-undocumented) Missing documentation for "metrics".
 
 // (No @packageDocumentation comment for this package)
 

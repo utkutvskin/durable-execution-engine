@@ -46,6 +46,10 @@ import {
   type PendingStart,
   type SingletonStart,
   type InsertedRunRow,
+  identityPayloadCodec,
+  isEncodedPayload,
+  maskSensitiveFields,
+  type PayloadCodec,
 } from "@dee/core";
 import { createOperations, type Operations, type PauseDescription } from "./operations.ts";
 
@@ -304,6 +308,17 @@ export interface HistoryEntry {
  */
 export interface RunService extends Operations {
   /**
+   * Decodes stored payloads with the service's codec, in order: what the
+   * codec endpoint answers, so the UI and CLI can show runs whose payloads
+   * are stored encrypted. A payload that is not encoded comes back as it is.
+   * Rejects with `PayloadDecodeError` for an envelope the codec cannot read.
+   */
+  decodePayloads(payloads: readonly unknown[]): Promise<unknown[]>;
+
+  /** Encodes payloads with the service's codec, in order. */
+  encodePayloads(payloads: readonly unknown[]): Promise<unknown[]>;
+
+  /**
    * Starts a run, or returns the run the same idempotency key started
    * before. Rejects with `IdempotencyConflictError` when the key was used
    * for a different request.
@@ -488,6 +503,19 @@ export interface RunServiceOptions {
   readonly readPool?: Pool;
   /** How long after a write its run is read from the primary (default `DEFAULT_READ_YOUR_WRITES_MS`). */
   readonly readYourWritesMs?: number;
+  /**
+   * Encodes every user payload this service stores: run inputs, signal
+   * payloads, update arguments, event payloads and schedule inputs. Reads
+   * return payloads as stored; a client decodes them through the codec
+   * endpoint. Defaults to `identityPayloadCodec`.
+   */
+  readonly payloadCodec?: PayloadCodec;
+  /**
+   * Object keys whose values `decodePayloads` replaces with `"[masked]"`, at
+   * any depth, so the UI and CLI never show them. Stored payloads keep the
+   * real values, which replays need.
+   */
+  readonly maskFields?: readonly string[];
 }
 
 /**
@@ -600,6 +628,19 @@ function decodeCursor(cursor: string): { startedCursor: string; runId: string } 
   return { startedCursor, runId };
 }
 
+function decodeNested(codec: PayloadCodec, value: unknown): unknown {
+  const decoded = codec.decode(value);
+  if (Array.isArray(decoded)) {
+    return decoded.map((entry) => decodeNested(codec, entry));
+  }
+  if (decoded !== null && typeof decoded === "object" && !isEncodedPayload(decoded)) {
+    return Object.fromEntries(
+      Object.entries(decoded).map(([key, entry]) => [key, decodeNested(codec, entry)]),
+    );
+  }
+  return decoded;
+}
+
 /**
  * Creates a `RunService` over `pool`.
  */
@@ -610,6 +651,7 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
   const readPool = options.readPool;
   const readStore = readPool === undefined ? store : createPostgresEventStore(readPool);
   const readYourWritesMs = options.readYourWritesMs ?? DEFAULT_READ_YOUR_WRITES_MS;
+  const payloadCodec = options.payloadCodec ?? identityPayloadCodec;
   const recentWrites = new Map<string, number>();
 
   function remember(...keys: readonly string[]): void {
@@ -672,6 +714,7 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     workflows: options.workflows ?? createWorkflowRegistry(),
     clock: systemClock,
     random: systemRandomSource,
+    payloadCodec,
     ...(options.updateWait === undefined ? {} : { updateWait: options.updateWait }),
   });
   const control: RunControl = createRunControl(pool);
@@ -683,7 +726,11 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     }
   }
   const deadLetters = createDeadLetterQueue(pool);
-  const operations = createOperations(pool, { queueName: options.queueName, clock });
+  const operations = createOperations(pool, {
+    queueName: options.queueName,
+    clock,
+    payloadCodec,
+  });
 
   async function assertOwned(namespaceId: string, runId: string): Promise<void> {
     if (!UUID_PATTERN.test(runId)) {
@@ -739,7 +786,8 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
       return undefined;
     }
     const sameRequest =
-      row.workflow_type === input.workflowType && isDeepStrictEqual(row.input, input.input ?? null);
+      row.workflow_type === input.workflowType &&
+      isDeepStrictEqual(payloadCodec.decode(row.input), payloadCodec.decode(input.input ?? null));
     if (!sameRequest) {
       throw new IdempotencyConflictError(input.idempotencyKey, row.id);
     }
@@ -856,8 +904,9 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
 
   async function requestStart(
     namespaceId: string,
-    input: StartRunInput,
+    request: StartRunInput,
   ): Promise<StartRunResult | PendingStartResult> {
+    const input: StartRunInput = { ...request, input: payloadCodec.encode(request.input ?? null) };
     if (
       options.workflows !== undefined &&
       options.workflows.get(input.workflowType) === undefined
@@ -887,6 +936,19 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
 
   return {
     ...operations,
+
+    decodePayloads(payloads) {
+      const maskFields = options.maskFields ?? [];
+      return Promise.resolve(
+        payloads.map((payload) =>
+          maskSensitiveFields(decodeNested(payloadCodec, payload), maskFields),
+        ),
+      );
+    },
+
+    encodePayloads(payloads) {
+      return Promise.resolve(payloads.map((payload) => payloadCodec.encode(payload)));
+    },
 
     async startRun(namespaceId: string, input: StartRunInput): Promise<StartRunResult> {
       if (input.debounce !== undefined || input.singleton?.whenOpen === "queue") {
@@ -1100,7 +1162,12 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     },
 
     async sendEvent(namespaceId, input) {
-      return events.sendEvent(namespaceId, input);
+      return events.sendEvent(
+        namespaceId,
+        input.payload === undefined
+          ? input
+          : { ...input, payload: payloadCodec.encode(input.payload) },
+      );
     },
 
     async createEventTrigger(namespaceId, input) {

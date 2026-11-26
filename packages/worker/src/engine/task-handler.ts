@@ -1,4 +1,8 @@
 import {
+  decodeEventPayloads,
+  encodeEventPayloads,
+  identityPayloadCodec,
+  type PayloadCodec,
   ConcurrencyError,
   commandToEvent,
   createAttemptLog,
@@ -67,6 +71,12 @@ export type AnyStepDefinition = StepDefinition<never>;
  * replaces the Postgres limiter both use.
  */
 export interface EngineTaskHandlerOptions {
+  /**
+   * Encodes every user payload this worker writes (workflow commands, step
+   * results, heartbeat details) and decodes what it reads before workflow or
+   * step code sees it. Defaults to `identityPayloadCodec`.
+   */
+  readonly payloadCodec?: PayloadCodec;
   readonly pool: Pool;
   readonly queue: TaskQueue;
   readonly queueName: string;
@@ -126,12 +136,12 @@ interface StepPayload {
   readonly input: unknown;
 }
 
-function readStepPayload(payload: unknown): StepPayload | undefined {
+function readStepPayload(payload: unknown, codec: PayloadCodec): StepPayload | undefined {
   if (typeof payload !== "object" || payload === null) {
     return undefined;
   }
   const { stepType, input } = payload as { stepType?: unknown; input?: unknown };
-  return typeof stepType === "string" ? { stepType, input } : undefined;
+  return typeof stepType === "string" ? { stepType, input: codec.decode(input) } : undefined;
 }
 
 const DEFAULT_MAX_CACHED_RUNS = 1000;
@@ -172,6 +182,7 @@ function openStepIds(events: readonly WorkflowEvent[]): WorkflowEvent[] {
 export function createEngineTaskHandler(options: EngineTaskHandlerOptions): TaskHandler {
   const clock = options.clock ?? systemClock;
   const random = options.random ?? systemRandomSource;
+  const payloadCodec = options.payloadCodec ?? identityPayloadCodec;
   const store: EventStore = createPostgresEventStore(options.pool);
   const recorder = createResultRecorder(options.pool, undefined, {
     queueName: options.queueName,
@@ -203,6 +214,7 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
     lookup: (stepType) => steps.get(stepType),
     clock,
     random,
+    payloadCodec,
     ...(options.stepTimers === undefined ? {} : { timers: options.stepTimers }),
     ...(options.tracing === undefined ? {} : { tracing: options.tracing }),
     followUp: {
@@ -313,7 +325,8 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
     }
     const stored = await store.read(task.runId);
     const triggeredAt = stored.at(-1)?.createdAt;
-    const history = stored.map((entry) => entry.event);
+    const recordedHistory = stored.map((entry) => entry.event);
+    const history = recordedHistory.map((event) => decodeEventPayloads(payloadCodec, event));
     const started = history[0];
     if (started?.type !== "run_started") {
       throw new Error(`run ${task.runId} does not start with run_started`);
@@ -337,7 +350,9 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
       history,
       triggeredAt,
     );
-    const events = decision.commands.map(commandToEvent);
+    const events = decision.commands.map((command) =>
+      encodeEventPayloads(payloadCodec, commandToEvent(command)),
+    );
     let recorded;
     try {
       recorded = await recorder.recordWorkflowTaskResult({
@@ -374,7 +389,7 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
       await markWaiting(task.runId, decision.outcome, [...history, ...events], events.length);
     }
     if (decision.outcome === "suspended") {
-      await ensureStepTasks(run.namespace_id, task.runId, [...history, ...events]);
+      await ensureStepTasks(run.namespace_id, task.runId, [...recordedHistory, ...events]);
     }
   }
 
@@ -397,7 +412,7 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
     if (task.stepConcurrencyKey !== null) {
       return;
     }
-    const payload = readStepPayload(task.payload);
+    const payload = readStepPayload(task.payload, payloadCodec);
     const definition = payload === undefined ? undefined : steps.get(payload.stepType);
     if (payload === undefined || definition?.concurrency === undefined) {
       return;
@@ -411,7 +426,7 @@ export function createEngineTaskHandler(options: EngineTaskHandlerOptions): Task
   }
 
   function stepRateLimits(task: LeasedTask): [string, RateLimitRule][] {
-    const payload = readStepPayload(task.payload);
+    const payload = readStepPayload(task.payload, payloadCodec);
     const definition = payload === undefined ? undefined : steps.get(payload.stepType);
     const limits: [string, RateLimitRule][] = [];
     if (payload !== undefined && definition?.rateLimit !== undefined) {

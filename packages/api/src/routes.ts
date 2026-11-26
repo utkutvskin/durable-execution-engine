@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   InvalidScheduleError,
   OVERLAP_POLICIES,
+  PayloadDecodeError,
   ScheduleAlreadyExistsError,
   ScheduleNotFoundError,
   InvalidSearchAttributesError,
@@ -443,6 +444,12 @@ const queryParametersSchema = z.object({
 
 const queryResponseSchema = z.object({ result: z.unknown() }).meta({ id: "QueryResponse" });
 
+const MAX_CODEC_PAYLOADS = 1000;
+
+const codecPayloadsSchema = z
+  .object({ payloads: z.array(z.unknown()).max(MAX_CODEC_PAYLOADS) })
+  .meta({ id: "CodecPayloads" });
+
 const reasonRequestSchema = z
   .object({ reason: z.string().max(1000).optional() })
   .meta({ id: "ReasonRequest" });
@@ -702,6 +709,42 @@ const replayErrors = {
  */
 export function createRoutes(service: RunService): readonly Route[] {
   return [
+    defineRoute({
+      method: "post",
+      path: "/v1/codec/decode",
+      operationId: "decodePayloads",
+      summary:
+        "Decode stored payloads with the server's payload codec. The UI and CLI show payloads only through this endpoint.",
+      scope: "read",
+      body: codecPayloadsSchema,
+      responses: {
+        200: { description: "The decoded payloads, in order.", schema: codecPayloadsSchema },
+        ...commonErrors,
+        422: errorResponse(
+          "A payload is encoded with a key the server does not have, or was changed.",
+        ),
+      },
+      async handle(request) {
+        const payloads = await service.decodePayloads(request.parsedBody.payloads);
+        return { status: 200, body: { payloads } };
+      },
+    }),
+    defineRoute({
+      method: "post",
+      path: "/v1/codec/encode",
+      operationId: "encodePayloads",
+      summary: "Encode payloads with the server's payload codec.",
+      scope: "read",
+      body: codecPayloadsSchema,
+      responses: {
+        200: { description: "The encoded payloads, in order.", schema: codecPayloadsSchema },
+        ...commonErrors,
+      },
+      async handle(request) {
+        const payloads = await service.encodePayloads(request.parsedBody.payloads);
+        return { status: 200, body: { payloads } };
+      },
+    }),
     defineRoute({
       method: "post",
       path: "/v1/runs",
@@ -1447,6 +1490,12 @@ export function toErrorResult(error: unknown): ErrorResult {
   }
   if (error instanceof InvalidScheduleError) {
     return { status: 400, body: { error: { code: "invalid_schedule", message: error.message } } };
+  }
+  if (error instanceof PayloadDecodeError) {
+    return {
+      status: 422,
+      body: { error: { code: "payload_not_decodable", message: error.message } },
+    };
   }
   if (error instanceof InvalidBackfillError) {
     return { status: 400, body: { error: { code: "invalid_backfill", message: error.message } } };

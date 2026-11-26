@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
+import { isEncodedPayload, PAYLOAD_ENVELOPE_KEY } from "../codec/payload-codec.ts";
 
 /**
  * Severity of a log line, lowest first.
@@ -96,6 +97,27 @@ function makeReplacer(
       return redacted.toString();
     }
     return redacted;
+  };
+}
+
+/**
+ * A `LoggerOptions.redact` that writes `"[masked]"` instead of the value of
+ * every key in `fields`, at any depth, and the codec name instead of an
+ * encoded payload, so neither a sensitive field nor ciphertext reaches a
+ * log line.
+ */
+export function createMaskingRedactor(
+  fields: readonly string[],
+): (key: string, value: unknown) => unknown {
+  const masked = new Set(fields);
+  return (key, value) => {
+    if (masked.has(key)) {
+      return "[masked]";
+    }
+    if (isEncodedPayload(value)) {
+      return `[encoded ${value[PAYLOAD_ENVELOPE_KEY]} payload]`;
+    }
+    return value;
   };
 }
 

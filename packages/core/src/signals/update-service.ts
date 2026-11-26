@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { setTimeout } from "node:timers";
 import type { Pool, PoolClient } from "pg";
+import { decodeEventPayloads } from "../codec/event-payloads.ts";
+import { identityPayloadCodec, type PayloadCodec } from "../codec/payload-codec.ts";
 import type { Codec } from "../event-store/codec.ts";
 import type { RecordedError, WorkflowEvent } from "../event-store/events.ts";
 import { appendEventsOnClient, readEventsOnClient } from "../event-store/event-store.ts";
@@ -88,6 +90,11 @@ export interface UpdateReceipt {
 export interface UpdateAcceptOptions {
   readonly workflows: WorkflowRegistry;
   readonly clock: ClockSource;
+  /**
+   * Decodes the history the update is validated against and encodes the
+   * argument it records. Defaults to `identityPayloadCodec`.
+   */
+  readonly payloadCodec?: PayloadCodec;
 }
 
 /**
@@ -161,7 +168,8 @@ export async function acceptUpdateOnClient(
   if (row.status !== "RUNNING") {
     throw new RunNotOpenError(runId, row.status);
   }
-  const history = stored.map((entry) => entry.event);
+  const payloadCodec = options.payloadCodec ?? identityPayloadCodec;
+  const history = stored.map((entry) => decodeEventPayloads(payloadCodec, entry.event));
   const started = startedEventOf(runId, history);
   const definition = options.workflows.get(started.workflowType);
   if (definition === undefined) {
@@ -192,7 +200,12 @@ export async function acceptUpdateOnClient(
   }
   const currentSeq = stored.at(-1)?.sequenceNumber ?? 0;
   const [recorded] = await appendEventsOnClient(client, codec, runId, currentSeq, [
-    { type: "update_accepted", updateId, updateName, argument: argument ?? null },
+    {
+      type: "update_accepted",
+      updateId,
+      updateName,
+      argument: payloadCodec.encode(argument ?? null),
+    },
   ]);
   await client.query(
     `insert into tasks (namespace_id, run_id, queue_name, task_type, payload)

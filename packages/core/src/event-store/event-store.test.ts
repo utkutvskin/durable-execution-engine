@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createIsolatedDatabase, type IsolatedSchema } from "../db/test-harness.ts";
-import { jsonCodec } from "./codec.ts";
+import { createGzipCodec, jsonCodec } from "./codec.ts";
 import { appendEventsOnClient, createPostgresEventStore, type EventStore } from "./event-store.ts";
 import { ConcurrencyError } from "./errors.ts";
 import type { WorkflowEvent } from "./events.ts";
@@ -37,6 +37,37 @@ describe("createPostgresEventStore", () => {
 
   afterEach(async () => {
     await database.close();
+  });
+
+  it("stores gzip-compressed events in run_events and reads them back unchanged", async () => {
+    const gzipStore = createPostgresEventStore(database.pool, createGzipCodec(jsonCodec));
+    const events: WorkflowEvent[] = [
+      { type: "run_started", workflowType: "ship-order", input: { note: "x".repeat(5000) } },
+      { type: "step_scheduled", stepId: "charge-card", stepType: "charge-card", input: [1, 2] },
+    ];
+
+    await gzipStore.append(runId, 0, events);
+    const read = await gzipStore.read(runId);
+    const stored = await database.pool.query<{ codec: string; size: number }>(
+      `select payload->>'$dee_codec' as codec, length(payload::text) as size
+       from run_events where run_id = $1 order by sequence_number`,
+      [runId],
+    );
+
+    expect(read.map((entry) => entry.event)).toEqual(events);
+    expect(stored.rows.map((row) => row.codec)).toEqual(["gzip", "gzip"]);
+    expect(stored.rows[0]?.size).toBeLessThan(500);
+  });
+
+  it("reads plain events written before gzip was turned on through the gzip codec", async () => {
+    const event: WorkflowEvent = { type: "run_started", workflowType: "ship-order", input: 7 };
+    await store.append(runId, 0, [event]);
+
+    const read = await createPostgresEventStore(database.pool, createGzipCodec(jsonCodec)).read(
+      runId,
+    );
+
+    expect(read.map((entry) => entry.event)).toEqual([event]);
   });
 
   it("exposes only append and read, never an update or a delete", () => {

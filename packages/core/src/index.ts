@@ -12,6 +12,25 @@ export {
   jsonCodec,
   maskSensitiveFields,
 } from "./event-store/codec.ts";
+export type {
+  EncodedPayload,
+  EncryptionCodecOptions,
+  EncryptionKey,
+  PayloadCodec,
+} from "./codec/payload-codec.ts";
+export {
+  composePayloadCodecs,
+  createEncryptionCodec,
+  createGzipPayloadCodec,
+  ENCRYPTION_CODEC_ID,
+  GZIP_CODEC_ID,
+  identityPayloadCodec,
+  isEncodedPayload,
+  parseEncryptionKeys,
+  PAYLOAD_ENVELOPE_KEY,
+  PayloadDecodeError,
+} from "./codec/payload-codec.ts";
+export { decodeEventPayloads, encodeEventPayloads } from "./codec/event-payloads.ts";
 export { appendEventsOnClient, createPostgresEventStore } from "./event-store/event-store.ts";
 export type { EventStore, StoredEvent } from "./event-store/event-store.ts";
 export { ConcurrencyError, PayloadTooLargeError } from "./event-store/errors.ts";
@@ -553,6 +572,7 @@ export type {
 } from "./observability/engine-metrics.ts";
 export {
   createLogger,
+  createMaskingRedactor,
   currentCorrelationId,
   resolveCorrelationId,
   silentLogger,

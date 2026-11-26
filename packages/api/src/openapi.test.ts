@@ -41,8 +41,10 @@ describe("generated openapi document", () => {
       "cancelRun",
       "createEventTrigger",
       "createSchedule",
+      "decodePayloads",
       "describeNamespace",
       "describeRun",
+      "encodePayloads",
       "getHistory",
       "getSchedule",
       "listDeadLetters",
@@ -68,13 +70,13 @@ describe("generated openapi document", () => {
     ]);
   });
 
-  it("names the scope every operation needs: read for gets, admin under /v1/admin, operate otherwise", () => {
+  it("names the scope every operation needs: read for gets and the codec, admin under /v1/admin, operate otherwise", () => {
     const paths = document["paths"] as Record<string, Record<string, Record<string, unknown>>>;
     for (const [path, item] of Object.entries(paths)) {
       for (const [method, operation] of Object.entries(item)) {
         const expected = path.startsWith("/v1/admin/")
           ? "admin"
-          : method === "get"
+          : method === "get" || path.startsWith("/v1/codec/")
             ? "read"
             : "operate";
         expect(operation["x-required-scope"], `${method} ${path}`).toBe(expected);

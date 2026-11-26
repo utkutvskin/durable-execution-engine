@@ -120,7 +120,9 @@ describe("admin surface and key scopes", () => {
   it("refuses a read key every write with a 403 and changes nothing", async () => {
     const runId = await startRun();
     const eventsBefore = await database.pool.query("select 1 from run_events");
-    const writes = api.routes.filter((route) => route.method === "post");
+    const writes = api.routes.filter(
+      (route) => route.method === "post" && !route.path.startsWith("/v1/codec/"),
+    );
     expect(writes.length).toBe(20);
     for (const route of writes) {
       const path = route.path.replace(/\{(\w+)\}/g, (_match, name: string) =>
@@ -138,6 +140,7 @@ describe("admin surface and key scopes", () => {
   it("lets a read key read but not reach the admin endpoints", async () => {
     expect((await call(readKey, "GET", "/v1/runs")).status).toBe(200);
     expect((await call(readKey, "GET", "/v1/quarantined-tasks")).status).toBe(200);
+    expect((await call(readKey, "POST", "/v1/codec/decode", { payloads: [1] })).status).toBe(200);
     const admin = await call(readKey, "GET", "/v1/admin/namespaces");
     expect(admin.status).toBe(403);
     expect((admin.body["error"] as { message: string }).message).toContain("needs admin");

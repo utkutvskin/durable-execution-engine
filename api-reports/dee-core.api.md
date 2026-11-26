@@ -334,6 +334,9 @@ export interface CompleteUpdateCommand {
 }
 
 // @public
+export function composePayloadCodecs(...codecs: readonly PayloadCodec[]): PayloadCodec;
+
+// @public
 export function computeBackoffMs(policy: RetryPolicy, failedAttempt: number, random: RandomSource): number;
 
 // @public
@@ -421,6 +424,9 @@ export function createDeadLetterQueue(pool: Pool, options?: {
 export function createDirectoryArchive(directory: string): RunEventArchive;
 
 // @public
+export function createEncryptionCodec(options: EncryptionCodecOptions): PayloadCodec;
+
+// @public
 export function createEngineMetrics(pool: Pool, options?: EngineMetricsOptions): EngineMetrics;
 
 // @public
@@ -440,6 +446,9 @@ export interface CreateEventTriggerInput {
 
 // @public
 export function createGzipCodec(codec: Codec): Codec;
+
+// @public
+export function createGzipPayloadCodec(): PayloadCodec;
 
 // @public
 export function createHealthChecks(pool: Pool, options?: HealthChecksOptions): HealthChecks;
@@ -471,6 +480,9 @@ export function createLiveSession<TInput, TResult>(handler: WorkflowHandler<TInp
 
 // @public
 export function createLogger(options?: LoggerOptions): Logger;
+
+// @public
+export function createMaskingRedactor(fields: readonly string[]): (key: string, value: unknown) => unknown;
 
 // @public
 export function createMetricsRegistry(): MetricsRegistry;
@@ -763,6 +775,9 @@ export type DecisionResult<TResult = unknown> = ({
 export type DecisionSource = "cache" | "replay";
 
 // @public
+export function decodeEventPayloads(codec: PayloadCodec, event: WorkflowEvent): WorkflowEvent;
+
+// @public
 export const DEFAULT_ACQUIRE_TIMEOUT_MS = 30000;
 
 // @public
@@ -958,6 +973,30 @@ export interface EmbeddedOptions {
 }
 
 // @public
+export interface EncodedPayload {
+    readonly [PAYLOAD_ENVELOPE_KEY]: string;
+    readonly [field: string]: string;
+}
+
+// @public
+export function encodeEventPayloads(codec: PayloadCodec, event: WorkflowEvent): WorkflowEvent;
+
+// @public
+export const ENCRYPTION_CODEC_ID = "aes-256-gcm";
+
+// @public
+export interface EncryptionCodecOptions {
+    readonly activeKeyId: string;
+    readonly keys: readonly EncryptionKey[];
+}
+
+// @public
+export interface EncryptionKey {
+    readonly id: string;
+    readonly key: Uint8Array;
+}
+
+// @public
 export function enforceWorkflowTimeout(options: {
     readonly store: EventStore;
     readonly runId: string;
@@ -1148,6 +1187,9 @@ export interface Gauge {
 export type GiveUpReason = "NON_RETRYABLE" | "MAX_ATTEMPTS_EXHAUSTED";
 
 // @public
+export const GZIP_CODEC_ID = "gzip";
+
+// @public
 export interface HealthChecks {
     // (undocumented)
     live(): {
@@ -1267,6 +1309,9 @@ export class IdempotencyKeyConflictError extends Error {
     // (undocumented)
     readonly runId: string;
 }
+
+// @public
+export const identityPayloadCodec: PayloadCodec;
 
 // @public
 export interface InsertedRunRow {
@@ -1426,6 +1471,9 @@ export interface InvariantViolation {
 
 // @public
 export function isBuiltInVisibilityField(field: string): boolean;
+
+// @public
+export function isEncodedPayload(value: unknown): value is EncodedPayload;
 
 // @public
 export function isNonRetryable(error: SerializedError, policy: RetryPolicy): boolean;
@@ -1834,6 +1882,9 @@ export interface ParsedTraceparent {
 }
 
 // @public
+export function parseEncryptionKeys(spec: string): EncryptionKey[];
+
+// @public
 export function parseHistoryExport(raw: unknown, source?: string, reader?: EventReader): ParsedHistory;
 
 // @public
@@ -1923,6 +1974,20 @@ export type PauseTarget = {
     readonly namespaceId: string;
     readonly runId: string;
 };
+
+// @public
+export const PAYLOAD_ENVELOPE_KEY = "$dee_codec";
+
+// @public
+export interface PayloadCodec {
+    decode(stored: unknown): unknown;
+    encode(value: unknown): unknown;
+}
+
+// @public
+export class PayloadDecodeError extends Error {
+    constructor(message: string, options?: ErrorOptions);
+}
 
 // @public
 export class PayloadTooLargeError extends Error {
@@ -2636,6 +2701,7 @@ export interface RunInteractionsOptions {
     readonly clock: ClockSource;
     // (undocumented)
     readonly codec?: Codec;
+    readonly payloadCodec?: PayloadCodec;
     // (undocumented)
     readonly random: RandomSource;
     // (undocumented)
@@ -3406,6 +3472,7 @@ export interface StepTaskProcessorOptions {
     readonly heartbeats?: HeartbeatStore;
     // (undocumented)
     readonly lookup: (stepType: string) => StepDefinition | undefined;
+    readonly payloadCodec?: PayloadCodec;
     // (undocumented)
     readonly pool: Pool;
     // (undocumented)
@@ -3725,6 +3792,7 @@ export const updateAcceptedEventSchema: z.ZodObject<{
 export interface UpdateAcceptOptions {
     // (undocumented)
     readonly clock: ClockSource;
+    readonly payloadCodec?: PayloadCodec;
     // (undocumented)
     readonly workflows: WorkflowRegistry;
 }
@@ -4602,21 +4670,21 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/retry/retry-policy.d.ts:15:5 - (ae-undocumented) Missing documentation for "maxAttempts".
 // dist/retry/retry-policy.d.ts:16:5 - (ae-undocumented) Missing documentation for "jitter".
 // dist/retry/retry-policy.d.ts:17:5 - (ae-undocumented) Missing documentation for "nonRetryableErrorNames".
-// dist/retry/step-task-processor.d.ts:67:5 - (ae-undocumented) Missing documentation for "pool".
-// dist/retry/step-task-processor.d.ts:68:5 - (ae-undocumented) Missing documentation for "queue".
-// dist/retry/step-task-processor.d.ts:69:5 - (ae-undocumented) Missing documentation for "recorder".
-// dist/retry/step-task-processor.d.ts:70:5 - (ae-undocumented) Missing documentation for "attempts".
-// dist/retry/step-task-processor.d.ts:71:5 - (ae-undocumented) Missing documentation for "deadLetters".
-// dist/retry/step-task-processor.d.ts:72:5 - (ae-undocumented) Missing documentation for "lookup".
-// dist/retry/step-task-processor.d.ts:73:5 - (ae-undocumented) Missing documentation for "clock".
-// dist/retry/step-task-processor.d.ts:74:5 - (ae-undocumented) Missing documentation for "random".
-// dist/retry/step-task-processor.d.ts:75:5 - (ae-undocumented) Missing documentation for "timers".
-// dist/retry/step-task-processor.d.ts:76:5 - (ae-undocumented) Missing documentation for "tracing".
-// dist/retry/step-task-processor.d.ts:77:5 - (ae-undocumented) Missing documentation for "heartbeats".
-// dist/retry/step-task-processor.d.ts:78:5 - (ae-undocumented) Missing documentation for "beforeSettle".
-// dist/retry/step-task-processor.d.ts:79:5 - (ae-undocumented) Missing documentation for "followUp".
-// dist/retry/step-task-processor.d.ts:86:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/retry/step-task-processor.d.ts:87:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/retry/step-task-processor.d.ts:68:5 - (ae-undocumented) Missing documentation for "pool".
+// dist/retry/step-task-processor.d.ts:69:5 - (ae-undocumented) Missing documentation for "queue".
+// dist/retry/step-task-processor.d.ts:70:5 - (ae-undocumented) Missing documentation for "recorder".
+// dist/retry/step-task-processor.d.ts:71:5 - (ae-undocumented) Missing documentation for "attempts".
+// dist/retry/step-task-processor.d.ts:72:5 - (ae-undocumented) Missing documentation for "deadLetters".
+// dist/retry/step-task-processor.d.ts:73:5 - (ae-undocumented) Missing documentation for "lookup".
+// dist/retry/step-task-processor.d.ts:74:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/retry/step-task-processor.d.ts:75:5 - (ae-undocumented) Missing documentation for "random".
+// dist/retry/step-task-processor.d.ts:76:5 - (ae-undocumented) Missing documentation for "timers".
+// dist/retry/step-task-processor.d.ts:77:5 - (ae-undocumented) Missing documentation for "tracing".
+// dist/retry/step-task-processor.d.ts:78:5 - (ae-undocumented) Missing documentation for "heartbeats".
+// dist/retry/step-task-processor.d.ts:79:5 - (ae-undocumented) Missing documentation for "beforeSettle".
+// dist/retry/step-task-processor.d.ts:80:5 - (ae-undocumented) Missing documentation for "followUp".
+// dist/retry/step-task-processor.d.ts:92:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/retry/step-task-processor.d.ts:93:5 - (ae-undocumented) Missing documentation for "clock".
 // dist/retry/timeout.d.ts:8:5 - (ae-undocumented) Missing documentation for "setTimeout".
 // dist/retry/timeout.d.ts:9:5 - (ae-undocumented) Missing documentation for "clearTimeout".
 // dist/retry/timeout.d.ts:16:5 - (ae-undocumented) Missing documentation for "timeoutMs".
@@ -4732,41 +4800,41 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/schedules/schedule-manager.d.ts:114:5 - (ae-undocumented) Missing documentation for "codec".
 // dist/schedules/schedule-manager.d.ts:115:5 - (ae-undocumented) Missing documentation for "batchSize".
 // dist/schedules/schedule-manager.d.ts:116:5 - (ae-undocumented) Missing documentation for "tracing".
-// dist/signals/signal-service.d.ts:11:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/signals/signal-service.d.ts:18:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/signals/signal-service.d.ts:26:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/signals/signal-service.d.ts:27:5 - (ae-undocumented) Missing documentation for "status".
-// dist/signals/signal-service.d.ts:38:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/signals/signal-service.d.ts:39:5 - (ae-undocumented) Missing documentation for "sequenceNumber".
-// dist/signals/signal-service.d.ts:40:5 - (ae-undocumented) Missing documentation for "duplicate".
-// dist/signals/signal-service.d.ts:47:5 - (ae-undocumented) Missing documentation for "signalId".
-// dist/signals/signal-service.d.ts:55:5 - (ae-undocumented) Missing documentation for "namespaceId".
-// dist/signals/signal-service.d.ts:56:5 - (ae-undocumented) Missing documentation for "workflowType".
-// dist/signals/signal-service.d.ts:57:5 - (ae-undocumented) Missing documentation for "workflowKey".
-// dist/signals/signal-service.d.ts:58:5 - (ae-undocumented) Missing documentation for "input".
-// dist/signals/signal-service.d.ts:59:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/signals/signal-service.d.ts:60:5 - (ae-undocumented) Missing documentation for "signalName".
-// dist/signals/signal-service.d.ts:61:5 - (ae-undocumented) Missing documentation for "payload".
-// dist/signals/signal-service.d.ts:62:5 - (ae-undocumented) Missing documentation for "signalId".
-// dist/signals/signal-service.d.ts:69:5 - (ae-undocumented) Missing documentation for "created".
-// dist/signals/signal-service.d.ts:76:5 - (ae-undocumented) Missing documentation for "workflowKey".
-// dist/signals/signal-service.d.ts:77:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/signals/signal-service.d.ts:123:5 - (ae-undocumented) Missing documentation for "workflows".
-// dist/signals/signal-service.d.ts:124:5 - (ae-undocumented) Missing documentation for "clock".
-// dist/signals/signal-service.d.ts:125:5 - (ae-undocumented) Missing documentation for "random".
-// dist/signals/signal-service.d.ts:126:5 - (ae-undocumented) Missing documentation for "codec".
-// dist/signals/signal-service.d.ts:127:5 - (ae-undocumented) Missing documentation for "updateWait".
-// dist/signals/update-service.d.ts:12:5 - (ae-undocumented) Missing documentation for "workflowType".
-// dist/signals/update-service.d.ts:31:5 - (ae-undocumented) Missing documentation for "updateId".
-// dist/signals/update-service.d.ts:32:5 - (ae-undocumented) Missing documentation for "waitMs".
-// dist/signals/update-service.d.ts:59:5 - (ae-undocumented) Missing documentation for "updateId".
-// dist/signals/update-service.d.ts:60:5 - (ae-undocumented) Missing documentation for "sequenceNumber".
-// dist/signals/update-service.d.ts:61:5 - (ae-undocumented) Missing documentation for "duplicate".
-// dist/signals/update-service.d.ts:68:5 - (ae-undocumented) Missing documentation for "workflows".
-// dist/signals/update-service.d.ts:69:5 - (ae-undocumented) Missing documentation for "clock".
-// dist/signals/update-service.d.ts:76:5 - (ae-undocumented) Missing documentation for "pollMs".
-// dist/signals/update-service.d.ts:77:5 - (ae-undocumented) Missing documentation for "nowMs".
-// dist/signals/update-service.d.ts:78:5 - (ae-undocumented) Missing documentation for "sleep".
+// dist/signals/signal-service.d.ts:12:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/signals/signal-service.d.ts:19:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/signals/signal-service.d.ts:27:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/signals/signal-service.d.ts:28:5 - (ae-undocumented) Missing documentation for "status".
+// dist/signals/signal-service.d.ts:39:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/signals/signal-service.d.ts:40:5 - (ae-undocumented) Missing documentation for "sequenceNumber".
+// dist/signals/signal-service.d.ts:41:5 - (ae-undocumented) Missing documentation for "duplicate".
+// dist/signals/signal-service.d.ts:48:5 - (ae-undocumented) Missing documentation for "signalId".
+// dist/signals/signal-service.d.ts:56:5 - (ae-undocumented) Missing documentation for "namespaceId".
+// dist/signals/signal-service.d.ts:57:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/signals/signal-service.d.ts:58:5 - (ae-undocumented) Missing documentation for "workflowKey".
+// dist/signals/signal-service.d.ts:59:5 - (ae-undocumented) Missing documentation for "input".
+// dist/signals/signal-service.d.ts:60:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/signals/signal-service.d.ts:61:5 - (ae-undocumented) Missing documentation for "signalName".
+// dist/signals/signal-service.d.ts:62:5 - (ae-undocumented) Missing documentation for "payload".
+// dist/signals/signal-service.d.ts:63:5 - (ae-undocumented) Missing documentation for "signalId".
+// dist/signals/signal-service.d.ts:70:5 - (ae-undocumented) Missing documentation for "created".
+// dist/signals/signal-service.d.ts:77:5 - (ae-undocumented) Missing documentation for "workflowKey".
+// dist/signals/signal-service.d.ts:78:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/signals/signal-service.d.ts:124:5 - (ae-undocumented) Missing documentation for "workflows".
+// dist/signals/signal-service.d.ts:125:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/signals/signal-service.d.ts:126:5 - (ae-undocumented) Missing documentation for "random".
+// dist/signals/signal-service.d.ts:127:5 - (ae-undocumented) Missing documentation for "codec".
+// dist/signals/signal-service.d.ts:134:5 - (ae-undocumented) Missing documentation for "updateWait".
+// dist/signals/update-service.d.ts:13:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/signals/update-service.d.ts:32:5 - (ae-undocumented) Missing documentation for "updateId".
+// dist/signals/update-service.d.ts:33:5 - (ae-undocumented) Missing documentation for "waitMs".
+// dist/signals/update-service.d.ts:60:5 - (ae-undocumented) Missing documentation for "updateId".
+// dist/signals/update-service.d.ts:61:5 - (ae-undocumented) Missing documentation for "sequenceNumber".
+// dist/signals/update-service.d.ts:62:5 - (ae-undocumented) Missing documentation for "duplicate".
+// dist/signals/update-service.d.ts:69:5 - (ae-undocumented) Missing documentation for "workflows".
+// dist/signals/update-service.d.ts:70:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/signals/update-service.d.ts:82:5 - (ae-undocumented) Missing documentation for "pollMs".
+// dist/signals/update-service.d.ts:83:5 - (ae-undocumented) Missing documentation for "nowMs".
+// dist/signals/update-service.d.ts:84:5 - (ae-undocumented) Missing documentation for "sleep".
 // dist/sticky/run-cache.d.ts:8:5 - (ae-undocumented) Missing documentation for "maxRuns".
 // dist/sticky/run-cache.d.ts:9:5 - (ae-undocumented) Missing documentation for "stickyTimeoutMs".
 // dist/sticky/run-cache.d.ts:10:5 - (ae-undocumented) Missing documentation for "clock".

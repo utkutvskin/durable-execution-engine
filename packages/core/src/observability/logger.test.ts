@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createLogger, resolveCorrelationId, withCorrelationId } from "./logger.ts";
+import {
+  createLogger,
+  createMaskingRedactor,
+  resolveCorrelationId,
+  withCorrelationId,
+} from "./logger.ts";
 
 function capture(level?: "debug" | "info" | "warn" | "error") {
   const lines: (Record<string, unknown> & Line)[] = [];
@@ -115,5 +120,24 @@ describe("structured logger", () => {
         request: { password: "[masked]", path: "/x" },
       },
     ]);
+  });
+
+  it("masks configured fields at any depth and never writes an encoded payload", () => {
+    const lines: Record<string, unknown>[] = [];
+    const logger = createLogger({
+      sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>),
+      clock: { now: () => new Date("2026-03-01T10:00:00.000Z") },
+      redact: createMaskingRedactor(["cardNumber"]),
+    });
+
+    logger.info("charged", {
+      order: { cardNumber: "4111", amount: 5 },
+      input: { $dee_codec: "aes-256-gcm", keyId: "k1", data: "c2VjcmV0" },
+    });
+
+    expect(lines[0]).toMatchObject({
+      order: { cardNumber: "[masked]", amount: 5 },
+      input: "[encoded aes-256-gcm payload]",
+    });
   });
 });

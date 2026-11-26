@@ -1,5 +1,11 @@
 import { gunzipSync, gzipSync } from "node:zlib";
 import { PayloadTooLargeError } from "./errors.ts";
+import {
+  GZIP_CODEC_ID,
+  PAYLOAD_ENVELOPE_KEY,
+  PayloadDecodeError,
+  isEncodedPayload,
+} from "../codec/payload-codec.ts";
 
 /**
  * Converts a validated event to and from the string form stored in
@@ -59,23 +65,40 @@ export function createSizeLimitedCodec(
 }
 
 /**
- * Wraps `codec` so that `encode` gzip-compresses its output (base64-encoded,
- * since `Codec.encode` returns a string) and `decode` reverses both steps
- * before delegating back to `codec`. Round-trips losslessly; whether it is
- * worth composing with `createSizeLimitedCodec` for a given workload
- * depends on how compressible that workload's payloads actually are.
+ * Wraps `codec` so that `encode` gzip-compresses its output into the JSON
+ * object `{"$dee_codec": "gzip", "data": <base64>}`, which a `jsonb` column
+ * accepts, and `decode` reverses both steps before delegating back to
+ * `codec`. A stored payload that is not such an envelope (one written before
+ * compression was turned on) is handed to `codec` as it is. Round-trips
+ * losslessly through the Postgres event store.
  */
 export function createGzipCodec(codec: Codec): Codec {
   return {
     encode(value: unknown): string {
       const encoded = codec.encode(value);
-      return gzipSync(Buffer.from(encoded, "utf8")).toString("base64");
+      const data = gzipSync(Buffer.from(encoded, "utf8")).toString("base64");
+      return JSON.stringify({ [PAYLOAD_ENVELOPE_KEY]: GZIP_CODEC_ID, data });
     },
     decode(raw: string): unknown {
-      const decoded = gunzipSync(Buffer.from(raw, "base64")).toString("utf8");
-      return codec.decode(decoded);
+      const stored = parseJson(raw);
+      if (!isEncodedPayload(stored) || stored[PAYLOAD_ENVELOPE_KEY] !== GZIP_CODEC_ID) {
+        return codec.decode(raw);
+      }
+      const data = stored["data"];
+      if (typeof data !== "string") {
+        throw new PayloadDecodeError('gzip payload has no "data" field');
+      }
+      return codec.decode(gunzipSync(Buffer.from(data, "base64")).toString("utf8"));
     },
   };
+}
+
+function parseJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 function maskValue(value: unknown, sensitiveKeys: ReadonlySet<string>): unknown {

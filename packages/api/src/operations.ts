@@ -3,6 +3,8 @@ import {
   createJanitor,
   createPauseControl,
   createScheduleManager,
+  identityPayloadCodec,
+  type PayloadCodec,
   cronTimesBetween,
   parseCron,
   systemClock,
@@ -216,6 +218,8 @@ export interface Operations {
 export interface OperationsOptions {
   readonly queueName: string;
   readonly clock?: ClockSource;
+  /** Encodes the input a schedule stores. Defaults to `identityPayloadCodec`. */
+  readonly payloadCodec?: PayloadCodec;
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -339,7 +343,7 @@ export function createOperations(pool: Pool, options: OperationsOptions): Operat
         name: request.name,
         cronExpression: request.cronExpression,
         workflowType: request.workflowType,
-        input: request.input ?? {},
+        input: (options.payloadCodec ?? identityPayloadCodec).encode(request.input ?? {}),
         ...(request.timeZone === undefined ? {} : { timeZone: request.timeZone }),
         ...(request.overlapPolicy === undefined ? {} : { overlapPolicy: request.overlapPolicy }),
         ...(request.catchUpPolicy === undefined ? {} : { catchUpPolicy: request.catchUpPolicy }),

@@ -3,7 +3,7 @@ import { clearTimeout, setTimeout } from "node:timers";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { z } from "zod";
-import type { Pool } from "@dee/core";
+import type { PayloadCodec, Pool } from "@dee/core";
 import {
   createApiKeyStore,
   scopeAllows,
@@ -89,8 +89,17 @@ export type SideHandler = (request: IncomingMessage, response: ServerResponse) =
  * histories (the ui's reads among them) and the metrics scrape read from it,
  * with read-your-writes for `readYourWritesMs` after a start or signal (see
  * `RunServiceOptions.readPool`). Everything else uses `pool`.
+ *
+ * `payloadCodec` encodes the payloads the api stores (see
+ * `RunServiceOptions.payloadCodec`); reads return them as stored, and
+ * `POST /v1/codec/decode` decodes them for the UI and CLI, masking the keys
+ * in `maskFields`.
  */
 export interface ApiOptions {
+  /** Encodes the payloads the api stores and decodes them for the codec endpoint. */
+  readonly payloadCodec?: PayloadCodec;
+  /** Object keys the codec endpoint answers as `"[masked]"`. */
+  readonly maskFields?: readonly string[];
   readonly queueName: string;
   readonly maxBodyBytes?: number;
   readonly apiKeys?: ApiKeyStore;
@@ -306,6 +315,8 @@ export function createApiHandler(pool: Pool, options: ApiOptions): ApiHandler {
       ...(options.readYourWritesMs === undefined
         ? {}
         : { readYourWritesMs: options.readYourWritesMs }),
+      ...(options.payloadCodec === undefined ? {} : { payloadCodec: options.payloadCodec }),
+      ...(options.maskFields === undefined ? {} : { maskFields: options.maskFields }),
     });
   const auditLog = options.auditLog ?? createAuditLog(pool);
   const admin = options.admin ?? createAdminService(pool, apiKeys, auditLog);

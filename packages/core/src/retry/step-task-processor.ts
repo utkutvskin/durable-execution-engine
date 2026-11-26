@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { identityPayloadCodec, type PayloadCodec } from "../codec/payload-codec.ts";
 import { z } from "zod";
 import { noopTracing, type TraceSpan, type Tracing } from "../observability/tracing.ts";
 import type { RecordStepResultInput, ResultRecorder } from "../idempotency/recorder.ts";
@@ -93,6 +94,11 @@ export interface StepTaskProcessorOptions {
   readonly heartbeats?: HeartbeatStore;
   readonly beforeSettle?: (task: LeasedTask) => Promise<void>;
   readonly followUp?: StepFollowUp;
+  /**
+   * Decodes the step input before the handler sees it and encodes the
+   * result before it is recorded. Defaults to `identityPayloadCodec`.
+   */
+  readonly payloadCodec?: PayloadCodec;
 }
 
 /**
@@ -201,6 +207,7 @@ const systemTimers: TimeoutTimers = {
  */
 export function createStepTaskProcessor(options: StepTaskProcessorOptions): StepTaskProcessor {
   const clock = options.clock ?? systemClock;
+  const payloadCodec = options.payloadCodec ?? identityPayloadCodec;
   const random = options.random ?? systemRandomSource;
   const timers = options.timers ?? systemTimers;
   const tracing = options.tracing ?? noopTracing;
@@ -299,7 +306,7 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
       }
       const run = runWithDeadlines(
         (deadlineSignal, restartHeartbeat) =>
-          definition.handler(payload.input, {
+          definition.handler(payloadCodec.decode(payload.input), {
             ...context,
             signal:
               leaseSignal === undefined
@@ -310,7 +317,7 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
                 return;
               }
               restartHeartbeat();
-              writer.send(details);
+              writer.send(payloadCodec.encode(details));
             },
           }),
         attemptDeadlines(definition, scheduleDeadline),
@@ -414,7 +421,7 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
         result = await executeTraced(
           definition,
           payload,
-          { attempt, heartbeatDetails: previous?.details ?? undefined },
+          { attempt, heartbeatDetails: payloadCodec.decode(previous?.details ?? undefined) },
           writer,
           scheduleDeadline,
           span,
@@ -490,7 +497,7 @@ export function createStepTaskProcessor(options: StepTaskProcessorOptions): Step
       const recorded = await settleStep(task, {
         stepId,
         attemptKey: `attempt-${String(attempt)}`,
-        outcome: { status: "completed", result },
+        outcome: { status: "completed", result: payloadCodec.encode(result) },
       });
       if (!recorded.acked) {
         return { status: "lease_lost" };

@@ -1,4 +1,6 @@
 import type { Pool, PoolClient } from "pg";
+import { decodeEventPayloads } from "../codec/event-payloads.ts";
+import { identityPayloadCodec, type PayloadCodec } from "../codec/payload-codec.ts";
 import { jsonCodec, type Codec } from "../event-store/codec.ts";
 import {
   appendEventsOnClient,
@@ -189,6 +191,12 @@ export interface RunInteractionsOptions {
   readonly clock: ClockSource;
   readonly random: RandomSource;
   readonly codec?: Codec;
+  /**
+   * Encodes signal payloads, start inputs and update arguments before they
+   * are stored, and decodes the history a query or an update replays and
+   * the update result handed back. Defaults to `identityPayloadCodec`.
+   */
+  readonly payloadCodec?: PayloadCodec;
   readonly updateWait?: UpdateWaitOptions;
 }
 
@@ -368,6 +376,7 @@ export function createRunInteractions(
   options: RunInteractionsOptions,
 ): RunInteractions {
   const codec = options.codec ?? jsonCodec;
+  const payloadCodec = options.payloadCodec ?? identityPayloadCodec;
   const store = createPostgresEventStore(pool, codec);
 
   return {
@@ -378,17 +387,32 @@ export function createRunInteractions(
       signalOptions: SignalOptions = {},
     ): Promise<SignalReceipt> {
       return inTransaction(pool, (client) =>
-        signalRunOnClient(client, codec, runId, signalName, payload, signalOptions),
+        signalRunOnClient(
+          client,
+          codec,
+          runId,
+          signalName,
+          payloadCodec.encode(payload),
+          signalOptions,
+        ),
       );
     },
 
     async signalWithStart(input: SignalWithStartInput): Promise<SignalWithStartReceipt> {
-      return inTransaction(pool, (client) => signalWithStartOnClient(client, codec, input));
+      return inTransaction(pool, (client) =>
+        signalWithStartOnClient(client, codec, {
+          ...input,
+          input: payloadCodec.encode(input.input),
+          payload: payloadCodec.encode(input.payload),
+        }),
+      );
     },
 
     async queryRun(runId: string, queryName: string, argument?: unknown): Promise<unknown> {
-      const events = await store.read(runId);
-      const started = events[0]?.event;
+      const events = (await store.read(runId)).map((stored) =>
+        decodeEventPayloads(payloadCodec, stored.event),
+      );
+      const started = events[0];
       if (started?.type !== "run_started") {
         const known = await pool.query("select 1 from workflow_runs where id = $1", [runId]);
         throw known.rowCount === 1
@@ -402,7 +426,7 @@ export function createRunInteractions(
       return runQuery(
         definition.handler,
         started.input,
-        events.map((stored) => stored.event),
+        events,
         { clock: options.clock, random: options.random },
         queryName,
         argument,
@@ -423,7 +447,7 @@ export function createRunInteractions(
         receipt = await acceptUpdateOnClient(
           client,
           codec,
-          { workflows: options.workflows, clock: options.clock },
+          { workflows: options.workflows, clock: options.clock, payloadCodec },
           runId,
           updateName,
           argument,
@@ -436,7 +460,7 @@ export function createRunInteractions(
       } finally {
         client.release(broken);
       }
-      return awaitUpdateOutcome(
+      const outcome = await awaitUpdateOutcome(
         pool,
         codec,
         runId,
@@ -444,6 +468,9 @@ export function createRunInteractions(
         updateWaitMs(callOptions.waitMs),
         options.updateWait,
       );
+      return outcome.status === "completed"
+        ? { ...outcome, result: payloadCodec.decode(outcome.result) }
+        : outcome;
     },
   };
 }
