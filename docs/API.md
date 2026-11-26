@@ -95,6 +95,8 @@ The key is shown once; only its sha256 hash is stored.
 | GET    | `/v1/admin/namespaces/{namespace}/quota`  | `adminGetQuota`          | 200     |
 | POST   | `/v1/admin/namespaces/{namespace}/quota`  | `adminSetQuota`          | 200     |
 | GET    | `/v1/admin/audit-log`                     | `adminListAuditLog`      | 200     |
+| POST   | `/v1/codec/decode`                        | `decodePayloads`         | 200     |
+| POST   | `/v1/codec/encode`                        | `encodePayloads`         | 200     |
 | GET    | `/v1/runs/{runId}/stream`                 | not in OpenAPI           | 200     |
 | GET    | `/openapi.json`                           | public                   | 200     |
 
@@ -163,6 +165,14 @@ const order = defineWorkflow("order", async (ctx, input: { orderId: string }) =>
 ## Run stream
 
 `GET /v1/runs/{runId}/stream?after=<sequence number>` is a server sent events stream of one run. It sends a `slice` event with `{ events, status, closed }` for the history after `after` (or the `Last-Event-ID` header, which holds the last sequence number sent), keeps polling the database every `streamPollMs` (default 500 ms) and sends a new `slice` whenever events or the status change. When the run has closed and everything was sent it sends an `end` event and closes. A comment line is sent as a heartbeat every 15 seconds. A namespace can have `maxStreamsPerNamespace` streams open (default 20); one more answers 429 `stream_limit_reached` with `Retry-After: 5`. A stream ends after `maxStreamLifetimeMs` (default 15 minutes) with a `reconnect` event instead of `end`, and the client opens a new one with `Last-Event-ID`. The stream needs the bearer key like every other call, so a browser reads it with `fetch` and not with `EventSource`. A run of another namespace answers 404, a cursor that is not a non negative integer answers 400.
+
+## Payload codec and encryption
+
+With a payload codec (`ApiOptions.payloadCodec`, or `WF_ENCRYPTION_KEYS` for `wf serve`, see `docs/DEPLOYMENT.md`), the API encodes every user payload before it stores it: run inputs, signal payloads, update arguments, event payloads and schedule inputs. The worker encodes what workflow and step code produce. Reads return payloads as they are stored: an encoded payload is a JSON object `{ "$dee_codec": "aes-256-gcm", "keyId", "iv", "tag", "data" }` (or `"gzip"` with `data`). Query answers and update results are computed or decoded by the server and come back as plain values.
+
+`POST /v1/codec/decode` with `{ "payloads": [...] }` (at most 1,000) answers `{ "payloads": [...] }` in the same order, with every encoded payload decoded, at any depth (a whole history event can be passed), and with the keys of `ApiOptions.maskFields` (`WF_MASK_FIELDS`) replaced by `"[masked]"`. A value that is not encoded comes back as it is. A payload encrypted with a key the server does not have, or one that was changed, answers 422 `payload_not_decodable`. `POST /v1/codec/encode` encodes. Both need a `read` key. The UI and `wf run describe` show payloads only through the decode endpoint; `--json` prints them as stored.
+
+Ids, types, timestamps, errors, search attributes and the memo are not payloads and stay in clear text, so the engine, the visibility queries and the invariant checker can read them.
 
 ## Dead letters
 
