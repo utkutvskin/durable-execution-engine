@@ -1,7 +1,7 @@
 import type { Pool } from "pg";
 import { systemClock, type ClockSource } from "../workflow/sources.ts";
 import { createRecoveryMetrics, type RecoveryMetrics } from "./metrics.ts";
-import { rollbackQuietly } from "../db/transaction.ts";
+import { rollbackQuietly, withTransaction } from "../db/transaction.ts";
 
 /**
  * A task whose lease expired without an ack, nack or heartbeat, and that the
@@ -167,6 +167,9 @@ export const MAX_RECOVERY_BACKOFF_MS = 3_600_000;
 
 const DB_NOW = "coalesce($1::timestamptz, now())";
 
+const EXPIRED_LEASE_PREDICATE = `t.state = 'LEASED' and t.visible_at <= ${DB_NOW}
+  and (t.lease_extended_until is null or t.lease_extended_until <= ${DB_NOW})`;
+
 const STALLED_PREDICATE = `
   r.status = 'RUNNING'
   and r.queue_name = $3
@@ -212,27 +215,36 @@ export function createJanitor(pool: Pool, options: JanitorOptions = {}): Janitor
 
   async function reclaimOrphanedLeases(): Promise<ReclaimedTask[]> {
     const now = instant();
-    const result = await pool.query<ReclaimRow>(
-      `with expired as (
-         select id, leased_by, leased_by_version from tasks
-         where state = 'LEASED' and visible_at <= ${DB_NOW}
-           and (lease_extended_until is null or lease_extended_until <= ${DB_NOW})
-         for update skip locked
-       )
-       update tasks
-       set state = case when tasks.reclaim_count + 1 >= $2 then 'QUARANTINED' else 'PENDING' end,
-           lease_token = null, leased_by = null, leased_by_version = null,
-           leased_at = null, reclaim_count = tasks.reclaim_count + 1,
-           quarantined_at = case when tasks.reclaim_count + 1 >= $2 then ${DB_NOW} end,
-           quarantine_reason = case when tasks.reclaim_count + 1 >= $2
-             then 'lease lost ' || (tasks.reclaim_count + 1)::text || ' times' end,
-           visible_at = ${DB_NOW}, lease_extended_until = null, updated_at = ${DB_NOW}
-       from expired
-       where tasks.id = expired.id
-       returning tasks.id, tasks.run_id, tasks.queue_name, tasks.attempts, tasks.state,
-                 expired.leased_by, expired.leased_by_version`,
-      [now, poisonThreshold],
-    );
+    const result = await withTransaction(pool, async (client) => {
+      const runs = await client.query<{ id: string }>(
+        `select r.id from workflow_runs r
+         where r.id in (select t.run_id from tasks t where ${EXPIRED_LEASE_PREDICATE})
+         order by r.id
+         for no key update skip locked`,
+        [now],
+      );
+      return client.query<ReclaimRow>(
+        `with expired as (
+           select id, leased_by, leased_by_version from tasks t
+           where ${EXPIRED_LEASE_PREDICATE} and t.run_id = any($3::uuid[])
+           order by t.id
+           for update skip locked
+         )
+         update tasks
+         set state = case when tasks.reclaim_count + 1 >= $2 then 'QUARANTINED' else 'PENDING' end,
+             lease_token = null, leased_by = null, leased_by_version = null,
+             leased_at = null, reclaim_count = tasks.reclaim_count + 1,
+             quarantined_at = case when tasks.reclaim_count + 1 >= $2 then ${DB_NOW} end,
+             quarantine_reason = case when tasks.reclaim_count + 1 >= $2
+               then 'lease lost ' || (tasks.reclaim_count + 1)::text || ' times' end,
+             visible_at = ${DB_NOW}, lease_extended_until = null, updated_at = ${DB_NOW}
+         from expired
+         where tasks.id = expired.id
+         returning tasks.id, tasks.run_id, tasks.queue_name, tasks.attempts, tasks.state,
+                   expired.leased_by, expired.leased_by_version`,
+        [now, poisonThreshold, runs.rows.map((run) => run.id)],
+      );
+    });
     const reclaimed = result.rows.map((row): ReclaimedTask => ({
       taskId: row.id,
       runId: row.run_id,

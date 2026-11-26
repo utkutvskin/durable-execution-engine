@@ -329,6 +329,58 @@ describe("janitor", () => {
     }
   });
 
+  async function blockedBy(pid: number): Promise<boolean> {
+    const result = await database.pool.query(
+      "select 1 from pg_stat_activity where $1 = any(pg_blocking_pids(pid))",
+      [pid],
+    );
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  it("reclaims without deadlocking a transaction that locked the run before acking its step task", async () => {
+    const clock = movableClock();
+    const queue = createTaskQueue(database.pool, { clock });
+    const janitor = createJanitor(database.pool, { clock });
+    const runId = await createRun(START);
+    await queue.enqueue({ namespaceId, runId, queueName: "q", taskType: "WORKFLOW_TASK" });
+    const stepTaskId = await queue.enqueue({
+      namespaceId,
+      runId,
+      queueName: "q",
+      taskType: "STEP_TASK",
+    });
+    await queue.dequeue({ queueName: "q", visibilityTimeoutMs: 1000, limit: 2 });
+    clock.advance(1000);
+
+    const holder = await database.pool.connect();
+    try {
+      await holder.query("begin");
+      const pid = await holder.query<{ pid: number }>("select pg_backend_pid() as pid");
+      await holder.query("select 1 from workflow_runs where id = $1 for update", [runId]);
+      const progress = { settled: false };
+      const reclaim = janitor.reclaimOrphanedLeases().finally(() => {
+        progress.settled = true;
+      });
+      const holderPid = pid.rows[0]?.pid ?? 0;
+      while (!progress.settled && !(await blockedBy(holderPid))) {
+        await holder.query("select 1");
+      }
+      const acked = holder.query(
+        "update tasks set state = 'COMPLETED', lease_token = null where id = $1",
+        [stepTaskId],
+      );
+      const outcomes = await Promise.allSettled([acked, reclaim]);
+      await holder.query("commit");
+
+      expect(outcomes.map((outcome) => outcome.status)).toEqual(["fulfilled", "fulfilled"]);
+    } finally {
+      holder.release();
+    }
+    expect((await taskRow(stepTaskId)).state).toBe("COMPLETED");
+    const later = await janitor.reclaimOrphanedLeases();
+    expect(later.map((task) => task.runId)).toEqual([runId]);
+  });
+
   it("rejects a negative grace period", async () => {
     const janitor = createJanitor(database.pool);
     await expect(janitor.findStalledRuns({ graceMs: -1, queueName: "q" })).rejects.toThrow(
