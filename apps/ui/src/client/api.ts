@@ -155,6 +155,64 @@ export interface StreamSlice {
 }
 
 /**
+ * Where a reset or fork cuts a run's history.
+ */
+export type ResetPoint =
+  | { readonly kind: "event"; readonly sequence: number }
+  | { readonly kind: "step"; readonly step: number }
+  | { readonly kind: "failed-step" };
+
+/**
+ * An event a reset or fork can cut a run's history after.
+ */
+export interface ResetPointCandidate {
+  readonly sequence: number;
+  readonly eventType: string;
+  readonly stepId?: string;
+  readonly stepType?: string;
+  readonly step?: number;
+}
+
+/**
+ * What the api answers to a reset or fork: the new run among the rest.
+ */
+export interface ResetAnswer {
+  readonly runId: string;
+  readonly resetFromRunId: string;
+  readonly kind: "reset" | "fork";
+  readonly terminatedOriginal: boolean;
+}
+
+/**
+ * What the batches page starts.
+ */
+export interface BatchRequest {
+  readonly operation: "cancel" | "terminate" | "signal" | "reset" | "requeue";
+  readonly query: string;
+  readonly reason?: string;
+  readonly signal?: { readonly name: string; readonly payload?: unknown };
+  readonly resetPoint?:
+    { readonly kind: "step"; readonly step: number } | { readonly kind: "failed-step" };
+  readonly runsPerSecond?: number;
+}
+
+/**
+ * A batch operation and its progress.
+ */
+export interface Batch {
+  readonly batchId: string;
+  readonly operation: string;
+  readonly query: string;
+  readonly runId: string;
+  readonly status: string;
+  readonly total: number;
+  readonly applied: number;
+  readonly skipped: number;
+  readonly remaining: number;
+  readonly createdAt: string;
+}
+
+/**
  * The calls the ui makes. Every call carries the api key of the namespace
  * the user signed in with.
  */
@@ -187,6 +245,12 @@ export interface ApiClient {
   listQuarantined(): Promise<readonly QuarantinedTask[]>;
   /** Puts a quarantined task back on its queue with a fresh reclaim budget. */
   releaseQuarantined(taskId: string): Promise<void>;
+  /** The events a reset or fork can cut `runId`'s history after. */
+  listResetPoints(runId: string): Promise<readonly ResetPointCandidate[]>;
+  resetRun(runId: string, point: ResetPoint, reason: string): Promise<ResetAnswer>;
+  forkRun(runId: string, point: ResetPoint, workflowType?: string): Promise<ResetAnswer>;
+  startBatch(request: BatchRequest): Promise<Batch>;
+  listBatches(): Promise<readonly Batch[]>;
   /**
    * Follows a run's history until the run closes or `signal` aborts. Resolves
    * with the last sequence number received, so a caller can resume from it.
@@ -324,6 +388,24 @@ export function createApiClient(apiKey: string, fetchFn: typeof fetch, baseUrl =
     },
     async releaseQuarantined(taskId) {
       await request("POST", `/v1/quarantined-tasks/${encodeURIComponent(taskId)}/release`, {});
+    },
+    async listResetPoints(runId) {
+      const answer = await request<{ points: ResetPointCandidate[] }>(
+        "GET",
+        `/v1/runs/${encodeURIComponent(runId)}/reset-points`,
+      );
+      return answer.points;
+    },
+    resetRun: (runId, point, reason) =>
+      request("POST", `/v1/runs/${encodeURIComponent(runId)}/reset`, { point, reason }),
+    forkRun: (runId, point, workflowType) =>
+      request("POST", `/v1/runs/${encodeURIComponent(runId)}/fork`, {
+        point,
+        ...(workflowType === undefined || workflowType === "" ? {} : { workflowType }),
+      }),
+    startBatch: (batch) => request("POST", "/v1/batches", batch),
+    async listBatches() {
+      return (await request<{ batches: Batch[] }>("GET", "/v1/batches")).batches;
     },
     async streamRun(runId, after, onSlice, signal) {
       const response = await fetchFn(

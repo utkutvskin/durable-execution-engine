@@ -14,6 +14,10 @@ import {
   MAX_EVENT_BUFFER_MS,
   MAX_UPDATE_WAIT_MS,
   RunAlreadyClosedError,
+  InvalidResetPointError,
+  InvalidBatchOperationError,
+  BatchOperationNotFoundError,
+  type BatchOperation,
   RunHistoryCompactedError,
   RunNotFoundError,
   RunNotOpenError,
@@ -462,6 +466,134 @@ const cancelResponseSchema = z
   .object({ requested: z.boolean(), sequenceNumber: z.number().int() })
   .meta({ id: "CancelResponse" });
 
+const resetPointSchema = z
+  .discriminatedUnion("kind", [
+    z.object({ kind: z.literal("event"), sequence: z.number().int().min(1) }),
+    z.object({ kind: z.literal("step"), step: z.number().int().min(1) }),
+    z.object({ kind: z.literal("failed-step") }),
+  ])
+  .meta({
+    id: "ResetPoint",
+    description:
+      "Where the history is cut: after event `sequence`, before the `step`th step, or before the first step that failed for good.",
+  });
+
+const batchResetPointSchema = z
+  .discriminatedUnion("kind", [
+    z.object({ kind: z.literal("step"), step: z.number().int().min(1) }),
+    z.object({ kind: z.literal("failed-step") }),
+  ])
+  .meta({ id: "BatchResetPoint" });
+
+const resetRequestSchema = z
+  .object({ point: resetPointSchema, reason: z.string().max(1000).optional() })
+  .meta({ id: "ResetRequest" });
+
+const forkRequestSchema = z
+  .object({ point: resetPointSchema, workflowType: z.string().min(1).max(255).optional() })
+  .meta({ id: "ForkRequest" });
+
+const resetResponseSchema = z
+  .object({
+    runId: z.string(),
+    resetFromRunId: z.string(),
+    kind: z.enum(["reset", "fork"]),
+    workflowType: z.string(),
+    eventSequence: z.number().int(),
+    terminatedOriginal: z.boolean(),
+    rescheduledSteps: z.array(z.string()),
+  })
+  .meta({ id: "ResetResponse" });
+
+const resetPointListSchema = z
+  .object({
+    points: z.array(
+      z.object({
+        sequence: z.number().int(),
+        eventType: z.string(),
+        stepId: z.string().optional(),
+        stepType: z.string().optional(),
+        step: z.number().int().optional(),
+      }),
+    ),
+  })
+  .meta({ id: "ResetPointList" });
+
+const batchRequestSchema = z
+  .object({
+    operation: z.enum(["cancel", "terminate", "signal", "reset", "requeue"]),
+    query: z.string().max(2000),
+    reason: z.string().max(1000).optional(),
+    signal: z
+      .object({ name: z.string().min(1).max(255), payload: z.unknown().optional() })
+      .optional(),
+    resetPoint: batchResetPointSchema.optional(),
+    runsPerSecond: z.number().positive().max(100_000).optional(),
+    pageSize: z.number().int().min(1).max(1000).optional(),
+  })
+  .meta({ id: "BatchRequest" });
+
+const batchSchema = z
+  .object({
+    batchId: z.string(),
+    operation: z.string(),
+    query: z.string(),
+    reason: z.string().nullable(),
+    runId: z.string(),
+    status: z.string(),
+    total: z.number().int(),
+    applied: z.number().int(),
+    skipped: z.number().int(),
+    remaining: z.number().int(),
+    pageSize: z.number().int(),
+    pageIntervalMs: z.number().int(),
+    createdAt: z.iso.datetime(),
+  })
+  .meta({ id: "Batch" });
+
+const batchListSchema = z.object({ batches: z.array(batchSchema) }).meta({ id: "BatchList" });
+
+const batchTargetListSchema = z
+  .object({
+    targets: z.array(
+      z.object({
+        position: z.number().int(),
+        runId: z.string(),
+        state: z.enum(["PENDING", "APPLIED", "SKIPPED"]),
+        detail: z.string().nullable(),
+        appliedAt: z.iso.datetime().nullable(),
+      }),
+    ),
+  })
+  .meta({ id: "BatchTargetList" });
+
+const batchListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+});
+
+const batchTargetQuerySchema = z.object({
+  after: z.coerce.number().int().min(0).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+});
+
+function toBatchBody(batch: BatchOperation): z.input<typeof batchSchema> {
+  return {
+    batchId: batch.batchId,
+    operation: batch.operation,
+    query: batch.query,
+    reason: batch.reason,
+    runId: batch.runId,
+    status: batch.status,
+    total: batch.total,
+    applied: batch.applied,
+    skipped: batch.skipped,
+    remaining: batch.remaining,
+    pageSize: batch.pageSize,
+    pageIntervalMs: batch.pageIntervalMs,
+    createdAt: batch.createdAt.toISOString(),
+  };
+}
+
 const MAX_IDEMPOTENCY_KEY_LENGTH = 255;
 
 const pauseRequestSchema = z
@@ -678,6 +810,10 @@ function deadLetterIdOf(request: RawRequest): string {
 
 function scheduleIdOf(request: RawRequest): string {
   return request.params["scheduleId"] ?? "";
+}
+
+function batchIdOf(request: RawRequest): string {
+  return request.params["batchId"] ?? "";
 }
 
 function runIdOf(request: RawRequest): string {
@@ -1162,6 +1298,157 @@ export function createRoutes(service: RunService): readonly Route[] {
         return { status: 200, body: receipt };
       },
     }),
+    defineRoute({
+      method: "get",
+      path: "/v1/runs/{runId}/reset-points",
+      operationId: "listResetPoints",
+      summary: "List the events a reset or fork can cut the run's history after.",
+      responses: {
+        200: { description: "The cuts, oldest first.", schema: resetPointListSchema },
+        ...commonErrors,
+        404: notFound,
+        409: errorResponse("The run's history was compacted or purged."),
+      },
+      async handle(request) {
+        const points = await service.listResetPoints(request.namespaceId, runIdOf(request));
+        return { status: 200, body: { points } };
+      },
+    }),
+    defineRoute({
+      method: "post",
+      path: "/v1/runs/{runId}/reset",
+      operationId: "resetRun",
+      audit: {
+        action: "run.reset",
+        describe: (_request, result) => ({
+          details: { newRunId: (result.body as { runId?: unknown }).runId ?? null },
+        }),
+      },
+      summary:
+        "Replace the run with a new run whose history is copied up to a cut; an open run is terminated.",
+      body: resetRequestSchema,
+      responses: {
+        201: { description: "The new run was started.", schema: resetResponseSchema },
+        ...commonErrors,
+        404: notFound,
+        409: errorResponse("The history cannot be cut there."),
+      },
+      async handle(request) {
+        const receipt = await service.resetRun(request.namespaceId, runIdOf(request), {
+          point: request.parsedBody.point,
+          reason: request.parsedBody.reason,
+        });
+        return { status: 201, body: receipt };
+      },
+    }),
+    defineRoute({
+      method: "post",
+      path: "/v1/runs/{runId}/fork",
+      operationId: "forkRun",
+      audit: {
+        action: "run.fork",
+        describe: (_request, result) => ({
+          details: { newRunId: (result.body as { runId?: unknown }).runId ?? null },
+        }),
+      },
+      summary:
+        "Start a new run whose history is copied up to a cut, optionally under another workflow type.",
+      body: forkRequestSchema,
+      responses: {
+        201: { description: "The new run was started.", schema: resetResponseSchema },
+        ...commonErrors,
+        404: notFound,
+        409: errorResponse("The history cannot be cut there."),
+      },
+      async handle(request) {
+        const receipt = await service.forkRun(request.namespaceId, runIdOf(request), {
+          point: request.parsedBody.point,
+          workflowType: request.parsedBody.workflowType,
+        });
+        return { status: 201, body: receipt };
+      },
+    }),
+    defineRoute({
+      method: "post",
+      path: "/v1/batches",
+      operationId: "startBatch",
+      audit: {
+        action: "batch.start",
+        describe: (_request, result) => ({
+          details: { batchId: (result.body as { batchId?: unknown }).batchId ?? null },
+        }),
+      },
+      summary:
+        "Cancel, terminate, signal, reset or requeue every run a visibility query matches, as a durable, rate limited batch.",
+      body: batchRequestSchema,
+      responses: {
+        201: { description: "The batch was started.", schema: batchSchema },
+        ...commonErrors,
+      },
+      async handle(request) {
+        const batch = await service.startBatch(request.namespaceId, request.parsedBody);
+        return { status: 201, body: toBatchBody(batch) };
+      },
+    }),
+    defineRoute({
+      method: "get",
+      path: "/v1/batches",
+      operationId: "listBatches",
+      summary: "List the namespace's batch operations, newest first.",
+      query: batchListQuerySchema,
+      responses: {
+        200: { description: "The batches.", schema: batchListSchema },
+        ...commonErrors,
+      },
+      async handle(request) {
+        const batches = await service.listBatches(request.namespaceId, request.parsedQuery.limit);
+        return { status: 200, body: { batches: batches.map(toBatchBody) } };
+      },
+    }),
+    defineRoute({
+      method: "get",
+      path: "/v1/batches/{batchId}",
+      operationId: "getBatch",
+      summary: "Read a batch operation and its progress.",
+      responses: {
+        200: { description: "The batch.", schema: batchSchema },
+        ...commonErrors,
+        404: errorResponse("The batch does not exist in the caller's namespace."),
+      },
+      async handle(request) {
+        const batch = await service.getBatch(request.namespaceId, batchIdOf(request));
+        return { status: 200, body: toBatchBody(batch) };
+      },
+    }),
+    defineRoute({
+      method: "get",
+      path: "/v1/batches/{batchId}/targets",
+      operationId: "listBatchTargets",
+      summary: "List the runs a batch targets and what it did to each, in position order.",
+      query: batchTargetQuerySchema,
+      responses: {
+        200: { description: "The targets.", schema: batchTargetListSchema },
+        ...commonErrors,
+        404: errorResponse("The batch does not exist in the caller's namespace."),
+      },
+      async handle(request) {
+        const targets = await service.listBatchTargets(request.namespaceId, batchIdOf(request), {
+          ...(request.parsedQuery.after === undefined
+            ? {}
+            : { afterPosition: request.parsedQuery.after }),
+          ...(request.parsedQuery.limit === undefined ? {} : { limit: request.parsedQuery.limit }),
+        });
+        return {
+          status: 200,
+          body: {
+            targets: targets.map((target) => ({
+              ...target,
+              appliedAt: target.appliedAt === null ? null : target.appliedAt.toISOString(),
+            })),
+          },
+        };
+      },
+    }),
     ...createOperationRoutes(service),
   ];
 }
@@ -1523,6 +1810,18 @@ export function toErrorResult(error: unknown): ErrorResult {
       status: 404,
       body: { error: { code: "not_found", message: "dead letter not found" } },
     };
+  }
+  if (error instanceof InvalidResetPointError) {
+    return {
+      status: 409,
+      body: { error: { code: "invalid_reset_point", message: error.message } },
+    };
+  }
+  if (error instanceof InvalidBatchOperationError) {
+    return { status: 400, body: { error: { code: "invalid_batch", message: error.message } } };
+  }
+  if (error instanceof BatchOperationNotFoundError) {
+    return { status: 404, body: { error: { code: "not_found", message: "batch not found" } } };
   }
   if (error instanceof RunNotFoundError) {
     return { status: 404, body: { error: { code: "not_found", message: "run not found" } } };

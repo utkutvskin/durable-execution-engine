@@ -123,7 +123,7 @@ describe("admin surface and key scopes", () => {
     const writes = api.routes.filter(
       (route) => route.method === "post" && !route.path.startsWith("/v1/codec/"),
     );
-    expect(writes.length).toBe(20);
+    expect(writes.length).toBe(23);
     for (const route of writes) {
       const path = route.path.replace(/\{(\w+)\}/g, (_match, name: string) =>
         name === "namespace" ? "ops" : name === "runId" ? runId : PLACEHOLDER_ID,
@@ -273,6 +273,7 @@ describe("admin surface and key scopes", () => {
     const cancelled = await startRun();
     const terminated = await startRun();
     const quarantinedRun = await startRun();
+    const resetRun = await startRun();
     const taskId = await quarantine(quarantinedRun);
     const deadLetterId = await createDeadLetterQueue(database.pool).add({
       namespaceId: await namespaceIdOf("ops"),
@@ -293,6 +294,9 @@ describe("admin surface and key scopes", () => {
       [`/v1/runs/${terminated}/terminate`, "run.terminate", { reason: "stuck" }],
       [`/v1/dead-letters/${deadLetterId}/requeue`, "dead_letter.requeue"],
       [`/v1/quarantined-tasks/${taskId}/release`, "task.release"],
+      [`/v1/runs/${resetRun}/fork`, "run.fork", { point: { kind: "event", sequence: 1 } }],
+      [`/v1/runs/${resetRun}/reset`, "run.reset", { point: { kind: "event", sequence: 1 } }],
+      ["/v1/batches", "batch.start", { operation: "cancel", query: "status = 'COMPLETED'" }],
     ];
     for (const [path, , body] of operatorCalls) {
       const reply = await call(operateKey, "POST", path, body ?? {});

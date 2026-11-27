@@ -58,6 +58,20 @@ wf audit list --namespace acme --limit 20
 
 `wf keys issue` prints the secret on the first line and a summary on the second; the secret is not shown again, and `--json` prints both as one object. Issuing a key for a namespace that does not exist exits 1: create it first. `--scope` is required and takes `read`, `operate` or `admin`; `--expires-in` and `--expires-at` exclude each other. `wf quota set` changes only the limits it is given, and `none` removes one; without any limit flag it is a usage error. `wf audit list` prints each action with its time, namespace, target and actor (the key's label, or its id when it has none, with its scope and namespace). Every one of these commands takes `--json`.
 
+## Reset, fork and batches
+
+```sh
+wf reset 0b6c... --failed-step --reason "charge fixed in 1.4.2"
+wf fork 0b6c... --step 2 --workflow-type order-v2
+wf batch start terminate --query "workflowType = 'import' and status = 'RUNNING'" --rate 50
+wf batch start signal --query "customerId = 'c-1'" --signal refund --payload '{"amount":10}'
+wf batch start reset --query "status = 'FAILED'" --failed-step
+wf batch list
+wf batch show 7d1e... --targets
+```
+
+`wf reset` and `wf fork` take exactly one cut: `--event n` (keep the events up to `n`), `--step n` (run the `n`th step and everything after it again) or `--failed-step` (run the step that failed for good again). `wf reset` terminates an open run; `wf fork` leaves it alone and takes `--workflow-type` for new code under another name. Both print the new run's id. `wf batch start <operation>` needs `--query` (`--query ""` for every run); `signal` needs `--signal`, `reset` needs `--step n` or `--failed-step` (not `--event`), `--rate` caps the runs per second and `--page-size` the runs per step. `wf batch show` prints the progress, and with `--targets` the first 500 targets with what was done to each. Each command needs an `operate` key and takes `--json`. See `docs/API.md` for what a reset copies and how a batch survives a crash.
+
 ## History export and replay
 
 `wf history export <runId>` reads every page of the run's history through the API and prints one JSON document (`format: "dee.history"`, `formatVersion`, `runId`, `workflowType`, `exportedAt`, and `events`, each with its `sequenceNumber`, `createdAt`, event format `version` and the `event`). `--out <file>` writes it to a file instead. A run whose history was compacted has lost its oldest events and is refused.

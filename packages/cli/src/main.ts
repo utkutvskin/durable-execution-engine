@@ -15,6 +15,7 @@ import {
   scheduleCommand,
   type OperationsHooks,
 } from "./commands/operations.ts";
+import { batchCommand, forkCommand, resetCommand } from "./commands/recovery.ts";
 import {
   auditCommand,
   keysCommand,
@@ -59,6 +60,14 @@ commands:
   dlq requeue <id>        put a dead letter back on its queue with a fresh retry budget
   quarantine list         list the tasks that are no longer delivered
   quarantine release <id> put a quarantined task back on its queue
+  reset <id>              replace a run with a new one copied up to a cut (--event n, --step n
+                          or --failed-step; --reason text); an open run is terminated
+  fork <id>               start a new run copied up to a cut, leaving the run as it is
+                          (--event n, --step n or --failed-step; --workflow-type t)
+  batch start <operation> cancel, terminate, signal, reset or requeue the runs --query q matches
+                          (--signal name --payload json, --step n or --failed-step, --rate n,
+                          --page-size n, --reason text)
+  batch list              list batch operations; batch show <id> shows one (--targets)
 admin commands (need an admin key):
   namespace create <name> create a namespace; namespace list lists them
   keys issue <namespace>  issue a key (--scope read|operate|admin, --label l,
@@ -152,6 +161,12 @@ export async function main(
         return await dlqCommand(rest, io, hooks);
       case "quarantine":
         return await quarantineCommand(rest, io, hooks);
+      case "reset":
+        return await resetCommand(rest, io, hooks);
+      case "fork":
+        return await forkCommand(rest, io, hooks);
+      case "batch":
+        return await batchCommand(rest, io, hooks);
       case "namespace":
         return await namespaceCommand(rest, io, hooks);
       case "keys":

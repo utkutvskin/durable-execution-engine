@@ -1,5 +1,21 @@
 import { isDeepStrictEqual } from "node:util";
 import {
+  createRunReset,
+  listBatchOperations,
+  listBatchTargets,
+  readBatchOperation,
+  startBatchOperationOnClient,
+  withTransaction,
+  BatchOperationNotFoundError,
+  type BatchOperation,
+  type BatchResetPoint,
+  type BatchOperationKind,
+  type BatchTarget,
+  type ResetPoint,
+  type ResetPointCandidate,
+  type ResetReceipt,
+} from "@dee/core";
+import {
   createDeadLetterQueue,
   noopTracing,
   type Tracing,
@@ -474,6 +490,72 @@ export interface RunService extends Operations {
     runId: string,
     reason?: string,
   ) => Promise<{ readonly sequenceNumber: number }>;
+
+  /**
+   * Replaces a run with a new one whose history is copied up to `point`
+   * (see `resetRunOnClient`); an open run is terminated. Rejects with
+   * `RunNotFoundError` or `InvalidResetPointError`.
+   */
+  resetRun: (namespaceId: string, runId: string, input: ResetRequest) => Promise<ResetReceipt>;
+
+  /**
+   * Starts a new run whose history is copied from `runId` up to `point`,
+   * optionally under another workflow type, and leaves `runId` as it is.
+   * Rejects with `RunNotFoundError` or `InvalidResetPointError`.
+   */
+  forkRun: (
+    namespaceId: string,
+    runId: string,
+    input: ResetRequest & { readonly workflowType?: string | undefined },
+  ) => Promise<ResetReceipt>;
+
+  /** Lists the places a run's history can be cut at by a reset or fork. */
+  listResetPoints: (namespaceId: string, runId: string) => Promise<ResetPointCandidate[]>;
+
+  /**
+   * Starts a batch operation over the runs a visibility query matches. A
+   * signal payload goes through the payload codec. Rejects with
+   * `InvalidBatchOperationError` or `VisibilityQueryError`.
+   */
+  startBatch: (namespaceId: string, input: StartBatchRequest) => Promise<BatchOperation>;
+
+  /** Lists the namespace's batch operations, newest first. */
+  listBatches: (namespaceId: string, limit?: number) => Promise<BatchOperation[]>;
+
+  /** Reads one batch operation. Rejects with `BatchOperationNotFoundError`. */
+  getBatch: (namespaceId: string, batchId: string) => Promise<BatchOperation>;
+
+  /**
+   * Lists a batch's targets in position order. Rejects with
+   * `BatchOperationNotFoundError`.
+   */
+  listBatchTargets: (
+    namespaceId: string,
+    batchId: string,
+    page: { readonly afterPosition?: number; readonly limit?: number },
+  ) => Promise<BatchTarget[]>;
+}
+
+/**
+ * What a reset or fork request names: the cut and, for a reset of an open
+ * run, the reason recorded on its `run_terminated` event.
+ */
+export interface ResetRequest {
+  readonly point: ResetPoint;
+  readonly reason?: string | undefined;
+}
+
+/**
+ * What `RunService.startBatch` takes. See `StartBatchInput`.
+ */
+export interface StartBatchRequest {
+  readonly operation: BatchOperationKind;
+  readonly query: string;
+  readonly reason?: string | undefined;
+  readonly signal?: { readonly name: string; readonly payload?: unknown } | undefined;
+  readonly resetPoint?: BatchResetPoint | undefined;
+  readonly runsPerSecond?: number | undefined;
+  readonly pageSize?: number | undefined;
 }
 
 /**
@@ -718,6 +800,15 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
     ...(options.updateWait === undefined ? {} : { updateWait: options.updateWait }),
   });
   const control: RunControl = createRunControl(pool);
+  const resets = createRunReset(pool, { clock });
+
+  async function ownedBatch(namespaceId: string, batchId: string): Promise<BatchOperation> {
+    const batch = await readBatchOperation(pool, batchId, namespaceId);
+    if (batch === undefined) {
+      throw new BatchOperationNotFoundError(batchId);
+    }
+    return batch;
+  }
   const events = createEventService(pool);
 
   function assertKnownType(workflowType: string): void {
@@ -1203,6 +1294,65 @@ export function createRunService(pool: Pool, options: RunServiceOptions): RunSer
       await assertOwned(namespaceId, runId);
       remember(runKey(runId));
       return control.terminateRun(runId, reason);
+    },
+
+    async resetRun(namespaceId, runId, input) {
+      await assertOwned(namespaceId, runId);
+      const receipt = await resets.resetRun({
+        runId,
+        point: input.point,
+        ...(input.reason === undefined ? {} : { reason: input.reason }),
+      });
+      remember(runKey(runId), runKey(receipt.runId), namespaceKey(namespaceId));
+      return receipt;
+    },
+
+    async forkRun(namespaceId, runId, input) {
+      await assertOwned(namespaceId, runId);
+      const receipt = await resets.forkRun({
+        runId,
+        point: input.point,
+        ...(input.workflowType === undefined ? {} : { workflowType: input.workflowType }),
+      });
+      remember(runKey(receipt.runId), namespaceKey(namespaceId));
+      return receipt;
+    },
+
+    async listResetPoints(namespaceId, runId) {
+      await assertOwned(namespaceId, runId);
+      return resets.listResetPoints(runId);
+    },
+
+    async startBatch(namespaceId, input) {
+      const batch = await withTransaction(pool, (client) =>
+        startBatchOperationOnClient(client, jsonCodec, {
+          ...input,
+          namespaceId,
+          queueName: options.queueName,
+          signal:
+            input.signal === undefined
+              ? undefined
+              : {
+                  name: input.signal.name,
+                  payload: payloadCodec.encode(input.signal.payload ?? null),
+                },
+        }),
+      );
+      remember(namespaceKey(namespaceId));
+      return batch;
+    },
+
+    async listBatches(namespaceId, limit) {
+      return listBatchOperations(pool, namespaceId, limit);
+    },
+
+    async getBatch(namespaceId, batchId) {
+      return ownedBatch(namespaceId, batchId);
+    },
+
+    async listBatchTargets(namespaceId, batchId, page) {
+      await ownedBatch(namespaceId, batchId);
+      return listBatchTargets(pool, batchId, page);
     },
   };
 }

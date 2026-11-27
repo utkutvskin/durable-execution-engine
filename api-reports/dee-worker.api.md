@@ -151,6 +151,7 @@ export interface Engine {
 
 // @public
 export interface EngineOptions {
+    readonly batchOperations?: boolean;
     // (undocumented)
     readonly buildId?: string;
     // (undocumented)
@@ -702,35 +703,35 @@ export interface WorkerOptions {
 // dist/engine/runtime.d.ts:86:5 - (ae-undocumented) Missing documentation for "compaction".
 // dist/engine/runtime.d.ts:87:5 - (ae-undocumented) Missing documentation for "retention".
 // dist/engine/runtime.d.ts:88:5 - (ae-undocumented) Missing documentation for "partitions".
-// dist/engine/runtime.d.ts:89:5 - (ae-undocumented) Missing documentation for "leaderElection".
-// dist/engine/runtime.d.ts:90:5 - (ae-undocumented) Missing documentation for "leaderLeaseMs".
-// dist/engine/runtime.d.ts:91:5 - (ae-undocumented) Missing documentation for "wakeups".
-// dist/engine/runtime.d.ts:92:5 - (ae-undocumented) Missing documentation for "sessionConnectionString".
-// dist/engine/runtime.d.ts:93:5 - (ae-undocumented) Missing documentation for "clock".
-// dist/engine/runtime.d.ts:94:5 - (ae-undocumented) Missing documentation for "random".
-// dist/engine/runtime.d.ts:95:5 - (ae-undocumented) Missing documentation for "tracing".
-// dist/engine/runtime.d.ts:96:5 - (ae-undocumented) Missing documentation for "onDecision".
-// dist/engine/runtime.d.ts:97:5 - (ae-undocumented) Missing documentation for "onError".
-// dist/engine/runtime.d.ts:105:5 - (ae-undocumented) Missing documentation for "intervalMs".
-// dist/engine/runtime.d.ts:106:5 - (ae-undocumented) Missing documentation for "finishedTaskGraceMs".
-// dist/engine/runtime.d.ts:107:5 - (ae-undocumented) Missing documentation for "closedRunRetentionMs".
-// dist/engine/runtime.d.ts:108:5 - (ae-undocumented) Missing documentation for "batchSize".
-// dist/engine/runtime.d.ts:117:5 - (ae-undocumented) Missing documentation for "intervalMs".
-// dist/engine/runtime.d.ts:118:5 - (ae-undocumented) Missing documentation for "aheadDays".
-// dist/engine/runtime.d.ts:119:5 - (ae-undocumented) Missing documentation for "settleMs".
-// dist/engine/runtime.d.ts:120:5 - (ae-undocumented) Missing documentation for "archive".
-// dist/engine/runtime.d.ts:121:5 - (ae-undocumented) Missing documentation for "archiveDirectory".
-// dist/engine/runtime.d.ts:127:5 - (ae-undocumented) Missing documentation for "intervalMs".
-// dist/engine/runtime.d.ts:128:5 - (ae-undocumented) Missing documentation for "policy".
-// dist/engine/runtime.d.ts:129:5 - (ae-undocumented) Missing documentation for "batchSize".
-// dist/engine/runtime.d.ts:136:5 - (ae-undocumented) Missing documentation for "cache".
-// dist/engine/runtime.d.ts:137:5 - (ae-undocumented) Missing documentation for "replay".
-// dist/engine/runtime.d.ts:145:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/engine/runtime.d.ts:146:5 - (ae-undocumented) Missing documentation for "workerId".
-// dist/engine/runtime.d.ts:147:5 - (ae-undocumented) Missing documentation for "schedules".
-// dist/engine/runtime.d.ts:148:5 - (ae-undocumented) Missing documentation for "metrics".
-// dist/engine/runtime.d.ts:149:5 - (ae-undocumented) Missing documentation for "recovery".
-// dist/engine/runtime.d.ts:152:5 - (ae-undocumented) Missing documentation for "decisionTotals".
+// dist/engine/runtime.d.ts:95:5 - (ae-undocumented) Missing documentation for "leaderElection".
+// dist/engine/runtime.d.ts:96:5 - (ae-undocumented) Missing documentation for "leaderLeaseMs".
+// dist/engine/runtime.d.ts:97:5 - (ae-undocumented) Missing documentation for "wakeups".
+// dist/engine/runtime.d.ts:98:5 - (ae-undocumented) Missing documentation for "sessionConnectionString".
+// dist/engine/runtime.d.ts:99:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/engine/runtime.d.ts:100:5 - (ae-undocumented) Missing documentation for "random".
+// dist/engine/runtime.d.ts:101:5 - (ae-undocumented) Missing documentation for "tracing".
+// dist/engine/runtime.d.ts:102:5 - (ae-undocumented) Missing documentation for "onDecision".
+// dist/engine/runtime.d.ts:103:5 - (ae-undocumented) Missing documentation for "onError".
+// dist/engine/runtime.d.ts:111:5 - (ae-undocumented) Missing documentation for "intervalMs".
+// dist/engine/runtime.d.ts:112:5 - (ae-undocumented) Missing documentation for "finishedTaskGraceMs".
+// dist/engine/runtime.d.ts:113:5 - (ae-undocumented) Missing documentation for "closedRunRetentionMs".
+// dist/engine/runtime.d.ts:114:5 - (ae-undocumented) Missing documentation for "batchSize".
+// dist/engine/runtime.d.ts:123:5 - (ae-undocumented) Missing documentation for "intervalMs".
+// dist/engine/runtime.d.ts:124:5 - (ae-undocumented) Missing documentation for "aheadDays".
+// dist/engine/runtime.d.ts:125:5 - (ae-undocumented) Missing documentation for "settleMs".
+// dist/engine/runtime.d.ts:126:5 - (ae-undocumented) Missing documentation for "archive".
+// dist/engine/runtime.d.ts:127:5 - (ae-undocumented) Missing documentation for "archiveDirectory".
+// dist/engine/runtime.d.ts:133:5 - (ae-undocumented) Missing documentation for "intervalMs".
+// dist/engine/runtime.d.ts:134:5 - (ae-undocumented) Missing documentation for "policy".
+// dist/engine/runtime.d.ts:135:5 - (ae-undocumented) Missing documentation for "batchSize".
+// dist/engine/runtime.d.ts:142:5 - (ae-undocumented) Missing documentation for "cache".
+// dist/engine/runtime.d.ts:143:5 - (ae-undocumented) Missing documentation for "replay".
+// dist/engine/runtime.d.ts:151:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/engine/runtime.d.ts:152:5 - (ae-undocumented) Missing documentation for "workerId".
+// dist/engine/runtime.d.ts:153:5 - (ae-undocumented) Missing documentation for "schedules".
+// dist/engine/runtime.d.ts:154:5 - (ae-undocumented) Missing documentation for "metrics".
+// dist/engine/runtime.d.ts:155:5 - (ae-undocumented) Missing documentation for "recovery".
+// dist/engine/runtime.d.ts:158:5 - (ae-undocumented) Missing documentation for "decisionTotals".
 // dist/engine/task-handler.d.ts:29:5 - (ae-undocumented) Missing documentation for "pool".
 // dist/engine/task-handler.d.ts:30:5 - (ae-undocumented) Missing documentation for "queue".
 // dist/engine/task-handler.d.ts:31:5 - (ae-undocumented) Missing documentation for "queueName".

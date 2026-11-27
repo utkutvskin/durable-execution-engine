@@ -178,4 +178,53 @@ describe("createApiClient", () => {
       { url: "/v1/quarantined-tasks/t%201/release", method: "POST" },
     ]);
   });
+
+  it("posts resets, forks and batches to their endpoints and reads the reset points", async () => {
+    const seen: { method: string; url: string; body: unknown }[] = [];
+    const client = createApiClient("k", (input, init) => {
+      const url = input as string;
+      seen.push({
+        method: init?.method ?? "GET",
+        url,
+        body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
+      if (url.endsWith("/reset-points")) {
+        return Promise.resolve(
+          jsonResponse(200, { points: [{ sequence: 1, eventType: "run_started" }] }),
+        );
+      }
+      if (url === "/v1/batches" && init?.method === "GET") {
+        return Promise.resolve(jsonResponse(200, { batches: [] }));
+      }
+      return Promise.resolve(jsonResponse(201, { runId: "new", batchId: "b" }));
+    });
+    expect(await client.listResetPoints("r 1")).toEqual([
+      { sequence: 1, eventType: "run_started" },
+    ]);
+    await client.resetRun("r", { kind: "event", sequence: 3 }, "why");
+    await client.forkRun("r", { kind: "step", step: 2 }, "");
+    await client.forkRun("r", { kind: "failed-step" }, "order-v2");
+    await client.startBatch({ operation: "cancel", query: "status = 'RUNNING'" });
+    expect(await client.listBatches()).toEqual([]);
+    expect(seen).toEqual([
+      { method: "GET", url: "/v1/runs/r%201/reset-points", body: undefined },
+      {
+        method: "POST",
+        url: "/v1/runs/r/reset",
+        body: { point: { kind: "event", sequence: 3 }, reason: "why" },
+      },
+      { method: "POST", url: "/v1/runs/r/fork", body: { point: { kind: "step", step: 2 } } },
+      {
+        method: "POST",
+        url: "/v1/runs/r/fork",
+        body: { point: { kind: "failed-step" }, workflowType: "order-v2" },
+      },
+      {
+        method: "POST",
+        url: "/v1/batches",
+        body: { operation: "cancel", query: "status = 'RUNNING'" },
+      },
+      { method: "GET", url: "/v1/batches", body: undefined },
+    ]);
+  });
 });

@@ -117,6 +117,83 @@ export interface OperationsClient {
   listQuarantined(): Promise<readonly QuarantinedTaskSnapshot[]>;
   /** Releases a quarantined task and resolves with its run id. */
   releaseQuarantined(taskId: string): Promise<string>;
+  /** Replaces a run with a new one cut at `point`; an open run is terminated. */
+  resetRun(runId: string, point: ResetPointInput, reason?: string): Promise<ResetSnapshot>;
+  /** Starts a new run cut at `point`, optionally under another workflow type. */
+  forkRun(runId: string, point: ResetPointInput, workflowType?: string): Promise<ResetSnapshot>;
+  startBatch(definition: BatchDefinition): Promise<BatchSnapshot>;
+  listBatches(): Promise<readonly BatchSnapshot[]>;
+  getBatch(batchId: string): Promise<BatchSnapshot>;
+  /** The first `limit` targets of a batch after position `after`. */
+  listBatchTargets(
+    batchId: string,
+    page?: { readonly after?: number; readonly limit?: number },
+  ): Promise<readonly BatchTargetSnapshot[]>;
+}
+
+/**
+ * Where a reset or fork cuts a run's history: after event `sequence`, before
+ * the `step`th step, or before the first step that failed for good.
+ */
+export type ResetPointInput =
+  | { readonly kind: "event"; readonly sequence: number }
+  | { readonly kind: "step"; readonly step: number }
+  | { readonly kind: "failed-step" };
+
+/**
+ * What the api answers to a reset or fork.
+ */
+export interface ResetSnapshot {
+  readonly runId: string;
+  readonly resetFromRunId: string;
+  readonly kind: "reset" | "fork";
+  readonly workflowType: string;
+  readonly eventSequence: number;
+  readonly terminatedOriginal: boolean;
+  readonly rescheduledSteps: readonly string[];
+}
+
+/**
+ * What `OperationsClient.startBatch` sends.
+ */
+export interface BatchDefinition {
+  readonly operation: "cancel" | "terminate" | "signal" | "reset" | "requeue";
+  readonly query: string;
+  readonly reason?: string;
+  readonly signal?: { readonly name: string; readonly payload?: unknown };
+  readonly resetPoint?: Exclude<ResetPointInput, { readonly kind: "event" }>;
+  readonly runsPerSecond?: number;
+  readonly pageSize?: number;
+}
+
+/**
+ * A batch operation as the api reports it.
+ */
+export interface BatchSnapshot {
+  readonly batchId: string;
+  readonly operation: string;
+  readonly query: string;
+  readonly reason: string | null;
+  readonly runId: string;
+  readonly status: string;
+  readonly total: number;
+  readonly applied: number;
+  readonly skipped: number;
+  readonly remaining: number;
+  readonly pageSize: number;
+  readonly pageIntervalMs: number;
+  readonly createdAt: string;
+}
+
+/**
+ * One target of a batch as the api reports it.
+ */
+export interface BatchTargetSnapshot {
+  readonly position: number;
+  readonly runId: string;
+  readonly state: "PENDING" | "APPLIED" | "SKIPPED";
+  readonly detail: string | null;
+  readonly appliedAt: string | null;
 }
 
 const MAX_DEAD_LETTER_PAGES = 100;
@@ -209,6 +286,42 @@ export function createOperationsClient(options: ApiClientOptions): OperationsCli
         {},
       )) as { runId: string };
       return answer.runId;
+    },
+    async resetRun(runId, point, reason) {
+      return (await call("POST", `/v1/runs/${encodeURIComponent(runId)}/reset`, {
+        point,
+        ...(reason === undefined ? {} : { reason }),
+      })) as ResetSnapshot;
+    },
+    async forkRun(runId, point, workflowType) {
+      return (await call("POST", `/v1/runs/${encodeURIComponent(runId)}/fork`, {
+        point,
+        ...(workflowType === undefined ? {} : { workflowType }),
+      })) as ResetSnapshot;
+    },
+    async startBatch(definition) {
+      return (await call("POST", "/v1/batches", definition)) as BatchSnapshot;
+    },
+    async listBatches() {
+      return ((await call("GET", "/v1/batches")) as { batches: BatchSnapshot[] }).batches;
+    },
+    async getBatch(batchId) {
+      return (await call("GET", `/v1/batches/${encodeURIComponent(batchId)}`)) as BatchSnapshot;
+    },
+    async listBatchTargets(batchId, page = {}) {
+      const query = new URLSearchParams();
+      if (page.after !== undefined) {
+        query.set("after", String(page.after));
+      }
+      if (page.limit !== undefined) {
+        query.set("limit", String(page.limit));
+      }
+      const suffix = query.size === 0 ? "" : `?${query.toString()}`;
+      const answer = (await call(
+        "GET",
+        `/v1/batches/${encodeURIComponent(batchId)}/targets${suffix}`,
+      )) as { targets: BatchTargetSnapshot[] };
+      return answer.targets;
     },
   };
 }

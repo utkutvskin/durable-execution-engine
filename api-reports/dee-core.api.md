@@ -115,6 +115,127 @@ export interface BackfillOptions {
 }
 
 // @public
+export const BATCH_OPERATION_KINDS: readonly BatchOperationKind[];
+
+// @public
+export const BATCH_PAGES_PER_RUN = 50;
+
+// @public
+export const BATCH_WORKFLOW_TYPE = "dee.batch";
+
+// @public
+export interface BatchOperation extends BatchProgress {
+    // (undocumented)
+    readonly batchId: string;
+    // (undocumented)
+    readonly createdAt: Date;
+    // (undocumented)
+    readonly namespaceId: string;
+    // (undocumented)
+    readonly operation: BatchOperationKind;
+    // (undocumented)
+    readonly pageIntervalMs: number;
+    // (undocumented)
+    readonly pageSize: number;
+    // (undocumented)
+    readonly query: string;
+    // (undocumented)
+    readonly reason: string | null;
+    // (undocumented)
+    readonly runId: string;
+    // (undocumented)
+    readonly status: string;
+    // (undocumented)
+    readonly total: number;
+}
+
+// @public
+export interface BatchOperationDefinitions {
+    // (undocumented)
+    readonly steps: readonly [
+    StepDefinition<BatchWorkflowInput, {
+        readonly pageSize: number;
+        readonly pageIntervalMs: number;
+    }>,
+    StepDefinition<BatchWorkflowInput & {
+        readonly limit: number;
+    }, BatchProgress>
+    ];
+    // (undocumented)
+    readonly workflow: WorkflowDefinition<BatchWorkflowInput, BatchProgress>;
+}
+
+// @public
+export type BatchOperationKind = "cancel" | "terminate" | "signal" | "reset" | "requeue";
+
+// @public
+export class BatchOperationNotFoundError extends Error {
+    constructor(batchId: string);
+    // (undocumented)
+    readonly batchId: string;
+}
+
+// @public
+export interface BatchOperationRunner {
+    applyPage(batchId: string, limit: number): Promise<BatchProgress>;
+    plan(batchId: string): Promise<{
+        readonly pageSize: number;
+        readonly pageIntervalMs: number;
+    }>;
+}
+
+// @public
+export interface BatchOperationRunnerOptions {
+    // (undocumented)
+    readonly clock?: ClockSource;
+    // (undocumented)
+    readonly codec?: Codec;
+}
+
+// @public
+export interface BatchProgress {
+    // (undocumented)
+    readonly applied: number;
+    // (undocumented)
+    readonly remaining: number;
+    // (undocumented)
+    readonly skipped: number;
+}
+
+// @public
+export type BatchResetPoint = Exclude<ResetPoint, {
+    readonly kind: "event";
+}>;
+
+// @public
+export interface BatchSignal {
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    readonly payload?: unknown;
+}
+
+// @public
+export interface BatchTarget {
+    // (undocumented)
+    readonly appliedAt: Date | null;
+    // (undocumented)
+    readonly detail: string | null;
+    // (undocumented)
+    readonly position: number;
+    // (undocumented)
+    readonly runId: string;
+    // (undocumented)
+    readonly state: "PENDING" | "APPLIED" | "SKIPPED";
+}
+
+// @public
+export interface BatchWorkflowInput {
+    // (undocumented)
+    readonly batchId: string;
+}
+
+// @public
 export const BUILT_IN_VISIBILITY_FIELDS: readonly string[];
 
 // @public
@@ -397,6 +518,12 @@ export interface Counter {
 export function createAttemptLog(pool: Pool, codec?: Codec): AttemptLog;
 
 // @public
+export function createBatchOperationDefinitions(runner: BatchOperationRunner): BatchOperationDefinitions;
+
+// @public
+export function createBatchOperationRunner(pool: Pool, options?: BatchOperationRunnerOptions): BatchOperationRunner;
+
+// @public
 export function createChildRunOnClient(client: PoolClient, codec: Codec, parent: {
     readonly runId: string;
     readonly namespaceId: string;
@@ -546,6 +673,9 @@ export function createRunControl(pool: Pool, options?: RunControlOptions): RunCo
 
 // @public
 export function createRunInteractions(pool: Pool, options: RunInteractionsOptions): RunInteractions;
+
+// @public
+export function createRunReset(pool: Pool, options?: RunResetOptions): RunReset;
 
 // @public
 export interface CreateScheduleInput {
@@ -779,6 +909,9 @@ export function decodeEventPayloads(codec: PayloadCodec, event: WorkflowEvent): 
 
 // @public
 export const DEFAULT_ACQUIRE_TIMEOUT_MS = 30000;
+
+// @public
+export const DEFAULT_BATCH_PAGE_SIZE = 100;
 
 // @public
 export const DEFAULT_EMBEDDED_NAMESPACE = "default";
@@ -1367,6 +1500,11 @@ export function insertRunStatement(codec: Codec, fields: InsertRunFields): [stri
 export function insertTimerOnClient(client: PoolClient, input: ScheduleTimerInput): Promise<boolean>;
 
 // @public
+export class InvalidBatchOperationError extends Error {
+    constructor(message: string);
+}
+
+// @public
 export class InvalidConcurrencyRuleError extends RangeError {
     constructor(message: string);
 }
@@ -1390,6 +1528,13 @@ export class InvalidPriorityError extends RangeError {
 // @public
 export class InvalidRateLimitError extends RangeError {
     constructor(message: string);
+}
+
+// @public
+export class InvalidResetPointError extends Error {
+    constructor(runId: string, reason: string);
+    // (undocumented)
+    readonly runId: string;
 }
 
 // @public
@@ -1563,6 +1708,15 @@ export interface LeaseRef {
 }
 
 // @public
+export function listBatchOperations(pool: Pool, namespaceId: string, limit?: number): Promise<BatchOperation[]>;
+
+// @public
+export function listBatchTargets(pool: Pool, batchId: string, options?: {
+    readonly afterPosition?: number;
+    readonly limit?: number;
+}): Promise<BatchTarget[]>;
+
+// @public
 export interface ListDeadLettersOptions {
     // (undocumented)
     readonly afterId?: string;
@@ -1575,6 +1729,9 @@ export interface ListDeadLettersOptions {
     // (undocumented)
     readonly runId?: string;
 }
+
+// @public
+export function listResetPointsOnClient(client: PoolClient, codec: Codec, runId: string): Promise<ResetPointCandidate[]>;
 
 // @public
 export type LiveAdvance = {
@@ -1652,6 +1809,9 @@ export function markRunWaiting(pool: Pool, mark: RunWaitingMark): Promise<void>;
 
 // @public
 export function maskSensitiveFields(value: unknown, sensitiveFields: readonly string[]): unknown;
+
+// @public
+export const MAX_BATCH_TARGETS = 100000;
 
 // @public
 export const MAX_CONCURRENCY_KEY_LENGTH = 256;
@@ -2054,6 +2214,12 @@ export interface PendingStartReport {
     readonly singletons: readonly string[];
 }
 
+// @public
+export function planBatchPages(runsPerSecond: number | undefined, pageSize?: number): {
+    readonly pageSize: number;
+    readonly pageIntervalMs: number;
+};
+
 export { Pool }
 
 export { PoolClient }
@@ -2170,6 +2336,9 @@ export interface RateLimitRule {
     // (undocumented)
     readonly periodMs: number;
 }
+
+// @public
+export function readBatchOperation(pool: Pool, batchId: string, namespaceId?: string): Promise<BatchOperation | undefined>;
 
 // @public
 export function readConcurrencyBacklog(pool: Pool, options?: {
@@ -2436,9 +2605,78 @@ export function requestCancellationOnClient(client: PoolClient, codec: Codec, ru
 }>;
 
 // @public
+export function requeueDeadLetterOnClient(client: PoolClient, id: string, now: Date): Promise<string | undefined>;
+
+// @public
 export function requeueWithConcurrency(pool: Pool, assignment: ConcurrencyAssignment, options?: {
     readonly clock?: ClockSource;
 }): Promise<boolean>;
+
+// @public
+export type ResetKind = "reset" | "fork";
+
+// @public
+export type ResetPoint = {
+    readonly kind: "event";
+    readonly sequence: number;
+} | {
+    readonly kind: "step";
+    readonly step: number;
+} | {
+    readonly kind: "failed-step";
+};
+
+// @public
+export interface ResetPointCandidate {
+    // (undocumented)
+    readonly eventType: WorkflowEvent["type"];
+    // (undocumented)
+    readonly sequence: number;
+    // (undocumented)
+    readonly step?: number;
+    // (undocumented)
+    readonly stepId?: string;
+    // (undocumented)
+    readonly stepType?: string;
+}
+
+// @public
+export function resetPointCandidates(history: readonly StoredEvent[]): ResetPointCandidate[];
+
+// @public
+export interface ResetReceipt {
+    // (undocumented)
+    readonly eventSequence: number;
+    // (undocumented)
+    readonly kind: ResetKind;
+    // (undocumented)
+    readonly rescheduledSteps: readonly string[];
+    // (undocumented)
+    readonly resetFromRunId: string;
+    // (undocumented)
+    readonly runId: string;
+    // (undocumented)
+    readonly terminatedOriginal: boolean;
+    // (undocumented)
+    readonly workflowType: string;
+}
+
+// @public
+export interface ResetRunInput {
+    // (undocumented)
+    readonly kind?: ResetKind;
+    // (undocumented)
+    readonly point: ResetPoint;
+    // (undocumented)
+    readonly reason?: string;
+    // (undocumented)
+    readonly runId: string;
+    // (undocumented)
+    readonly workflowType?: string;
+}
+
+// @public
+export function resetRunOnClient(client: PoolClient, codec: Codec, input: ResetRunInput, now?: Date): Promise<ResetReceipt>;
 
 // @public
 export function resolveConcurrency<TInput>(owner: string, rule: ConcurrencyRule<TInput>, input: TInput): ResolvedConcurrency;
@@ -2462,6 +2700,9 @@ export function resolveRateLimitBucket<TInput>(owner: string, prefix: string, ru
 
 // @public
 export function resolveReadDatabaseUrl(env: ReadDatabaseUrlEnv): string | undefined;
+
+// @public
+export function resolveResetPoint(runId: string, history: readonly StoredEvent[], point: ResetPoint): number;
 
 // @public
 export function resolveRetryPolicy(partial?: Partial<RetryPolicy>): RetryPolicy;
@@ -2752,6 +2993,21 @@ export function runQuery<TInput>(handler: WorkflowHandler<TInput>, input: TInput
 export function runRegisteredWorkflowInMemory<TResult = unknown>(workflowType: string, input: unknown, options: RunWorkflowOptions & {
     readonly workflows: WorkflowRegistry;
 }): Promise<RunWorkflowResult<TResult>>;
+
+// @public
+export interface RunReset {
+    forkRun(input: Omit<ResetRunInput, "kind">): Promise<ResetReceipt>;
+    listResetPoints(runId: string): Promise<ResetPointCandidate[]>;
+    resetRun(input: Omit<ResetRunInput, "kind">): Promise<ResetReceipt>;
+}
+
+// @public
+export interface RunResetOptions {
+    // (undocumented)
+    readonly clock?: ClockSource;
+    // (undocumented)
+    readonly codec?: Codec;
+}
 
 // @public
 export interface RunSnapshot {
@@ -3192,6 +3448,31 @@ export type StartAdmission = {
 };
 
 // @public
+export interface StartBatchInput {
+    // (undocumented)
+    readonly namespaceId: string;
+    // (undocumented)
+    readonly operation: BatchOperationKind;
+    // (undocumented)
+    readonly pageSize?: number | undefined;
+    // (undocumented)
+    readonly query: string;
+    // (undocumented)
+    readonly queueName: string;
+    // (undocumented)
+    readonly reason?: string | undefined;
+    // (undocumented)
+    readonly resetPoint?: BatchResetPoint | undefined;
+    // (undocumented)
+    readonly runsPerSecond?: number | undefined;
+    // (undocumented)
+    readonly signal?: BatchSignal | undefined;
+}
+
+// @public
+export function startBatchOperationOnClient(client: PoolClient, codec: Codec, input: StartBatchInput): Promise<BatchOperation>;
+
+// @public
 export interface StartChildCommand {
     // (undocumented)
     readonly childId: string;
@@ -3626,6 +3907,9 @@ export interface TerminateReceipt {
     // (undocumented)
     readonly sequenceNumber: number;
 }
+
+// @public
+export function terminateRunOnClient(client: PoolClient, codec: Codec, runId: string, reason?: string): Promise<TerminateReceipt>;
 
 // @public
 export interface TickReport {
@@ -4188,6 +4472,42 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 
 // Warnings were encountered during analysis:
 //
+// dist/batch/batch-operations.d.ts:40:5 - (ae-undocumented) Missing documentation for "name".
+// dist/batch/batch-operations.d.ts:41:5 - (ae-undocumented) Missing documentation for "payload".
+// dist/batch/batch-operations.d.ts:53:5 - (ae-undocumented) Missing documentation for "namespaceId".
+// dist/batch/batch-operations.d.ts:54:5 - (ae-undocumented) Missing documentation for "operation".
+// dist/batch/batch-operations.d.ts:55:5 - (ae-undocumented) Missing documentation for "query".
+// dist/batch/batch-operations.d.ts:56:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/batch/batch-operations.d.ts:57:5 - (ae-undocumented) Missing documentation for "reason".
+// dist/batch/batch-operations.d.ts:58:5 - (ae-undocumented) Missing documentation for "signal".
+// dist/batch/batch-operations.d.ts:59:5 - (ae-undocumented) Missing documentation for "resetPoint".
+// dist/batch/batch-operations.d.ts:60:5 - (ae-undocumented) Missing documentation for "runsPerSecond".
+// dist/batch/batch-operations.d.ts:61:5 - (ae-undocumented) Missing documentation for "pageSize".
+// dist/batch/batch-operations.d.ts:69:5 - (ae-undocumented) Missing documentation for "applied".
+// dist/batch/batch-operations.d.ts:70:5 - (ae-undocumented) Missing documentation for "skipped".
+// dist/batch/batch-operations.d.ts:71:5 - (ae-undocumented) Missing documentation for "remaining".
+// dist/batch/batch-operations.d.ts:79:5 - (ae-undocumented) Missing documentation for "batchId".
+// dist/batch/batch-operations.d.ts:80:5 - (ae-undocumented) Missing documentation for "namespaceId".
+// dist/batch/batch-operations.d.ts:81:5 - (ae-undocumented) Missing documentation for "operation".
+// dist/batch/batch-operations.d.ts:82:5 - (ae-undocumented) Missing documentation for "query".
+// dist/batch/batch-operations.d.ts:83:5 - (ae-undocumented) Missing documentation for "reason".
+// dist/batch/batch-operations.d.ts:84:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/batch/batch-operations.d.ts:85:5 - (ae-undocumented) Missing documentation for "status".
+// dist/batch/batch-operations.d.ts:86:5 - (ae-undocumented) Missing documentation for "total".
+// dist/batch/batch-operations.d.ts:87:5 - (ae-undocumented) Missing documentation for "pageSize".
+// dist/batch/batch-operations.d.ts:88:5 - (ae-undocumented) Missing documentation for "pageIntervalMs".
+// dist/batch/batch-operations.d.ts:89:5 - (ae-undocumented) Missing documentation for "createdAt".
+// dist/batch/batch-operations.d.ts:96:5 - (ae-undocumented) Missing documentation for "position".
+// dist/batch/batch-operations.d.ts:97:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/batch/batch-operations.d.ts:98:5 - (ae-undocumented) Missing documentation for "state".
+// dist/batch/batch-operations.d.ts:99:5 - (ae-undocumented) Missing documentation for "detail".
+// dist/batch/batch-operations.d.ts:100:5 - (ae-undocumented) Missing documentation for "appliedAt".
+// dist/batch/batch-operations.d.ts:114:5 - (ae-undocumented) Missing documentation for "batchId".
+// dist/batch/batch-operations.d.ts:156:5 - (ae-undocumented) Missing documentation for "codec".
+// dist/batch/batch-operations.d.ts:157:5 - (ae-undocumented) Missing documentation for "clock".
+// dist/batch/batch-workflow.d.ts:8:5 - (ae-undocumented) Missing documentation for "batchId".
+// dist/batch/batch-workflow.d.ts:20:5 - (ae-undocumented) Missing documentation for "workflow".
+// dist/batch/batch-workflow.d.ts:21:5 - (ae-undocumented) Missing documentation for "steps".
 // dist/cancellation/run-control.d.ts:8:5 - (ae-undocumented) Missing documentation for "runId".
 // dist/cancellation/run-control.d.ts:9:5 - (ae-undocumented) Missing documentation for "status".
 // dist/cancellation/run-control.d.ts:17:5 - (ae-undocumented) Missing documentation for "requested".
@@ -4571,6 +4891,26 @@ export type WorkflowTimeoutOutcome = "timed_out" | "within_deadline" | "closed";
 // dist/replay/replay-histories.d.ts:62:5 - (ae-undocumented) Missing documentation for "failed".
 // dist/replay/replay-histories.d.ts:69:5 - (ae-undocumented) Missing documentation for "buildId".
 // dist/replay/replay-histories.d.ts:70:5 - (ae-undocumented) Missing documentation for "reader".
+// dist/reset/reset-run.d.ts:40:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/reset/reset-run.d.ts:50:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/reset/reset-run.d.ts:51:5 - (ae-undocumented) Missing documentation for "point".
+// dist/reset/reset-run.d.ts:52:5 - (ae-undocumented) Missing documentation for "kind".
+// dist/reset/reset-run.d.ts:53:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/reset/reset-run.d.ts:54:5 - (ae-undocumented) Missing documentation for "reason".
+// dist/reset/reset-run.d.ts:64:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/reset/reset-run.d.ts:65:5 - (ae-undocumented) Missing documentation for "resetFromRunId".
+// dist/reset/reset-run.d.ts:66:5 - (ae-undocumented) Missing documentation for "kind".
+// dist/reset/reset-run.d.ts:67:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/reset/reset-run.d.ts:68:5 - (ae-undocumented) Missing documentation for "eventSequence".
+// dist/reset/reset-run.d.ts:69:5 - (ae-undocumented) Missing documentation for "terminatedOriginal".
+// dist/reset/reset-run.d.ts:70:5 - (ae-undocumented) Missing documentation for "rescheduledSteps".
+// dist/reset/reset-run.d.ts:78:5 - (ae-undocumented) Missing documentation for "sequence".
+// dist/reset/reset-run.d.ts:79:5 - (ae-undocumented) Missing documentation for "eventType".
+// dist/reset/reset-run.d.ts:80:5 - (ae-undocumented) Missing documentation for "stepId".
+// dist/reset/reset-run.d.ts:81:5 - (ae-undocumented) Missing documentation for "stepType".
+// dist/reset/reset-run.d.ts:82:5 - (ae-undocumented) Missing documentation for "step".
+// dist/reset/reset-run.d.ts:121:5 - (ae-undocumented) Missing documentation for "codec".
+// dist/reset/reset-run.d.ts:122:5 - (ae-undocumented) Missing documentation for "clock".
 // dist/retention/partition-maintainer.d.ts:28:5 - (ae-undocumented) Missing documentation for "clock".
 // dist/retention/partition-maintainer.d.ts:29:5 - (ae-undocumented) Missing documentation for "aheadDays".
 // dist/retention/partition-maintainer.d.ts:30:5 - (ae-undocumented) Missing documentation for "archive".

@@ -4,6 +4,10 @@
 
 ```ts
 
+import { BatchOperation } from '@dee/core';
+import { BatchOperationKind } from '@dee/core';
+import { BatchResetPoint } from '@dee/core';
+import { BatchTarget } from '@dee/core';
 import { CatchUpPolicy } from '@dee/core';
 import { ClockSource } from '@dee/core';
 import { CreateEventTriggerInput } from '@dee/core';
@@ -20,6 +24,9 @@ import { PauseScope } from '@dee/core';
 import { PayloadCodec } from '@dee/core';
 import { Pool } from '@dee/core';
 import { QuotaStore } from '@dee/core';
+import { ResetPoint } from '@dee/core';
+import { ResetPointCandidate } from '@dee/core';
+import { ResetReceipt } from '@dee/core';
 import { RunConcurrencyState } from '@dee/core';
 import { SearchAttributes } from '@dee/core';
 import { SendEventInput } from '@dee/core';
@@ -767,6 +774,14 @@ export interface Rejection {
 export type RequestKind = "read" | "write" | "start";
 
 // @public
+export interface ResetRequest {
+    // (undocumented)
+    readonly point: ResetPoint;
+    // (undocumented)
+    readonly reason?: string | undefined;
+}
+
+// @public
 export interface ResponseSpec {
     // (undocumented)
     readonly description: string;
@@ -882,9 +897,19 @@ export interface RunService extends Operations {
     describeNamespace(namespaceId: string): Promise<NamespaceDescription>;
     describeRun(namespaceId: string, runId: string): Promise<RunDescription>;
     encodePayloads(payloads: readonly unknown[]): Promise<unknown[]>;
+    forkRun: (namespaceId: string, runId: string, input: ResetRequest & {
+        readonly workflowType?: string | undefined;
+    }) => Promise<ResetReceipt>;
+    getBatch: (namespaceId: string, batchId: string) => Promise<BatchOperation>;
     getHistory(namespaceId: string, runId: string, page?: PageInput): Promise<HistoryPage>;
+    listBatches: (namespaceId: string, limit?: number) => Promise<BatchOperation[]>;
+    listBatchTargets: (namespaceId: string, batchId: string, page: {
+        readonly afterPosition?: number;
+        readonly limit?: number;
+    }) => Promise<BatchTarget[]>;
     listDeadLetters(namespaceId: string, page?: PageInput): Promise<DeadLetterPage>;
     listEventTriggers: (namespaceId: string) => Promise<EventTrigger[]>;
+    listResetPoints: (namespaceId: string, runId: string) => Promise<ResetPointCandidate[]>;
     listRuns(namespaceId: string, input: ListRunsInput): Promise<RunPage>;
     queryRun: (namespaceId: string, runId: string, queryName: string, argument?: unknown) => Promise<unknown>;
     readHistorySince(namespaceId: string, runId: string, afterSequence: number): Promise<HistorySlice>;
@@ -893,10 +918,12 @@ export interface RunService extends Operations {
     requeueDeadLetter(namespaceId: string, deadLetterId: string): Promise<{
         readonly taskId: string;
     }>;
+    resetRun: (namespaceId: string, runId: string, input: ResetRequest) => Promise<ResetReceipt>;
     sendEvent: (namespaceId: string, input: SendEventInput) => Promise<SendEventReceipt>;
     signalRun: (namespaceId: string, runId: string, signalName: string, payload?: unknown, signalId?: string) => Promise<SignalReceipt>;
     // Warning: (ae-forgotten-export) The symbol "SignalWithStartRequest" needs to be exported by the entry point index.d.ts
     signalWithStart: (namespaceId: string, request: SignalWithStartRequest) => Promise<SignalWithStartReceipt>;
+    startBatch: (namespaceId: string, input: StartBatchRequest) => Promise<BatchOperation>;
     startRun(namespaceId: string, input: StartRunInput): Promise<StartRunResult>;
     terminateRun: (namespaceId: string, runId: string, reason?: string) => Promise<{
         readonly sequenceNumber: number;
@@ -978,6 +1005,27 @@ export function scopeAllows(held: ApiKeyScope, needed: ApiKeyScope): boolean;
 
 // @public
 export type SideHandler = (request: IncomingMessage, response: ServerResponse) => boolean;
+
+// @public
+export interface StartBatchRequest {
+    // (undocumented)
+    readonly operation: BatchOperationKind;
+    // (undocumented)
+    readonly pageSize?: number | undefined;
+    // (undocumented)
+    readonly query: string;
+    // (undocumented)
+    readonly reason?: string | undefined;
+    // (undocumented)
+    readonly resetPoint?: BatchResetPoint | undefined;
+    // (undocumented)
+    readonly runsPerSecond?: number | undefined;
+    // (undocumented)
+    readonly signal?: {
+        readonly name: string;
+        readonly payload?: unknown;
+    } | undefined;
+}
 
 // @public
 export interface StartRunInput {
@@ -1207,67 +1255,76 @@ export function validateOpenApiDocument(document: unknown): string[];
 // dist/routes.d.ts:108:5 - (ae-undocumented) Missing documentation for "responses".
 // dist/routes.d.ts:109:5 - (ae-undocumented) Missing documentation for "handle".
 // dist/routes.d.ts:129:5 - (ae-undocumented) Missing documentation for "body".
-// dist/run-service.d.ts:20:5 - (ae-undocumented) Missing documentation for "idempotencyKey".
-// dist/run-service.d.ts:21:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/run-service.d.ts:42:5 - (ae-undocumented) Missing documentation for "workflowType".
-// dist/run-service.d.ts:49:5 - (ae-undocumented) Missing documentation for "id".
-// dist/run-service.d.ts:50:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/run-service.d.ts:51:5 - (ae-undocumented) Missing documentation for "stepId".
-// dist/run-service.d.ts:52:5 - (ae-undocumented) Missing documentation for "attempts".
-// dist/run-service.d.ts:53:5 - (ae-undocumented) Missing documentation for "error".
-// dist/run-service.d.ts:57:5 - (ae-undocumented) Missing documentation for "reason".
-// dist/run-service.d.ts:58:5 - (ae-undocumented) Missing documentation for "createdAt".
-// dist/run-service.d.ts:64:5 - (ae-undocumented) Missing documentation for "id".
-// dist/run-service.d.ts:65:5 - (ae-undocumented) Missing documentation for "name".
-// dist/run-service.d.ts:72:5 - (ae-undocumented) Missing documentation for "events".
-// dist/run-service.d.ts:73:5 - (ae-undocumented) Missing documentation for "status".
-// dist/run-service.d.ts:74:5 - (ae-undocumented) Missing documentation for "closed".
-// dist/run-service.d.ts:80:5 - (ae-undocumented) Missing documentation for "runId".
-// dist/run-service.d.ts:81:5 - (ae-undocumented) Missing documentation for "workflowType".
-// dist/run-service.d.ts:82:5 - (ae-undocumented) Missing documentation for "status".
-// dist/run-service.d.ts:83:5 - (ae-undocumented) Missing documentation for "startedAt".
-// dist/run-service.d.ts:84:5 - (ae-undocumented) Missing documentation for "closedAt".
-// dist/run-service.d.ts:85:5 - (ae-undocumented) Missing documentation for "searchAttributes".
-// dist/run-service.d.ts:86:5 - (ae-undocumented) Missing documentation for "memo".
-// dist/run-service.d.ts:95:5 - (ae-undocumented) Missing documentation for "input".
-// dist/run-service.d.ts:96:5 - (ae-undocumented) Missing documentation for "result".
-// dist/run-service.d.ts:97:5 - (ae-undocumented) Missing documentation for "error".
-// dist/run-service.d.ts:101:5 - (ae-undocumented) Missing documentation for "lastSequenceNumber".
-// dist/run-service.d.ts:102:5 - (ae-undocumented) Missing documentation for "idempotencyKey".
-// dist/run-service.d.ts:103:5 - (ae-undocumented) Missing documentation for "concurrency".
-// dist/run-service.d.ts:111:5 - (ae-undocumented) Missing documentation for "workflowType".
-// dist/run-service.d.ts:112:5 - (ae-undocumented) Missing documentation for "input".
-// dist/run-service.d.ts:113:5 - (ae-undocumented) Missing documentation for "idempotencyKey".
-// dist/run-service.d.ts:114:5 - (ae-undocumented) Missing documentation for "traceparent".
-// dist/run-service.d.ts:115:5 - (ae-undocumented) Missing documentation for "runTimeoutMs".
-// dist/run-service.d.ts:116:5 - (ae-undocumented) Missing documentation for "executionTimeoutMs".
-// dist/run-service.d.ts:117:5 - (ae-undocumented) Missing documentation for "searchAttributes".
-// dist/run-service.d.ts:118:5 - (ae-undocumented) Missing documentation for "memo".
-// dist/run-service.d.ts:119:5 - (ae-undocumented) Missing documentation for "priority".
-// dist/run-service.d.ts:132:5 - (ae-undocumented) Missing documentation for "created".
-// dist/run-service.d.ts:133:5 - (ae-undocumented) Missing documentation for "run".
-// dist/run-service.d.ts:159:5 - (ae-undocumented) Missing documentation for "status".
-// dist/run-service.d.ts:160:5 - (ae-undocumented) Missing documentation for "workflowType".
-// dist/run-service.d.ts:161:5 - (ae-undocumented) Missing documentation for "startedAfter".
-// dist/run-service.d.ts:162:5 - (ae-undocumented) Missing documentation for "startedBefore".
-// dist/run-service.d.ts:165:5 - (ae-undocumented) Missing documentation for "limit".
-// dist/run-service.d.ts:166:5 - (ae-undocumented) Missing documentation for "cursor".
-// dist/run-service.d.ts:172:5 - (ae-undocumented) Missing documentation for "runs".
-// dist/run-service.d.ts:173:5 - (ae-undocumented) Missing documentation for "nextCursor".
-// dist/run-service.d.ts:180:5 - (ae-undocumented) Missing documentation for "limit".
-// dist/run-service.d.ts:181:5 - (ae-undocumented) Missing documentation for "cursor".
-// dist/run-service.d.ts:187:5 - (ae-undocumented) Missing documentation for "events".
-// dist/run-service.d.ts:188:5 - (ae-undocumented) Missing documentation for "nextCursor".
-// dist/run-service.d.ts:195:5 - (ae-undocumented) Missing documentation for "deadLetters".
-// dist/run-service.d.ts:196:5 - (ae-undocumented) Missing documentation for "nextCursor".
-// dist/run-service.d.ts:211:5 - (ae-undocumented) Missing documentation for "sequenceNumber".
-// dist/run-service.d.ts:212:5 - (ae-undocumented) Missing documentation for "createdAt".
-// dist/run-service.d.ts:213:5 - (ae-undocumented) Missing documentation for "version".
-// dist/run-service.d.ts:214:5 - (ae-undocumented) Missing documentation for "event".
-// dist/run-service.d.ts:348:5 - (ae-undocumented) Missing documentation for "queueName".
-// dist/run-service.d.ts:349:5 - (ae-undocumented) Missing documentation for "tracing".
-// dist/run-service.d.ts:350:5 - (ae-undocumented) Missing documentation for "workflows".
-// dist/run-service.d.ts:351:5 - (ae-undocumented) Missing documentation for "updateWait".
+// dist/run-service.d.ts:21:5 - (ae-undocumented) Missing documentation for "idempotencyKey".
+// dist/run-service.d.ts:22:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/run-service.d.ts:43:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/run-service.d.ts:50:5 - (ae-undocumented) Missing documentation for "id".
+// dist/run-service.d.ts:51:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/run-service.d.ts:52:5 - (ae-undocumented) Missing documentation for "stepId".
+// dist/run-service.d.ts:53:5 - (ae-undocumented) Missing documentation for "attempts".
+// dist/run-service.d.ts:54:5 - (ae-undocumented) Missing documentation for "error".
+// dist/run-service.d.ts:58:5 - (ae-undocumented) Missing documentation for "reason".
+// dist/run-service.d.ts:59:5 - (ae-undocumented) Missing documentation for "createdAt".
+// dist/run-service.d.ts:65:5 - (ae-undocumented) Missing documentation for "id".
+// dist/run-service.d.ts:66:5 - (ae-undocumented) Missing documentation for "name".
+// dist/run-service.d.ts:73:5 - (ae-undocumented) Missing documentation for "events".
+// dist/run-service.d.ts:74:5 - (ae-undocumented) Missing documentation for "status".
+// dist/run-service.d.ts:75:5 - (ae-undocumented) Missing documentation for "closed".
+// dist/run-service.d.ts:81:5 - (ae-undocumented) Missing documentation for "runId".
+// dist/run-service.d.ts:82:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/run-service.d.ts:83:5 - (ae-undocumented) Missing documentation for "status".
+// dist/run-service.d.ts:84:5 - (ae-undocumented) Missing documentation for "startedAt".
+// dist/run-service.d.ts:85:5 - (ae-undocumented) Missing documentation for "closedAt".
+// dist/run-service.d.ts:86:5 - (ae-undocumented) Missing documentation for "searchAttributes".
+// dist/run-service.d.ts:87:5 - (ae-undocumented) Missing documentation for "memo".
+// dist/run-service.d.ts:96:5 - (ae-undocumented) Missing documentation for "input".
+// dist/run-service.d.ts:97:5 - (ae-undocumented) Missing documentation for "result".
+// dist/run-service.d.ts:98:5 - (ae-undocumented) Missing documentation for "error".
+// dist/run-service.d.ts:102:5 - (ae-undocumented) Missing documentation for "lastSequenceNumber".
+// dist/run-service.d.ts:103:5 - (ae-undocumented) Missing documentation for "idempotencyKey".
+// dist/run-service.d.ts:104:5 - (ae-undocumented) Missing documentation for "concurrency".
+// dist/run-service.d.ts:112:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/run-service.d.ts:113:5 - (ae-undocumented) Missing documentation for "input".
+// dist/run-service.d.ts:114:5 - (ae-undocumented) Missing documentation for "idempotencyKey".
+// dist/run-service.d.ts:115:5 - (ae-undocumented) Missing documentation for "traceparent".
+// dist/run-service.d.ts:116:5 - (ae-undocumented) Missing documentation for "runTimeoutMs".
+// dist/run-service.d.ts:117:5 - (ae-undocumented) Missing documentation for "executionTimeoutMs".
+// dist/run-service.d.ts:118:5 - (ae-undocumented) Missing documentation for "searchAttributes".
+// dist/run-service.d.ts:119:5 - (ae-undocumented) Missing documentation for "memo".
+// dist/run-service.d.ts:120:5 - (ae-undocumented) Missing documentation for "priority".
+// dist/run-service.d.ts:133:5 - (ae-undocumented) Missing documentation for "created".
+// dist/run-service.d.ts:134:5 - (ae-undocumented) Missing documentation for "run".
+// dist/run-service.d.ts:160:5 - (ae-undocumented) Missing documentation for "status".
+// dist/run-service.d.ts:161:5 - (ae-undocumented) Missing documentation for "workflowType".
+// dist/run-service.d.ts:162:5 - (ae-undocumented) Missing documentation for "startedAfter".
+// dist/run-service.d.ts:163:5 - (ae-undocumented) Missing documentation for "startedBefore".
+// dist/run-service.d.ts:166:5 - (ae-undocumented) Missing documentation for "limit".
+// dist/run-service.d.ts:167:5 - (ae-undocumented) Missing documentation for "cursor".
+// dist/run-service.d.ts:173:5 - (ae-undocumented) Missing documentation for "runs".
+// dist/run-service.d.ts:174:5 - (ae-undocumented) Missing documentation for "nextCursor".
+// dist/run-service.d.ts:181:5 - (ae-undocumented) Missing documentation for "limit".
+// dist/run-service.d.ts:182:5 - (ae-undocumented) Missing documentation for "cursor".
+// dist/run-service.d.ts:188:5 - (ae-undocumented) Missing documentation for "events".
+// dist/run-service.d.ts:189:5 - (ae-undocumented) Missing documentation for "nextCursor".
+// dist/run-service.d.ts:196:5 - (ae-undocumented) Missing documentation for "deadLetters".
+// dist/run-service.d.ts:197:5 - (ae-undocumented) Missing documentation for "nextCursor".
+// dist/run-service.d.ts:212:5 - (ae-undocumented) Missing documentation for "sequenceNumber".
+// dist/run-service.d.ts:213:5 - (ae-undocumented) Missing documentation for "createdAt".
+// dist/run-service.d.ts:214:5 - (ae-undocumented) Missing documentation for "version".
+// dist/run-service.d.ts:215:5 - (ae-undocumented) Missing documentation for "event".
+// dist/run-service.d.ts:377:5 - (ae-undocumented) Missing documentation for "point".
+// dist/run-service.d.ts:378:5 - (ae-undocumented) Missing documentation for "reason".
+// dist/run-service.d.ts:384:5 - (ae-undocumented) Missing documentation for "operation".
+// dist/run-service.d.ts:385:5 - (ae-undocumented) Missing documentation for "query".
+// dist/run-service.d.ts:386:5 - (ae-undocumented) Missing documentation for "reason".
+// dist/run-service.d.ts:387:5 - (ae-undocumented) Missing documentation for "signal".
+// dist/run-service.d.ts:391:5 - (ae-undocumented) Missing documentation for "resetPoint".
+// dist/run-service.d.ts:392:5 - (ae-undocumented) Missing documentation for "runsPerSecond".
+// dist/run-service.d.ts:393:5 - (ae-undocumented) Missing documentation for "pageSize".
+// dist/run-service.d.ts:406:5 - (ae-undocumented) Missing documentation for "queueName".
+// dist/run-service.d.ts:407:5 - (ae-undocumented) Missing documentation for "tracing".
+// dist/run-service.d.ts:408:5 - (ae-undocumented) Missing documentation for "workflows".
+// dist/run-service.d.ts:409:5 - (ae-undocumented) Missing documentation for "updateWait".
 // dist/server.d.ts:72:5 - (ae-undocumented) Missing documentation for "queueName".
 // dist/server.d.ts:73:5 - (ae-undocumented) Missing documentation for "maxBodyBytes".
 // dist/server.d.ts:74:5 - (ae-undocumented) Missing documentation for "apiKeys".

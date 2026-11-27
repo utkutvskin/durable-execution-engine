@@ -72,6 +72,13 @@ The key is shown once; only its sha256 hash is stored.
 | GET    | `/v1/runs/{runId}/queries/{queryName}`    | `queryRun`               | 200     |
 | POST   | `/v1/runs/{runId}/cancel`                 | `cancelRun`              | 202     |
 | POST   | `/v1/runs/{runId}/terminate`              | `terminateRun`           | 200     |
+| GET    | `/v1/runs/{runId}/reset-points`           | `listResetPoints`        | 200     |
+| POST   | `/v1/runs/{runId}/reset`                  | `resetRun`               | 201     |
+| POST   | `/v1/runs/{runId}/fork`                   | `forkRun`                | 201     |
+| POST   | `/v1/batches`                             | `startBatch`             | 201     |
+| GET    | `/v1/batches`                             | `listBatches`            | 200     |
+| GET    | `/v1/batches/{batchId}`                   | `getBatch`               | 200     |
+| GET    | `/v1/batches/{batchId}/targets`           | `listBatchTargets`       | 200     |
 | GET    | `/v1/namespace`                           | `describeNamespace`      | 200     |
 | GET    | `/v1/dead-letters`                        | `listDeadLetters`        | 200     |
 | POST   | `/v1/dead-letters/{deadLetterId}/requeue` | `requeueDeadLetter`      | 200     |
@@ -100,7 +107,7 @@ The key is shown once; only its sha256 hash is stored.
 | GET    | `/v1/runs/{runId}/stream`                 | not in OpenAPI           | 200     |
 | GET    | `/openapi.json`                           | public                   | 200     |
 
-Errors are `{ "error": { "code", "message", "details"? } }`. 403 is a key whose scope does not allow the operation. 400 is a validation failure or a malformed body or cursor, a visibility query that does not parse (`invalid_query`, see below), invalid search attributes, a rejected or unknown update or an unknown query, 409 a closed run, a compacted history, a reused idempotency key with a different request or a workflow key of another type, 413 a body over 1 MiB, and 501 an update or query to an API that does not have the workflow's code.
+Errors are `{ "error": { "code", "message", "details"? } }`. 403 is a key whose scope does not allow the operation. 400 is a validation failure or a malformed body or cursor, a visibility query that does not parse (`invalid_query`, see below), invalid search attributes, a rejected or unknown update or an unknown query, 409 a closed run, a compacted history, a reset or fork cut the history cannot take, a reused idempotency key with a different request or a workflow key of another type, 413 a body over 1 MiB, and 501 an update or query to an API that does not have the workflow's code.
 
 ## Updates and queries
 
@@ -178,6 +185,34 @@ Ids, types, timestamps, errors, search attributes and the memo are not payloads 
 
 `GET /v1/dead-letters?limit=&cursor=` lists the namespace's step tasks that used all their attempts, oldest first, one page at a time (the namespace filter, the order and the limit run in SQL). A page holds `limit` entries (default 500, at most 1,000) and carries `nextCursor` when more follow. `POST /v1/dead-letters/{deadLetterId}/requeue` puts one back on its queue and answers `{ "taskId" }`; the step already failed for its workflow, so the task is acknowledged without running the step again (see `docs/CONCEPTS.md`); an unknown id, an id of another namespace and an entry that was requeued already all answer 404.
 
+## Reset and fork
+
+A reset or fork starts a new run whose history is copied from an existing run up to a cut, so the steps before the cut are not executed again: the new run replays them from the copied events and goes on from there with the code that is deployed now. `point` names the cut: `{ "kind": "event", "sequence": n }` keeps the events up to `n`, `{ "kind": "step", "step": n }` keeps everything before the `n`th step the run scheduled (that step runs again), and `{ "kind": "failed-step" }` keeps everything before the first step that failed for good.
+
+- `POST /v1/runs/{runId}/reset` with `{ "point", "reason"? }` replaces the run: an open run is terminated with `reason` (default `reset to run <new id>`). It answers 201 with `{ "runId", "resetFromRunId", "kind", "workflowType", "eventSequence", "terminatedOriginal", "rescheduledSteps" }`; `runId` is the new run.
+- `POST /v1/runs/{runId}/fork` with `{ "point", "workflowType"? }` starts the new run and leaves the old one as it is. `workflowType` moves the new run onto other code, for example `order-v2`; that code must replay the copied events.
+- `GET /v1/runs/{runId}/reset-points` lists the events the history can be cut after, with the step a `step_scheduled` cut keeps last.
+
+The new run is in the same namespace and on the same queue, with the same input, memo, priority and run timeout and the search attributes the run held at the cut. It starts a chain of its own and has no parent. `describeRun` does not show the link yet; the `workflow_runs` columns `reset_from_run_id`, `reset_event_sequence` and `reset_kind` hold it. A step whose `step_scheduled` event the cut kept without its result is executed again at once (`rescheduledSteps`). A cut that keeps a closing event or a cancellation request, or leaves a timer, a child workflow, an event wait without a timeout or an update unfinished, answers 409 `invalid_reset_point` with the reason, as does a run whose history was compacted or purged. Both routes need `operate` and are audited (`run.reset`, `run.fork`).
+
+## Batch operations
+
+`POST /v1/batches` applies one operation to every run of the namespace that a visibility query matches:
+
+```json
+{
+  "operation": "signal",
+  "query": "customerId = 'c-1' and status = 'RUNNING'",
+  "signal": { "name": "refund", "payload": { "amount": 10 } },
+  "runsPerSecond": 50,
+  "reason": "incident 42"
+}
+```
+
+`operation` is `cancel`, `terminate`, `signal` (needs `signal`), `reset` (needs `resetPoint`, `{ "kind": "step", "step": n }` or `{ "kind": "failed-step" }`) or `requeue` (requeues every dead-lettered step of the run). An empty `query` matches every run. The targets are the runs that match when the batch starts, oldest first, at most 100,000; runs that match later are not added, and the batch's own runs are never targets. The batch runs as a workflow of the built-in type `dee.batch` on the API's queue, so it needs an engine of that queue, which registers the type unless it was started with `batchOperations: false`. It applies `pageSize` targets per step (default 100, at most 1000) and, with `runsPerSecond`, sleeps between pages so the rate is not exceeded. A crashed worker leaves the batch where it stopped, and another worker resumes it; each target is applied and marked done in one transaction, so none is applied twice. A target whose run is closed, missing, has no dead letter to requeue or cannot be cut at the reset point is skipped with the reason. A signal batch sends its signal with the signal id `batch-<batchId>`.
+
+It answers 201 with the batch: `{ "batchId", "operation", "query", "reason", "runId", "status", "total", "applied", "skipped", "remaining", "pageSize", "pageIntervalMs", "createdAt" }`, where `runId` is the first run of the batch workflow and `status` the status of the latest run of its chain. `GET /v1/batches?limit=` lists the batches newest first, `GET /v1/batches/{batchId}` reads one, and `GET /v1/batches/{batchId}/targets?after=&limit=` lists its targets in position order with their `state` (`PENDING`, `APPLIED` or `SKIPPED`), `detail` and `appliedAt`. A malformed batch answers 400 `invalid_batch`, a query that does not parse 400 `invalid_query`, and an unknown batch 404. Starting a batch needs `operate` and is audited (`batch.start`).
+
 ## Quarantined tasks
 
 `GET /v1/quarantined-tasks` lists the namespace's tasks that are no longer delivered (see "Poison pills" below), oldest first, with their reason and reclaim count. `POST /v1/quarantined-tasks/{taskId}/release` puts one back on its queue with a fresh reclaim budget and answers `{ "taskId", "runId" }`; a workflow task whose run already has a pending one is merged into it, so the run gets one decision. An unknown id, an id of another namespace and a task that was released already answer 404.
@@ -191,7 +226,7 @@ The routes under `/v1/admin` need an `admin` key and act on the namespace named 
 - `GET /v1/admin/namespaces/{namespace}/quota` reads the limits and the current usage. `POST` changes the limits it is given (`maxConcurrentRuns`, `maxPendingTasks`, `ratePerSecond`, `burst`); `null` removes a limit and a limit left out keeps its value.
 - `GET /v1/admin/audit-log?namespace=&cursor=&limit=` reads the audit log newest first, `limit` up to 500 (default 100), with `nextCursor` when a full page came back.
 
-Every successful admin and operator action is appended to the audit log: `namespace.create`, `key.issue`, `key.revoke`, `quota.set`, `run.cancel`, `run.terminate`, `pause.create`, `pause.resume`, `schedule.create`, `schedule.pause`, `schedule.resume`, `schedule.backfill`, `dead_letter.requeue` and `task.release`. An entry holds the actor (key id, label, namespace and scope, copied so it stays readable after the key is revoked), the namespace acted on, the target (a run, schedule, key or task id) and the request body as details; an issued key's secret is never recorded. Refused and failed requests are not recorded. Starts, signals, updates and events are application traffic and are not audited. The `audit_log` table refuses updates and deletes.
+Every successful admin and operator action is appended to the audit log: `namespace.create`, `key.issue`, `key.revoke`, `quota.set`, `run.cancel`, `run.terminate`, `pause.create`, `pause.resume`, `schedule.create`, `schedule.pause`, `schedule.resume`, `schedule.backfill`, `dead_letter.requeue`, `task.release`, `run.reset`, `run.fork` and `batch.start`. An entry holds the actor (key id, label, namespace and scope, copied so it stays readable after the key is revoked), the namespace acted on, the target (a run, schedule, key or task id) and the request body as details; an issued key's secret is never recorded. Refused and failed requests are not recorded. Starts, signals, updates and events are application traffic and are not audited. The `audit_log` table refuses updates and deletes.
 
 ## Idempotent start
 

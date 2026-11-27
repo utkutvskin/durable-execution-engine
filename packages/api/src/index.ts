@@ -90,6 +90,8 @@ export type {
   RunPage,
   RunService,
   RunServiceOptions,
+  ResetRequest,
+  StartBatchRequest,
   RunSummary,
   StartRunInput,
   StartRunResult,

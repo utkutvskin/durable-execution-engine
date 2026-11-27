@@ -91,6 +91,72 @@ export function mountRunView(
     "run query",
   );
   const interactionResult = h("pre", { testId: "interaction-result" });
+  const resetPoints = h("select", { testId: "reset-point", name: "reset-point" });
+  const forkType = h("input", {
+    testId: "fork-type",
+    type: "text",
+    name: "fork-type",
+    placeholder: "workflow type of the fork (optional)",
+  });
+  const resetButton = h(
+    "button",
+    { testId: "reset-button", type: "button", onClick: () => void copyRun("reset") },
+    "reset to here",
+  );
+  const forkButton = h(
+    "button",
+    { testId: "fork-button", type: "button", onClick: () => void copyRun("fork") },
+    "fork from here",
+  );
+
+  async function loadResetPoints(): Promise<void> {
+    try {
+      const points = await api.listResetPoints(runId);
+      resetPoints.replaceChildren(
+        ...points.map((point) =>
+          h(
+            "option",
+            { attributes: { value: String(point.sequence) } },
+            point.step === undefined
+              ? `after event ${String(point.sequence)} (${point.eventType})`
+              : `after event ${String(point.sequence)}: step ${String(point.step)} ${point.stepType ?? ""} runs again`,
+          ),
+        ),
+      );
+      resetButton.disabled = points.length === 0;
+      forkButton.disabled = points.length === 0;
+    } catch (error) {
+      resetButton.disabled = true;
+      forkButton.disabled = true;
+      onError(error);
+    }
+  }
+
+  async function copyRun(kind: "reset" | "fork"): Promise<void> {
+    const sequence = Number(resetPoints.value);
+    if (!Number.isInteger(sequence) || sequence < 1) {
+      message.textContent = "pick an event to cut the history after";
+      return;
+    }
+    const point = { kind: "event", sequence } as const;
+    if (
+      kind === "reset" &&
+      !confirmAction(
+        `reset run ${runId} after event ${String(sequence)}? an open run is terminated.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      const answer =
+        kind === "reset"
+          ? await api.resetRun(runId, point, "reset from the ui")
+          : await api.forkRun(runId, point, forkType.value.trim());
+      window.location.hash = `#/runs/${answer.runId}`;
+    } catch (error) {
+      onError(error);
+    }
+  }
 
   function renderHeader(): void {
     if (description === undefined) {
@@ -380,12 +446,21 @@ export function mountRunView(
       interactionResult,
       pauseButton,
       cancelButton,
+      h(
+        "div",
+        { className: "reset-form", testId: "reset-form" },
+        resetPoints,
+        forkType,
+        resetButton,
+        forkButton,
+      ),
       message,
     ),
     h("h3", {}, "Event history"),
     timeline,
   );
   void refreshDescription();
+  void loadResetPoints();
   void follow();
   return () => {
     abort.abort();
