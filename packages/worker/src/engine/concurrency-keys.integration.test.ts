@@ -10,6 +10,7 @@ import {
 } from "@dee/core";
 import { createRunService, type RunService } from "../../../api/src/index.ts";
 import { createIsolatedDatabase, type IsolatedSchema } from "../../../core/src/db/test-harness.ts";
+import { createSeverablePool } from "../chaos/severable-pool.ts";
 import { createShiftableClock, type ShiftableClock } from "../chaos/world.ts";
 import { startEngine, type Engine, type EngineOptions } from "./runtime.ts";
 
@@ -71,9 +72,12 @@ describe("concurrency keys in the engine", () => {
     }
   });
 
-  function boot(options: Omit<EngineOptions, "pool" | "onError" | "clock">): Engine {
+  function boot(
+    options: Omit<EngineOptions, "pool" | "onError" | "clock">,
+    enginePool: Pool = pool,
+  ): Engine {
     const engine = startEngine({
-      pool,
+      pool: enginePool,
       clock,
       pollIntervalMs: 5,
       loopIntervalMs: 20,
@@ -202,6 +206,50 @@ describe("concurrency keys in the engine", () => {
     expect(errors).toEqual([]);
   });
 
+  it("releases the step slot of a hanging task that a graceful stop drops", async () => {
+    let release: () => void = () => undefined;
+    const hang = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const calls: number[] = [];
+    let hanging = true;
+    const charge = defineStep<Order, string>("charge", {
+      handler: async (order) => {
+        calls.push(order.index);
+        if (hanging) {
+          await hang;
+        }
+        return `charged ${String(order.index)}`;
+      },
+      concurrency: { key: (order) => order.customer, limit: 1 },
+    });
+    const pay = defineWorkflow<Order, string>("pay", (ctx, order) => ctx.step(charge, order));
+    const first = boot({ workflows: [pay], steps: [charge], shutdownTimeoutMs: 50 });
+    const runIds = [
+      await start("pay", { customer: "c", index: 0 }),
+      await start("pay", { customer: "c", index: 1 }),
+    ];
+    await waitUntil(() => Promise.resolve(calls.length === 1), "the first charge to start");
+
+    const stopped = await first.stop();
+    engines.splice(engines.indexOf(first), 1);
+    expect(stopped.dropped).toBe(1);
+    const dropped = await pool.query<{ state: string; slots: string }>(
+      `select task.state,
+              (select count(*) from concurrency_slots where scope = 'step') as slots
+       from tasks task where task.run_id = $1 and task.task_type = 'STEP_TASK'`,
+      [runIds[0]],
+    );
+    expect(dropped.rows).toEqual([{ state: "PENDING", slots: "0" }]);
+    hanging = false;
+    boot({ workflows: [pay], steps: [charge] });
+    await waitUntil(() => allCompleted(runIds), "both payments without the lease expiring");
+    release();
+
+    expect(calls.slice(1).sort()).toEqual([0, 1]);
+    expect((await check(runIds)).violations).toEqual([]);
+  });
+
   it("reclaims a crashed worker's step slot with its lease", async () => {
     let release: () => void = () => undefined;
     const hang = new Promise<void>((resolve) => {
@@ -220,7 +268,8 @@ describe("concurrency keys in the engine", () => {
       concurrency: { key: (order) => order.customer, limit: 1 },
     });
     const pay = defineWorkflow<Order, string>("pay", (ctx, order) => ctx.step(charge, order));
-    const first = boot({ workflows: [pay], steps: [charge], shutdownTimeoutMs: 50 });
+    const crashing = createSeverablePool(pool);
+    const first = boot({ workflows: [pay], steps: [charge], shutdownTimeoutMs: 50 }, crashing.pool);
     const runIds = [
       await start("pay", { customer: "c", index: 0 }),
       await start("pay", { customer: "c", index: 1 }),
@@ -232,8 +281,16 @@ describe("concurrency keys in the engine", () => {
     }, "the second charge to queue for the slot");
     expect(calls).toHaveLength(1);
 
+    crashing.sever();
     await first.stop();
     engines.splice(engines.indexOf(first), 1);
+    const held = await pool.query<{ state: string; slots: string }>(
+      `select task.state,
+              (select count(*) from concurrency_slots where scope = 'step') as slots
+       from tasks task where task.run_id = $1 and task.task_type = 'STEP_TASK'`,
+      [runIds[0]],
+    );
+    expect(held.rows).toEqual([{ state: "LEASED", slots: "1" }]);
     crashed = false;
     boot({ workflows: [pay], steps: [charge] });
     await yieldTurns(50);
