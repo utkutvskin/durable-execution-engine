@@ -238,7 +238,7 @@ describe("concurrency keys in the engine", () => {
       `select task.state,
               (select count(*) from concurrency_slots where scope = 'step') as slots
        from tasks task where task.run_id = $1 and task.task_type = 'STEP_TASK'`,
-      [runIds[0]],
+      [runIds[calls[0] ?? 0]],
     );
     expect(dropped.rows).toEqual([{ state: "PENDING", slots: "0" }]);
     hanging = false;
@@ -288,7 +288,7 @@ describe("concurrency keys in the engine", () => {
       `select task.state,
               (select count(*) from concurrency_slots where scope = 'step') as slots
        from tasks task where task.run_id = $1 and task.task_type = 'STEP_TASK'`,
-      [runIds[0]],
+      [runIds[calls[0] ?? 0]],
     );
     expect(held.rows).toEqual([{ state: "LEASED", slots: "1" }]);
     crashed = false;
