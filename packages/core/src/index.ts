@@ -240,7 +240,7 @@ export { createHeartbeatStore } from "./retry/heartbeats.ts";
 export type { HeartbeatStore, RecordHeartbeatInput, StepHeartbeat } from "./retry/heartbeats.ts";
 export { createAttemptLog } from "./retry/attempt-log.ts";
 export type { AttemptLog, RecordAttemptFailureInput } from "./retry/attempt-log.ts";
-export { createDeadLetterQueue } from "./retry/dead-letters.ts";
+export { createDeadLetterQueue, requeueDeadLetterOnClient } from "./retry/dead-letters.ts";
 export type {
   AddDeadLetterInput,
   DeadLetter,
@@ -389,7 +389,11 @@ export type { CompiledVisibilityQuery } from "./visibility/visibility-query.ts";
 export type { UpsertSearchAttributesCommand } from "./workflow/commands.ts";
 export type { WaitForEventOptions } from "./workflow/context.ts";
 export type { CarriedSignal, WaitForEventCommand } from "./workflow/commands.ts";
-export { RunAlreadyClosedError, createRunControl } from "./cancellation/run-control.ts";
+export {
+  RunAlreadyClosedError,
+  createRunControl,
+  terminateRunOnClient,
+} from "./cancellation/run-control.ts";
 export type {
   CancelReceipt,
   RunControl,
@@ -638,3 +642,30 @@ export type {
   RunReset,
   RunResetOptions,
 } from "./reset/reset-run.ts";
+export {
+  BATCH_OPERATION_KINDS,
+  BATCH_WORKFLOW_TYPE,
+  BatchOperationNotFoundError,
+  DEFAULT_BATCH_PAGE_SIZE,
+  InvalidBatchOperationError,
+  MAX_BATCH_TARGETS,
+  createBatchOperationRunner,
+  listBatchOperations,
+  listBatchTargets,
+  planBatchPages,
+  readBatchOperation,
+  startBatchOperationOnClient,
+} from "./batch/batch-operations.ts";
+export type {
+  BatchOperation,
+  BatchOperationKind,
+  BatchOperationRunner,
+  BatchOperationRunnerOptions,
+  BatchProgress,
+  BatchResetPoint,
+  BatchSignal,
+  BatchTarget,
+  StartBatchInput,
+} from "./batch/batch-operations.ts";
+export { BATCH_PAGES_PER_RUN, createBatchOperationDefinitions } from "./batch/batch-workflow.ts";
+export type { BatchOperationDefinitions, BatchWorkflowInput } from "./batch/batch-workflow.ts";

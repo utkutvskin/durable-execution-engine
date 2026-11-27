@@ -105,6 +105,27 @@ async function lockOpenRun(client: PoolClient, runId: string): Promise<LockedRun
 }
 
 /**
+ * Terminates `runId` inside the caller's open transaction on `client`:
+ * takes the run row lock (its parent's first), records `run_terminated` and
+ * closes the run. See `RunControl.terminateRun`. Rejects with
+ * `RunNotFoundError` or `RunAlreadyClosedError`.
+ */
+export async function terminateRunOnClient(
+  client: PoolClient,
+  codec: Codec,
+  runId: string,
+  reason?: string,
+): Promise<TerminateReceipt> {
+  await lockOpenRun(client, runId);
+  const currentSeq = await readCurrentSequenceOnClient(client, runId);
+  const [stored] = await appendEventsOnClient(client, codec, runId, currentSeq, [
+    reason === undefined ? { type: "run_terminated" } : { type: "run_terminated", reason },
+  ]);
+  await closeRunIfTerminal(client, codec, runId);
+  return { sequenceNumber: stored?.sequenceNumber ?? currentSeq + 1 };
+}
+
+/**
  * Creates `RunControl` over `pool`.
  */
 export function createRunControl(pool: Pool, options: RunControlOptions = {}): RunControl {
@@ -134,15 +155,7 @@ export function createRunControl(pool: Pool, options: RunControlOptions = {}): R
     },
 
     terminateRun(runId: string, reason?: string): Promise<TerminateReceipt> {
-      return inTransaction(async (client) => {
-        await lockOpenRun(client, runId);
-        const currentSeq = await readCurrentSequenceOnClient(client, runId);
-        const [stored] = await appendEventsOnClient(client, codec, runId, currentSeq, [
-          reason === undefined ? { type: "run_terminated" } : { type: "run_terminated", reason },
-        ]);
-        await closeRunIfTerminal(client, codec, runId);
-        return { sequenceNumber: stored?.sequenceNumber ?? currentSeq + 1 };
-      });
+      return inTransaction((client) => terminateRunOnClient(client, codec, runId, reason));
     },
   };
 }

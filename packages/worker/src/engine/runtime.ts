@@ -1,4 +1,6 @@
 import {
+  createBatchOperationDefinitions,
+  createBatchOperationRunner,
   createEngineMetrics,
   createHistoryCompactor,
   createJanitor,
@@ -131,6 +133,12 @@ export interface EngineOptions {
   readonly compaction?: CompactionOptions;
   readonly retention?: EngineRetentionOptions | false;
   readonly partitions?: EnginePartitionOptions | false;
+  /**
+   * Whether the engine also runs batch operations (the built-in
+   * `BATCH_WORKFLOW_TYPE` workflow and its steps, see
+   * `createBatchOperationDefinitions`). Defaults to `true`.
+   */
+  readonly batchOperations?: boolean;
   readonly leaderElection?: boolean;
   readonly leaderLeaseMs?: number;
   readonly wakeups?: boolean;
@@ -242,12 +250,16 @@ export function startEngine(options: EngineOptions): Engine {
     ...clockOption,
     ...(options.tracing === undefined ? {} : { tracing: options.tracing }),
   });
+  const batch =
+    options.batchOperations === false
+      ? undefined
+      : createBatchOperationDefinitions(createBatchOperationRunner(options.pool, clockOption));
   const handler = createEngineTaskHandler({
     pool: options.pool,
     queue,
     queueName,
-    workflows: options.workflows,
-    steps: options.steps,
+    workflows: batch === undefined ? options.workflows : [...options.workflows, batch.workflow],
+    steps: batch === undefined ? options.steps : [...options.steps, ...batch.steps],
     ...clockOption,
     ...(options.payloadCodec === undefined ? {} : { payloadCodec: options.payloadCodec }),
     ...(options.random === undefined ? {} : { random: options.random }),

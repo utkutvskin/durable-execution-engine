@@ -180,6 +180,42 @@ async function insertDeadLetter(db: Queryable, input: AddDeadLetterInput): Promi
 }
 
 /**
+ * Requeues the dead letter `id` inside the caller's open transaction on
+ * `client`: locks the entry, enqueues a fresh step task with the attempt
+ * offset of the requeue (visible at `now`) and marks the entry requeued.
+ * Returns the new task id, or `undefined` when the entry does not exist or
+ * was already requeued.
+ */
+export async function requeueDeadLetterOnClient(
+  client: PoolClient,
+  id: string,
+  now: Date,
+): Promise<string | undefined> {
+  const locked = await client.query<DeadLetterRow>(
+    "select * from dead_letters where id = $1 and requeued_at is null for update",
+    [id],
+  );
+  const row = locked.rows[0];
+  if (row === undefined) {
+    return undefined;
+  }
+  const task = await client.query<{ id: string }>(
+    `insert into tasks (namespace_id, run_id, queue_name, task_type, payload, visible_at)
+     values ($1, $2, $3, 'STEP_TASK', $4::jsonb, $5)
+     returning id`,
+    [
+      row.namespace_id,
+      row.run_id,
+      row.queue_name,
+      JSON.stringify(requeuedPayload(row.payload, row.attempts, now)),
+      now,
+    ],
+  );
+  await client.query("update dead_letters set requeued_at = $2 where id = $1", [id, now]);
+  return task.rows[0]?.id;
+}
+
+/**
  * Creates a `DeadLetterQueue` over `pool`. `clock` supplies the requeue
  * time and the visibility of the requeued task.
  */
@@ -260,31 +296,7 @@ export function createDeadLetterQueue(
     },
 
     async requeue(id: string): Promise<string | undefined> {
-      return withTransaction(pool, async (client) => {
-        const locked = await client.query<DeadLetterRow>(
-          "select * from dead_letters where id = $1 and requeued_at is null for update",
-          [id],
-        );
-        const row = locked.rows[0];
-        if (row === undefined) {
-          return undefined;
-        }
-        const now = clock.now();
-        const task = await client.query<{ id: string }>(
-          `insert into tasks (namespace_id, run_id, queue_name, task_type, payload, visible_at)
-           values ($1, $2, $3, 'STEP_TASK', $4::jsonb, $5)
-           returning id`,
-          [
-            row.namespace_id,
-            row.run_id,
-            row.queue_name,
-            JSON.stringify(requeuedPayload(row.payload, row.attempts, now)),
-            now,
-          ],
-        );
-        await client.query("update dead_letters set requeued_at = $2 where id = $1", [id, now]);
-        return task.rows[0]?.id;
-      });
+      return withTransaction(pool, (client) => requeueDeadLetterOnClient(client, id, clock.now()));
     },
   };
 }
