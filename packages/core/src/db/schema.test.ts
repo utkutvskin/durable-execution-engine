@@ -87,6 +87,8 @@ describe("initial schema", () => {
       "all_tasks",
       "api_keys",
       "audit_log",
+      "batch_operation_targets",
+      "batch_operations",
       "concurrency_slot_history",
       "concurrency_slots",
       "dead_letters",

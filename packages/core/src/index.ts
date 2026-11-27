@@ -621,3 +621,20 @@ export {
   PRIORITY_RANGE,
   validatePriority,
 } from "./run/priority.ts";
+export {
+  InvalidResetPointError,
+  createRunReset,
+  listResetPointsOnClient,
+  resetPointCandidates,
+  resetRunOnClient,
+  resolveResetPoint,
+} from "./reset/reset-run.ts";
+export type {
+  ResetKind,
+  ResetPoint,
+  ResetPointCandidate,
+  ResetReceipt,
+  ResetRunInput,
+  RunReset,
+  RunResetOptions,
+} from "./reset/reset-run.ts";

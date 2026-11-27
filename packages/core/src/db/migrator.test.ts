@@ -66,7 +66,65 @@ describe("migrateUp / migrateDown", () => {
       "0036_dequeue_lane_estimate",
       "0037_partitioned_run_events",
       "0038_key_scopes_and_audit_log",
+      "0039_reset_and_batches",
     ]);
+
+    const result = await database.pool.query<{ id: string }>(
+      "select id from schema_migrations order by id",
+    );
+    expect(result.rows.map((row) => row.id)).toEqual([
+      "0001_initial_schema",
+      "0002_run_projection",
+      "0003_task_queue",
+      "0004_idempotent_results",
+      "0005_crash_recovery",
+      "0006_retry_and_dead_letters",
+      "0007_durable_timers",
+      "0008_schedules",
+      "0009_child_workflows",
+      "0010_continue_as_new",
+      "0011_sticky_execution",
+      "0012_api_keys",
+      "0013_namespace_quotas",
+      "0014_task_quarantine",
+      "0015_trace_context",
+      "0016_hot_query_indexes",
+      "0017_one_step_result",
+      "0018_run_waiting_marker",
+      "0019_run_queue_and_schedule_policy",
+      "0020_run_timeouts",
+      "0021_start_workflow_function",
+      "0022_event_version",
+      "0023_external_events",
+      "0024_search_attributes",
+      "0025_step_heartbeats",
+      "0026_task_priorities",
+      "0027_concurrency_keys",
+      "0028_rate_limits_and_start_policies",
+      "0029_pauses_and_schedule_policies",
+      "0030_hot_path_functions",
+      "0031_one_pending_workflow_task",
+      "0032_hot_heartbeats_and_autovacuum",
+      "0033_task_wakeups",
+      "0034_task_history",
+      "0035_closed_run_retention",
+      "0036_dequeue_lane_estimate",
+      "0037_partitioned_run_events",
+      "0038_key_scopes_and_audit_log",
+      "0039_reset_and_batches",
+    ]);
+  });
+
+  it("is idempotent: running migrateUp again applies nothing", async () => {
+    await migrateUp(database.pool);
+    const secondRun = await migrateUp(database.pool);
+    expect(secondRun).toEqual([]);
+  });
+
+  it("migrateDown reverts the most recently applied migration", async () => {
+    await migrateUp(database.pool);
+    const reverted = await migrateDown(database.pool);
+    expect(reverted).toEqual(["0039_reset_and_batches"]);
 
     const result = await database.pool.query<{ id: string }>(
       "select id from schema_migrations order by id",
@@ -113,65 +171,11 @@ describe("migrateUp / migrateDown", () => {
     ]);
   });
 
-  it("is idempotent: running migrateUp again applies nothing", async () => {
+  it("migrateDown with steps 39 reverts every migration, most recent first", async () => {
     await migrateUp(database.pool);
-    const secondRun = await migrateUp(database.pool);
-    expect(secondRun).toEqual([]);
-  });
-
-  it("migrateDown reverts the most recently applied migration", async () => {
-    await migrateUp(database.pool);
-    const reverted = await migrateDown(database.pool);
-    expect(reverted).toEqual(["0038_key_scopes_and_audit_log"]);
-
-    const result = await database.pool.query<{ id: string }>(
-      "select id from schema_migrations order by id",
-    );
-    expect(result.rows.map((row) => row.id)).toEqual([
-      "0001_initial_schema",
-      "0002_run_projection",
-      "0003_task_queue",
-      "0004_idempotent_results",
-      "0005_crash_recovery",
-      "0006_retry_and_dead_letters",
-      "0007_durable_timers",
-      "0008_schedules",
-      "0009_child_workflows",
-      "0010_continue_as_new",
-      "0011_sticky_execution",
-      "0012_api_keys",
-      "0013_namespace_quotas",
-      "0014_task_quarantine",
-      "0015_trace_context",
-      "0016_hot_query_indexes",
-      "0017_one_step_result",
-      "0018_run_waiting_marker",
-      "0019_run_queue_and_schedule_policy",
-      "0020_run_timeouts",
-      "0021_start_workflow_function",
-      "0022_event_version",
-      "0023_external_events",
-      "0024_search_attributes",
-      "0025_step_heartbeats",
-      "0026_task_priorities",
-      "0027_concurrency_keys",
-      "0028_rate_limits_and_start_policies",
-      "0029_pauses_and_schedule_policies",
-      "0030_hot_path_functions",
-      "0031_one_pending_workflow_task",
-      "0032_hot_heartbeats_and_autovacuum",
-      "0033_task_wakeups",
-      "0034_task_history",
-      "0035_closed_run_retention",
-      "0036_dequeue_lane_estimate",
-      "0037_partitioned_run_events",
-    ]);
-  });
-
-  it("migrateDown with steps 38 reverts every migration, most recent first", async () => {
-    await migrateUp(database.pool);
-    const reverted = await migrateDown(database.pool, undefined, 38);
+    const reverted = await migrateDown(database.pool, undefined, 39);
     expect(reverted).toEqual([
+      "0039_reset_and_batches",
       "0038_key_scopes_and_audit_log",
       "0037_partitioned_run_events",
       "0036_dequeue_lane_estimate",
@@ -237,6 +241,8 @@ describe("migrateUp / migrateDown", () => {
       "all_tasks",
       "api_keys",
       "audit_log",
+      "batch_operation_targets",
+      "batch_operations",
       "concurrency_slot_history",
       "concurrency_slots",
       "dead_letters",
