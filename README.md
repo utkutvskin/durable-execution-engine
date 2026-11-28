@@ -3,7 +3,7 @@
 A durable execution engine: workflows and steps that survive process crashes, written in
 TypeScript on top of PostgreSQL. Every decision a workflow makes is an event in an append-only log; when a worker dies, another one replays the log and carries on exactly where the first stopped.
 
-What you get in v0.1.0: steps with retries, a dead letter queue, heartbeats and start-to-close, schedule-to-close and heartbeat timeouts, typed step, workflow, signal and query definitions, durable timers and cron schedules, signals with deduplication ids and signal-with-start, queries, validated updates that return a result, events addressed by a correlation key with buffering and triggers, conditions, search attributes with a memo and visibility queries, run priorities with separate decision and step pools and fair turns across namespaces, concurrency keys that limit runs or steps per business key, rate limits shared by every process through Postgres, debounced and singleton starts and idempotency keys with a TTL, pause and resume for a run, a queue or a namespace, schedule overlap policies with cancel-other and repeatable backfills, cancellation with compensation, child workflows, continue-as-new, workflow versioning, an HTTP API with keys, namespaces and quotas, a run explorer web ui, metrics, tracing and a command line. Read `docs/CONCEPTS.md` for the ideas and `docs/ARCHITECTURE.md` for the moving parts.
+What you get in v0.2.0: steps with retries, a dead letter queue, heartbeats and start-to-close, schedule-to-close and heartbeat timeouts, typed step, workflow, signal and query definitions, durable timers and cron schedules, signals with deduplication ids and signal-with-start, queries, validated updates that return a result, events addressed by a correlation key with buffering and triggers, conditions, search attributes with a memo and visibility queries, run priorities with separate decision and step pools and fair turns across namespaces, concurrency keys that limit runs or steps per business key, rate limits shared by every process through Postgres, debounced and singleton starts and idempotency keys with a TTL, pause and resume for a run, a queue or a namespace, schedule overlap policies with cancel-other and repeatable backfills, cancellation with compensation, child workflows, continue-as-new, workflow versioning, retention, a partitioned and archivable history and read replicas, payload encryption with key rotation, reset, fork and batch operations, an HTTP API with scoped keys, namespaces, quotas and an audit log, a run explorer web ui, metrics, tracing and a command line. Read `docs/CONCEPTS.md` for the ideas and `docs/ARCHITECTURE.md` for the moving parts. Coming from 0.1? Read `docs/UPGRADING.md` first.
 
 ## Stack
 
@@ -20,8 +20,8 @@ What you get in v0.1.0: steps with retries, a dead letter queue, heartbeats and 
 | ----------------- | -------------------------------------------- |
 | `packages/core`   | event store, replay engine, workflow dsl     |
 | `packages/worker` | poll loop, lease renewal, crash recovery     |
-| `packages/api`    | rest endpoints, authentication, quotas       |
-| `packages/cli`    | developer commands (`wf dev`, `wf run`, ...) |
+| `packages/api`    | rest endpoints, scoped keys, quotas, audit   |
+| `packages/cli`    | the `wf` command line (`wf dev`, `wf serve`) |
 | `apps/ui`         | run explorer web ui                          |
 | `examples`        | hello, a payment saga and an etl pipeline    |
 
@@ -37,7 +37,7 @@ cd durable-execution-engine
 pnpm install
 ```
 
-Outside a checkout, build and pack the packages (`pnpm run build && node scripts/pack-packages.mjs .packed`) and install the tarballs into an empty directory with `npm install`; `scripts/smoke-install.sh` does exactly that and runs the hello workflow, and CI runs it in a clean `node:22` container.
+Outside a checkout, install the published packages once the owner has enabled publishing (`npm install @dee/cli @dee/example-hello`, then `npx wf dev --module node_modules/@dee/example-hello/dist/index.js`), or build and pack them yourself (`pnpm run build && node scripts/pack-packages.mjs .packed`) and install the tarballs into an empty directory with `npm install`. `scripts/smoke-install.sh` does the second and runs the hello workflow, and CI runs it in a clean `node:22` container.
 
 **2. Start the environment** (terminal one)
 
@@ -114,13 +114,14 @@ Start here:
 - `docs/CONCEPTS.md` — determinism, replay, idempotency, retries, timers, signals, versioning.
 - `docs/ARCHITECTURE.md` — the packages, the data model, the life of a run, with diagrams.
 - `docs/DEPLOYMENT.md` — running it in production: the image, the database, scaling, upgrades, backups.
+- `docs/UPGRADING.md` — upgrading from 0.1 to 0.2 with open runs, and the test that proves it.
 - `docs/RELEASING.md` — how a tag becomes a release, and the one-time steps for npm and GHCR.
 - `docs/API.md` — the HTTP API reference, authentication, idempotent start, quotas and the OpenAPI document (`/openapi.json`).
 - `docs/CLI.md` — the `wf` command line.
 - `docs/STABILITY.md` — what the project promises not to break, the event format version, deprecation, and how to replay exported histories against new workflow code.
 - `docs/EXAMPLES.md` — the payment saga, the etl pipeline and the outbox.
 - `docs/EMBEDDING.md` — starting, signalling and cancelling a workflow in your own transaction, the `start_workflow` SQL function and the engine schema.
-- `CHANGELOG.md` and `docs/ROADMAP.md` — what v0.1.0 contains and what comes next.
+- `CHANGELOG.md` and `docs/ROADMAP.md` — what each release contains and what comes next.
 
 Reference and background:
 
@@ -129,11 +130,11 @@ Reference and background:
 - `docs/TRACING.md` — how a run becomes one trace, the span names, sampling and how to look at it in Jaeger.
 - `docs/UI.md` — the run explorer web ui.
 - `docs/CHAOS_REPORT.md` — the fault injection suite and its latest results.
-- `docs/BENCHMARKS.md` — baseline throughput and latency on a single node.
+- `docs/BENCHMARKS.md` — throughput and latency on a single node, and v0.1.1 against v0.2.0.
 - `docs/DECISIONS.md` — architecture decision records.
 - `docs/DEFERRED.md` — what was named in a day's scope and not finished.
 - `docs/REVIEW.md` — the code review and survey taken after v0.1.0, which days 31 to 60 of the backlog are planned from.
-- `docs/OUT_OF_SCOPE.md` — what v0.1 explicitly does not cover.
+- `docs/OUT_OF_SCOPE.md` — what the project explicitly does not cover.
 - `docs/CONVENTIONS.md` and `docs/BACKLOG.md` — writing conventions and the development backlog.
 
 ## Development

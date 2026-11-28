@@ -15,23 +15,23 @@ pnpm exec prettier --write docs/CHAOS_REPORT.md
 
 | Scenario                                       | Repetitions | Runs | Faults injected | Task redeliveries | Errors survived | Violations | Slowest repetition |
 | ---------------------------------------------- | ----------: | ---: | --------------: | ----------------: | --------------: | ---------: | -----------------: |
-| Worker kill                                    |          10 |   40 |              20 |                20 |               0 |          0 |             809 ms |
-| Database connection loss and recovery          |          10 |   60 |              80 |               161 |             383 |          0 |             636 ms |
-| Double delivery                                |          10 |   40 |              64 |                64 |               0 |          0 |              63 ms |
-| Clock shifted forward and backward             |          10 |   60 |              60 |                10 |               0 |          0 |              58 ms |
-| Slow disk                                      |          10 |   80 |            1543 |                55 |               0 |          0 |             496 ms |
-| Network latency                                |          10 |   60 |            6272 |                41 |               0 |          0 |            1804 ms |
-| Worker kill (engine)                           |          10 |   40 |              20 |                20 |               0 |          0 |            1555 ms |
-| Database connection loss and recovery (engine) |          10 |   60 |              49 |               106 |             344 |          0 |             631 ms |
-| Double delivery (engine)                       |          10 |   40 |              64 |                64 |               0 |          0 |              65 ms |
-| Clock shifted forward and backward (engine)    |          10 |   60 |              60 |                10 |               0 |          0 |             416 ms |
-| Slow disk (engine)                             |          10 |   80 |            4258 |                78 |               0 |          0 |             815 ms |
-| Network latency (engine)                       |          10 |   60 |           22682 |               154 |               0 |          0 |            3123 ms |
-| Slow attempt racing a retry (engine)           |          10 |   30 |              30 |                30 |               0 |          0 |              86 ms |
-| Two queues on one database (engine)            |          10 |   80 |              20 |                 0 |               0 |          0 |             310 ms |
-| Clock skew between workers (engine)            |          10 |   70 |              20 |                19 |               0 |          0 |             195 ms |
-| Pool smaller than concurrency (engine)         |          10 |  160 |              80 |                 0 |               0 |          0 |             172 ms |
-| Runs waiting on a signal (engine)              |          10 |   80 |              40 |                 8 |               0 |          0 |             385 ms |
+| Worker kill                                    |          10 |   40 |              20 |                20 |               0 |          0 |             503 ms |
+| Database connection loss and recovery          |          10 |   60 |              80 |               158 |             396 |          0 |             472 ms |
+| Double delivery                                |          10 |   40 |              64 |                64 |               0 |          0 |              51 ms |
+| Clock shifted forward and backward             |          10 |   60 |              60 |                10 |               0 |          0 |              83 ms |
+| Slow disk                                      |          10 |   80 |             220 |                 4 |               0 |          0 |             127 ms |
+| Network latency                                |          10 |   60 |            2084 |                31 |               4 |          0 |            1060 ms |
+| Worker kill (engine)                           |          10 |   40 |              20 |                20 |               0 |          0 |            5449 ms |
+| Database connection loss and recovery (engine) |          10 |   60 |              37 |                65 |             271 |          0 |             913 ms |
+| Double delivery (engine)                       |          10 |   40 |              64 |                64 |               0 |          0 |              80 ms |
+| Clock shifted forward and backward (engine)    |          10 |   60 |              60 |                 2 |               0 |          0 |             764 ms |
+| Slow disk (engine)                             |          10 |   80 |            1578 |                17 |               0 |          0 |             441 ms |
+| Network latency (engine)                       |          10 |   60 |           10674 |                55 |               0 |          0 |            1881 ms |
+| Slow attempt racing a retry (engine)           |          10 |   30 |              30 |                30 |               0 |          0 |             147 ms |
+| Two queues on one database (engine)            |          10 |   80 |              20 |                 0 |               0 |          0 |             392 ms |
+| Clock skew between workers (engine)            |          10 |   70 |              20 |                 7 |               0 |          0 |             544 ms |
+| Pool smaller than concurrency (engine)         |          10 |  160 |              80 |                 0 |               0 |          0 |             198 ms |
+| Runs waiting on a signal (engine)              |          10 |   80 |              40 |                 0 |               0 |          0 |             432 ms |
 
 ## Invariants
 

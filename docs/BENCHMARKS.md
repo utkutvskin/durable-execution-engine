@@ -238,6 +238,27 @@ The first version of the migration was clearly slower: 808 steps per second agai
 
 `packages/worker/src/bench/hot-queries.integration.test.ts` still finds no sequential scan that runs in the history and sequence reads over 20,000 runs; the plan lists the empty partitions, which are never executed, so the test now counts only scans that ran.
 
+## v0.1.1 against v0.2.0
+
+Re-run for the v0.2.0 release on the same machine: the default benchmark (400 runs of 3 steps), 10 times on each side, alternating between a checkout of the v0.1.1 release commit (`b26e5d9`, its own `pnpm run bench`) and the v0.2.0 tree, in two rounds of 5 with the order reversed in the second. Medians of the 10 runs:
+
+| Measure                     |     v0.1.1 |     v0.2.0 |      Change |
+| --------------------------- | ---------: | ---------: | ----------: |
+| Runs started per second     |      1,458 |      1,570 |         +8% |
+| Steps completed per second  |        940 |      1,291 |        +37% |
+| Events appended per second  |     42,905 |     83,551 |        +95% |
+| Start a run, p50 / p99 (ms) | 9.1 / 50.3 | 7.9 / 56.7 | -13% / +13% |
+| Run end to end p50 (ms)     |        512 |        394 |        -23% |
+| Run end to end p95 (ms)     |        792 |        480 |        -39% |
+| Run end to end p99 (ms)     |        810 |        491 |        -39% |
+| Append 10 events, p50 (ms)  |        3.5 |        1.7 |        -51% |
+| Append 10 events, p95 (ms)  |        5.8 |        3.3 |        -44% |
+| Append 10 events, p99 (ms)  |        7.4 |        4.4 |        -41% |
+
+The ranges do not overlap on the rows that moved most: steps per second ranged from 851 to 1,108 on v0.1.1 and from 1,141 to 1,441 on v0.2.0, the end-to-end p95 from 646 to 876 ms against 428 to 556 ms, and events appended per second from 36,829 to 49,306 against 75,057 to 96,478. The gains come from the hot path functions and the single pending workflow task (ADR-0063) and the append without a foreign key check (ADR-0066). The start rows overlap: runs started per second ranged from 1,056 to 1,655 against 1,139 to 1,864, and the p99 of a start from 43 to 67 ms against 42 to 68 ms, so the start did not measurably change.
+
+The chaos suite was re-run on the same tree for the release: 170 repetitions across the 17 scenario runs, 0 invariant violations (`docs/CHAOS_REPORT.md`), and the nightly run with 30 repetitions on the day 59 commit was green.
+
 ## What to try next
 
 - The engine's own three-step run still costs 86 statements, most of them reads before a step and markers after a decision. Folding those (`docs/DEFERRED.md`, day 53) is the next lever for the engine, where this benchmark's path is down to 14.

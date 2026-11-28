@@ -1,6 +1,6 @@
 # Deployment
 
-This page covers running the engine outside a laptop: the container image, the database, how to scale, how to upgrade and what to watch. It describes what v0.1.0 does today; where something is missing it says so.
+This page covers running the engine outside a laptop: the container image, the database, how to scale, how to upgrade and what to watch. It describes what v0.2.0 does today; where something is missing it says so.
 
 ## What runs
 
@@ -41,7 +41,7 @@ docker compose --profile engine up -d --scale worker=3 worker
 
 Set `WF_API_KEY` (in the environment or a `.env` file next to the compose file) to choose the API key. Without it the first start issues one and logs it once: `docker compose logs api`.
 
-Publishing: CI builds the image on every change to the `Dockerfile` and its inputs (`docker` job) and runs the split services: two migrations started together, an `api` container, two `worker` containers, the payment saga through them, a check that every engine metric has a series, and the compose services. v0.1.0 does not push the image to a registry; see `docs/ROADMAP.md`. Build it yourself and push it to your own registry.
+Publishing: CI builds the image on every change to the `Dockerfile` and its inputs (`docker` job) and runs the split services: two migrations started together, an `api` container, two `worker` containers, the payment saga through them, a check that every engine metric has a series, and the compose services. A release tag runs `.github/workflows/release.yml`, which pushes the image to GHCR once the owner has done the one-time steps of `docs/RELEASING.md`; until then, build it yourself and push it to your own registry.
 
 ### Your own image
 
@@ -100,6 +100,8 @@ Both sessions are opened outside the pool, with the pool's settings, so they tak
 - `WF_MASK_FIELDS` (comma separated object keys) masks those keys in every log line of `wf serve` and `wf worker` and in what the codec endpoint answers, which is what the UI and `wf run describe` show. Log lines never carry an encoded payload, only its codec name. The stored payload keeps the real value, which a replay needs. The API's own request log carries the method, path, status and duration only.
 
 ## Upgrading
+
+From 0.1 to 0.2, follow `docs/UPGRADING.md`: the old and new processes cannot run side by side, so every 0.1 process stops before the migrations. Within a minor version:
 
 1. Read `CHANGELOG.md` for migrations and behavior changes.
 2. Back up the database.
