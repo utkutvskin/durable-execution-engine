@@ -200,3 +200,18 @@ The SQL function `start_workflow` and the embedded `startWorkflow`, `signalWorkf
 ## Reset, fork and batches leave a few edges open (day 59)
 
 A cut cannot leave a timer, a child workflow, an event wait without a timeout or an update unfinished; the new run would need its own timer row, child link or wait registration, which the reset does not create. A reset of a child run makes a top-level run, and the parent is not told. The run page and `describeRun` do not show the reset link (only the `workflow_runs` columns hold it), and a run that was reset is not marked in the run list. A batch reset cuts every run at the same step number or before its failed step; there is no per-run event cut. A requeue batch requeues dead letters whose run already failed (day 37 made a dead letter final for its workflow), so it changes nothing for those runs but the entries. A batch cannot be paused or cancelled by its own route: cancelling or terminating its workflow run stops it, and the targets it did not reach stay `PENDING`. Batches have no retention, and their targets are not covered by the retention sweep. The UI's reset form cuts at an event only, and the batches page cannot show a batch's targets. To close these: timers and child links created by the reset, a `resetFrom` field in `describeRun` and the run page, `POST /v1/batches/{batchId}/cancel`, batch rows in the retention sweep, and a targets table in the UI.
+
+## The v0.2.0 tag and its release run (day 60)
+
+The release commit is `b9f7057` (`chore(release): v0.2.0`) on `main`, with every package at 0.2.0 and the `0.2.0` section in `CHANGELOG.md`. The session could not start the release pipeline: the git proxy refused the push of the pre-release tag `v0.2.0-rc.1` with HTTP 403, and starting `release.yml` by hand from the session was not permitted. So the release workflow has not run for `v0.2.0`, and nothing is published. The README quick start was proven from the packed 0.2.0 tarballs instead (`scripts/smoke-install.sh`, the hello run `COMPLETED`). To close this, from a clone with `main` checked out, following `docs/RELEASING.md`:
+
+```sh
+git checkout main && git pull --ff-only
+git tag -a v0.2.0-rc.1 -m "v0.2.0-rc.1" "$(git log --format=%H --grep='^chore(release): v0.2.0' -n 1)"
+git push origin v0.2.0-rc.1
+# wait for the release run to be green, delete its draft release, then:
+git tag -a v0.2.0 -m "v0.2.0" "$(git log --format=%H --grep='^chore(release): v0.2.0' -n 1)"
+git push origin v0.2.0
+```
+
+The real publish needs the one-time npm and GHCR steps of `docs/RELEASING.md` first; without them the `npm` and `image` jobs of the `v0.2.0` run cannot publish. The `v0.1.1` tag (day 40) is still missing too.

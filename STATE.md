@@ -14,6 +14,17 @@ Field glossary:
 
 ---
 
+## Day 60: v0.2.0
+
+- **Status:** DONE
+- **Completed day:** 60
+- **Files added or changed:** new `test/upgrade/upgrade-from-v0.1.1.test.ts`, new `test/fixtures/upgrade-v0.1.1/` (`workflows.ts`, `record.ts`, `record.sh`, `fixture.json`), `test/release/release.test.ts`, new `docs/UPGRADING.md`, `README.md`, `docs/ARCHITECTURE.md`, `CONCEPTS.md`, `DEPLOYMENT.md`, `ROADMAP.md`, `BENCHMARKS.md`, `CHAOS_REPORT.md`, `DECISIONS.md` (ADR-0070), `DEFERRED.md`, `CHANGELOG.md` (0.2.0), version 0.2.0 in every `package.json` (through a changeset and `pnpm run release:version`, plus the root and `examples/outbox` by hand)
+- **Technical decisions:** ADR-0070 in `docs/DECISIONS.md`. No new dependency, no migration.
+- **BLOCKER:** -
+- **Handoff note:** `pnpm run verify` is green locally (222 test files, 1740 tests, 10 more than the baseline of 1730, which was green), `pnpm run api:check` passes, and CI run 46131357001 on the release commit `b9f7057` (`chore(release): v0.2.0`) is green in every job (`verify`, `packages`, `examples`, `docker`). **Done, each with a test or command:** the upgrade test restores a database recorded by the v0.1.1 code itself (`record.sh` checks out `b26e5d9` in a temporary worktree and runs its engine) with six open runs (waiting on a signal, sleeping, a parent and its child, a step waiting for its retry, a queued run) and one completed run, applies the 19 newer migrations, and today's engine completes every run without running again a step that finished under v0.1.1, the old key authenticates as `admin`, the invariant checker finds nothing and every history replays (`test/upgrade/upgrade-from-v0.1.1.test.ts`); it went red when a later migration dropped pending timers. Benchmarks re-run, 10 alternating runs per side against a v0.1.1 checkout: steps per second 940 to 1,291, end-to-end p95 792 to 480 ms, appends 42.9k to 83.6k per second (`docs/BENCHMARKS.md`). Chaos suite re-run: 170 repetitions, 0 violations (`docs/CHAOS_REPORT.md`). README quick start from the packed 0.2.0 tarballs: `scripts/smoke-install.sh` ran the hello workflow to `COMPLETED` here, and the `packages` CI job did the same in a clean container. **Not done: the release workflow has not run for `v0.2.0`.** The git proxy refused the push of `v0.2.0-rc.1` with HTTP 403 (as with the 0.1 tags), and starting `release.yml` by hand from the session was not permitted. So no tag exists for 0.2.0 and nothing is published; the owner's commands are in `docs/DEFERRED.md` (rc tag first, then `v0.2.0` on `b9f7057`, after the one-time npm and GHCR steps). The `v0.1.1` tag is still missing too. **Things to know:** 0.1 and 0.2 processes cannot run side by side (0037 makes the partition key mandatory), so the guide stops every 0.1 process first. The fixture only needs to be recorded again if `workflows.ts` changes. 4 commits. I wrote the upgrade test after the fixture and checked it red with a broken migration. The backlog is complete; the next steps are the owner's: push the tags and do the publishing steps.
+
+---
+
 ## Day 59: reset, fork and batch operations
 
 - **Status:** DONE
