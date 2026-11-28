@@ -1,0 +1,1463 @@
+{
+  "recordedWith": "0.1.1",
+  "recordedAt": "2026-11-28T09:24:41.592Z",
+  "migrations": [
+    "0001_initial_schema",
+    "0002_run_projection",
+    "0003_task_queue",
+    "0004_idempotent_results",
+    "0005_crash_recovery",
+    "0006_retry_and_dead_letters",
+    "0007_durable_timers",
+    "0008_schedules",
+    "0009_child_workflows",
+    "0010_continue_as_new",
+    "0011_sticky_execution",
+    "0012_api_keys",
+    "0013_namespace_quotas",
+    "0014_task_quarantine",
+    "0015_trace_context",
+    "0016_hot_query_indexes",
+    "0017_one_step_result",
+    "0018_run_waiting_marker",
+    "0019_run_queue_and_schedule_policy",
+    "0020_run_timeouts"
+  ],
+  "migrationChecksums": {
+    "0001_initial_schema.down.sql": "e722fba0a95c15ef1ddad8e5c62501da746b2219e9860f9f6838f79b2cb21201",
+    "0001_initial_schema.up.sql": "a2193a8b46062d63a1f977337bfadbc11032dfbc2b6818dbfa19ef93b5d3d940",
+    "0002_run_projection.down.sql": "abe9fde3ca418b50317c55a33ae18fa74fee27813b871b6728ee1ecfba2901ec",
+    "0002_run_projection.up.sql": "ed01fb8a65caacc427ed611cf6778188c42ef7d96c2b2cf037c3a753e17d22ae",
+    "0003_task_queue.down.sql": "c061d73dcadae3cf7fcd4cbe8da852228be8f416f24a0d2c96b76c11c6ec4eff",
+    "0003_task_queue.up.sql": "48cdc3efb06f6041d7d6093a473765b8de858a5c8eb0dec05749e8808d9c6e01",
+    "0004_idempotent_results.down.sql": "82b2ef522253ac7c0fa59195e25dae190ff66f5c605a1222c29f96bb83ce41a9",
+    "0004_idempotent_results.up.sql": "d04d805c9276ec1ce688a78e98fbefdca858cdb00bf7137110134608f9dc5e03",
+    "0005_crash_recovery.down.sql": "16b4a300261195b40c57c64aa01e5a28ce9d706dbd87762afbd899439f5ec968",
+    "0005_crash_recovery.up.sql": "9d93d2bbf43a6d3556378e6c614672e6b912955c57fb958e9ae748a695117b68",
+    "0006_retry_and_dead_letters.down.sql": "91eec34c5cfd8d2a21aac62056c4d0521117fcb9db6a2c1ed8dc4e8be9a476ab",
+    "0006_retry_and_dead_letters.up.sql": "06dfd44e89b7eb03953af493cb2bc48c437bc6668bf33ed49c1d1d5e0938200a",
+    "0007_durable_timers.down.sql": "d649abb853d930b67c6d1e5d7ec86b6817c4770f9af94aa2fc7ad845eeb8cbc1",
+    "0007_durable_timers.up.sql": "7cf34f2924916ef538c520a098d5c9ce78ab4ec29f7ce46376287edbf59e9b04",
+    "0008_schedules.down.sql": "012dd073c1809a8a2369ebe5eb093a8bb588daca405f228565f6ab51e6c6c0e0",
+    "0008_schedules.up.sql": "5220b266e17ef1bf0873f7d715a2f855da598d8c07a57f5035aa3e12037dfa14",
+    "0009_child_workflows.down.sql": "31b836f597a15aecbd86b62fe965e2a92f04040d1977fdbf7ed74e412b754c03",
+    "0009_child_workflows.up.sql": "8671e0c2a0f3c5b7805a4072cc53b4312b8f30f8df343ddedba26f51590b8e6e",
+    "0010_continue_as_new.down.sql": "346dadfda5217b618e2565fa4452647d83c14cc0af029a32fc3c94c892489bbc",
+    "0010_continue_as_new.up.sql": "8698837a21ae404c658d3f0fe7aec897f4bd4183bfb3a0fa06a17d9ece392f48",
+    "0011_sticky_execution.down.sql": "d1a2c82f58e93ebdfccbcbb8c31b574f880171658864a9d4af560a68d2113d9d",
+    "0011_sticky_execution.up.sql": "1739762e2d251c9cf63f11aaafbfa1b70421fdd1c34bc32fb4fe4f2cc5d9ad9d",
+    "0012_api_keys.down.sql": "72ec636dcca63662489b50969b86cccc27b01b9ab84adec9fef2e5be64260115",
+    "0012_api_keys.up.sql": "101d5bd4447f10f70c371c14c2964f69c83785418168cbef4661a2e9d8cb9f4a",
+    "0013_namespace_quotas.down.sql": "d3b1e7e34d2504de6ba39403869e668724fe31b2a5124119a4ef6a81bacb4350",
+    "0013_namespace_quotas.up.sql": "cb6302f5de1a65d655e51042f13a289c8297d230d8ac57cdcaf4f5322fc21026",
+    "0014_task_quarantine.down.sql": "675b07231360e8aaddd2f00a0531e16140a5ecd3ba99ff8cdee2a39354979f0b",
+    "0014_task_quarantine.up.sql": "3eae8b730f25534ec5607174d758600cd2d30b4f1626ab7ad1d9a8a2258000b7",
+    "0015_trace_context.down.sql": "6947046c95b83728405336d5578d46d045d14c9b4b6ae647792ee43bbff89598",
+    "0015_trace_context.up.sql": "bf8ca51497841934369481b6355a4327f6363a61f7a50e3a04ab7aa5f9470c69",
+    "0016_hot_query_indexes.down.sql": "c4b58601abc72b1d5c2a3719215e44e54c9489de6f020b9239992ca9f011ef4d",
+    "0016_hot_query_indexes.up.sql": "44cf03799f492774ca61e333f0e2b4593d9e49e873b0bda519f3244c98d6f636",
+    "0017_one_step_result.down.sql": "316cd399dff18abd84c358a070813cc5944c36df65f4c66af7e34218e1efabc4",
+    "0017_one_step_result.up.sql": "189e705a8b70a569298f65e10f13379af713a95fc56716d3b9ceb6431c9c46e3",
+    "0018_run_waiting_marker.down.sql": "aaa750b23dd58f126e9fe7a5b1e1bf604689aa2ab8aa4fc90a56b91de822b7e7",
+    "0018_run_waiting_marker.up.sql": "2f64d6f38f7d8ee2bb870022ab23ddf33c1f426752095a272078a4ad40c8eb94",
+    "0019_run_queue_and_schedule_policy.down.sql": "72c2a78aa86416ca2a4839974ccefb08fb1ab15ebe6c75686480cdc9a1261e92",
+    "0019_run_queue_and_schedule_policy.up.sql": "4661da55a9184734625095a34306466884523754988021efc1f8687f094bf800",
+    "0020_run_timeouts.down.sql": "fb35288556aaad79602f4f9cc03f1f1e067c1867613963528a12c71f215b8d87",
+    "0020_run_timeouts.up.sql": "6bcebf835986cafb62f9e70a56a1e2085babd11bd46c9168dfbe1e52b1a83396"
+  },
+  "apiKey": "dee_upgradefixture0000000000000000",
+  "namespaceId": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+  "runs": {
+    "completed": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+    "waiting": "ee6566c1-9226-4a87-8a45-15e5a1fe556b",
+    "sleeping": "11d6f7c0-0107-49f0-9100-085fd0e0fb65",
+    "parent": "fd0ac72d-436d-46bd-a8e0-c75b0fcef4a4",
+    "child": "4db38ad2-1dcd-442f-909e-07932d705100",
+    "retrying": "f262e4b7-91b4-4170-adfe-cbe745b2480e",
+    "queued": "099262b7-f9a2-49c0-abbc-fcf81342fc31"
+  },
+  "stepCalls": {
+    "upgrade.reserve": 5,
+    "upgrade.flaky": 1,
+    "upgrade.capture": 1
+  },
+  "sequences": [
+    {
+      "sequencename": "run_events_id_seq",
+      "last_value": "25"
+    },
+    {
+      "sequencename": "schedule_triggers_id_seq",
+      "last_value": null
+    },
+    {
+      "sequencename": "step_attempts_id_seq",
+      "last_value": "1"
+    },
+    {
+      "sequencename": "step_results_id_seq",
+      "last_value": "6"
+    },
+    {
+      "sequencename": "workflow_task_results_id_seq",
+      "last_value": "12"
+    }
+  ],
+  "rows": {
+    "api_keys": [
+      {
+        "id": "2980e89e-783b-4969-ab65-5e0f4922dd08",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "key_hash": "d47f0ea2d5b852e2cc5f6153ed57f396bdcf582721c1ae42244d0ff41b2df090",
+        "label": "",
+        "created_at": "2026-11-28T09:24:41.370305+00:00",
+        "revoked_at": null
+      }
+    ],
+    "dead_letters": [],
+    "namespace_quotas": [],
+    "namespaces": [
+      {
+        "id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "name": "default",
+        "created_at": "2026-11-28T09:24:41.367633+00:00"
+      }
+    ],
+    "run_events": [
+      {
+        "id": 1,
+        "run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "sequence_number": 1,
+        "event_type": "run_started",
+        "payload": {
+          "type": "run_started",
+          "input": {
+            "order": "completed"
+          },
+          "workflowType": "upgrade.approval"
+        },
+        "created_at": "2026-11-28T09:24:41.384167+00:00"
+      },
+      {
+        "id": 2,
+        "run_id": "ee6566c1-9226-4a87-8a45-15e5a1fe556b",
+        "sequence_number": 1,
+        "event_type": "run_started",
+        "payload": {
+          "type": "run_started",
+          "input": {
+            "order": "waiting"
+          },
+          "workflowType": "upgrade.approval"
+        },
+        "created_at": "2026-11-28T09:24:41.394147+00:00"
+      },
+      {
+        "id": 3,
+        "run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "sequence_number": 2,
+        "event_type": "step_scheduled",
+        "payload": {
+          "type": "step_scheduled",
+          "input": {
+            "order": "completed"
+          },
+          "stepId": "step-1",
+          "stepType": "upgrade.reserve"
+        },
+        "created_at": "2026-11-28T09:24:41.4017+00:00"
+      },
+      {
+        "id": 4,
+        "run_id": "11d6f7c0-0107-49f0-9100-085fd0e0fb65",
+        "sequence_number": 1,
+        "event_type": "run_started",
+        "payload": {
+          "type": "run_started",
+          "input": {
+            "order": "sleeping"
+          },
+          "workflowType": "upgrade.sleeper"
+        },
+        "created_at": "2026-11-28T09:24:41.405803+00:00"
+      },
+      {
+        "id": 5,
+        "run_id": "fd0ac72d-436d-46bd-a8e0-c75b0fcef4a4",
+        "sequence_number": 1,
+        "event_type": "run_started",
+        "payload": {
+          "type": "run_started",
+          "input": {
+            "order": "parent"
+          },
+          "workflowType": "upgrade.parent"
+        },
+        "created_at": "2026-11-28T09:24:41.413149+00:00"
+      },
+      {
+        "id": 6,
+        "run_id": "f262e4b7-91b4-4170-adfe-cbe745b2480e",
+        "sequence_number": 1,
+        "event_type": "run_started",
+        "payload": {
+          "type": "run_started",
+          "input": {
+            "order": "retrying"
+          },
+          "workflowType": "upgrade.retrying"
+        },
+        "created_at": "2026-11-28T09:24:41.420855+00:00"
+      },
+      {
+        "id": 7,
+        "run_id": "11d6f7c0-0107-49f0-9100-085fd0e0fb65",
+        "sequence_number": 2,
+        "event_type": "step_scheduled",
+        "payload": {
+          "type": "step_scheduled",
+          "input": {
+            "order": "sleeping"
+          },
+          "stepId": "step-1",
+          "stepType": "upgrade.reserve"
+        },
+        "created_at": "2026-11-28T09:24:41.420563+00:00"
+      },
+      {
+        "id": 8,
+        "run_id": "ee6566c1-9226-4a87-8a45-15e5a1fe556b",
+        "sequence_number": 2,
+        "event_type": "step_scheduled",
+        "payload": {
+          "type": "step_scheduled",
+          "input": {
+            "order": "waiting"
+          },
+          "stepId": "step-1",
+          "stepType": "upgrade.reserve"
+        },
+        "created_at": "2026-11-28T09:24:41.422405+00:00"
+      },
+      {
+        "id": 9,
+        "run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "sequence_number": 3,
+        "event_type": "step_completed",
+        "payload": {
+          "type": "step_completed",
+          "result": "reserved completed",
+          "stepId": "step-1"
+        },
+        "created_at": "2026-11-28T09:24:41.424536+00:00"
+      },
+      {
+        "id": 10,
+        "run_id": "fd0ac72d-436d-46bd-a8e0-c75b0fcef4a4",
+        "sequence_number": 2,
+        "event_type": "step_scheduled",
+        "payload": {
+          "type": "step_scheduled",
+          "input": {
+            "order": "parent"
+          },
+          "stepId": "step-1",
+          "stepType": "upgrade.reserve"
+        },
+        "created_at": "2026-11-28T09:24:41.435238+00:00"
+      },
+      {
+        "id": 11,
+        "run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "sequence_number": 4,
+        "event_type": "signal_received",
+        "payload": {
+          "type": "signal_received",
+          "payload": {
+            "approver": "ada"
+          },
+          "signalName": "approve"
+        },
+        "created_at": "2026-11-28T09:24:41.450797+00:00"
+      },
+      {
+        "id": 12,
+        "run_id": "f262e4b7-91b4-4170-adfe-cbe745b2480e",
+        "sequence_number": 2,
+        "event_type": "step_scheduled",
+        "payload": {
+          "type": "step_scheduled",
+          "input": {
+            "order": "retrying"
+          },
+          "stepId": "step-1",
+          "stepType": "upgrade.flaky"
+        },
+        "created_at": "2026-11-28T09:24:41.459838+00:00"
+      },
+      {
+        "id": 13,
+        "run_id": "11d6f7c0-0107-49f0-9100-085fd0e0fb65",
+        "sequence_number": 3,
+        "event_type": "step_completed",
+        "payload": {
+          "type": "step_completed",
+          "result": "reserved sleeping",
+          "stepId": "step-1"
+        },
+        "created_at": "2026-11-28T09:24:41.464246+00:00"
+      },
+      {
+        "id": 14,
+        "run_id": "ee6566c1-9226-4a87-8a45-15e5a1fe556b",
+        "sequence_number": 3,
+        "event_type": "step_completed",
+        "payload": {
+          "type": "step_completed",
+          "result": "reserved waiting",
+          "stepId": "step-1"
+        },
+        "created_at": "2026-11-28T09:24:41.466944+00:00"
+      },
+      {
+        "id": 15,
+        "run_id": "fd0ac72d-436d-46bd-a8e0-c75b0fcef4a4",
+        "sequence_number": 3,
+        "event_type": "step_completed",
+        "payload": {
+          "type": "step_completed",
+          "result": "reserved parent",
+          "stepId": "step-1"
+        },
+        "created_at": "2026-11-28T09:24:41.474791+00:00"
+      },
+      {
+        "id": 16,
+        "run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "sequence_number": 5,
+        "event_type": "step_scheduled",
+        "payload": {
+          "type": "step_scheduled",
+          "input": {
+            "order": "completed",
+            "approver": "ada"
+          },
+          "stepId": "step-2",
+          "stepType": "upgrade.capture"
+        },
+        "created_at": "2026-11-28T09:24:41.487419+00:00"
+      },
+      {
+        "id": 17,
+        "run_id": "f262e4b7-91b4-4170-adfe-cbe745b2480e",
+        "sequence_number": 3,
+        "event_type": "step_attempt_failed",
+        "payload": {
+          "type": "step_attempt_failed",
+          "error": {
+            "name": "Error",
+            "message": "the ledger is down for retrying"
+          },
+          "stepId": "step-1",
+          "attempt": 1,
+          "retryAt": "2026-11-28T09:25:11.499Z"
+        },
+        "created_at": "2026-11-28T09:24:41.501548+00:00"
+      },
+      {
+        "id": 18,
+        "run_id": "11d6f7c0-0107-49f0-9100-085fd0e0fb65",
+        "sequence_number": 4,
+        "event_type": "timer_started",
+        "payload": {
+          "type": "timer_started",
+          "fireAt": "2026-11-28T09:25:11.512Z",
+          "timerId": "timer-1",
+          "durationMs": 30000
+        },
+        "created_at": "2026-11-28T09:24:41.514528+00:00"
+      },
+      {
+        "id": 19,
+        "run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "sequence_number": 6,
+        "event_type": "step_completed",
+        "payload": {
+          "type": "step_completed",
+          "result": "captured completed for ada",
+          "stepId": "step-2"
+        },
+        "created_at": "2026-11-28T09:24:41.517723+00:00"
+      },
+      {
+        "id": 20,
+        "run_id": "fd0ac72d-436d-46bd-a8e0-c75b0fcef4a4",
+        "sequence_number": 4,
+        "event_type": "child_started",
+        "payload": {
+          "type": "child_started",
+          "input": {
+            "order": "parent-child"
+          },
+          "childId": "child-1",
+          "workflowType": "upgrade.approval",
+          "parentClosePolicy": "cancel"
+        },
+        "created_at": "2026-11-28T09:24:41.521441+00:00"
+      },
+      {
+        "id": 21,
+        "run_id": "4db38ad2-1dcd-442f-909e-07932d705100",
+        "sequence_number": 1,
+        "event_type": "run_started",
+        "payload": {
+          "type": "run_started",
+          "input": {
+            "order": "parent-child"
+          },
+          "workflowType": "upgrade.approval"
+        },
+        "created_at": "2026-11-28T09:24:41.521441+00:00"
+      },
+      {
+        "id": 22,
+        "run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "sequence_number": 7,
+        "event_type": "run_completed",
+        "payload": {
+          "type": "run_completed",
+          "result": {
+            "captured": "captured completed for ada",
+            "reserved": "reserved completed"
+          }
+        },
+        "created_at": "2026-11-28T09:24:41.529949+00:00"
+      },
+      {
+        "id": 23,
+        "run_id": "4db38ad2-1dcd-442f-909e-07932d705100",
+        "sequence_number": 2,
+        "event_type": "step_scheduled",
+        "payload": {
+          "type": "step_scheduled",
+          "input": {
+            "order": "parent-child"
+          },
+          "stepId": "step-1",
+          "stepType": "upgrade.reserve"
+        },
+        "created_at": "2026-11-28T09:24:41.536626+00:00"
+      },
+      {
+        "id": 24,
+        "run_id": "4db38ad2-1dcd-442f-909e-07932d705100",
+        "sequence_number": 3,
+        "event_type": "step_completed",
+        "payload": {
+          "type": "step_completed",
+          "result": "reserved parent-child",
+          "stepId": "step-1"
+        },
+        "created_at": "2026-11-28T09:24:41.546057+00:00"
+      },
+      {
+        "id": 25,
+        "run_id": "099262b7-f9a2-49c0-abbc-fcf81342fc31",
+        "sequence_number": 1,
+        "event_type": "run_started",
+        "payload": {
+          "type": "run_started",
+          "input": {
+            "order": "queued"
+          },
+          "workflowType": "upgrade.queued"
+        },
+        "created_at": "2026-11-28T09:24:41.582059+00:00"
+      }
+    ],
+    "run_snapshots": [],
+    "run_stickiness": [],
+    "schedule_triggers": [],
+    "schedules": [],
+    "schema_migrations": [
+      {
+        "id": "0001_initial_schema",
+        "applied_at": "2026-11-28T09:24:41.270468+00:00"
+      },
+      {
+        "id": "0002_run_projection",
+        "applied_at": "2026-11-28T09:24:41.288825+00:00"
+      },
+      {
+        "id": "0003_task_queue",
+        "applied_at": "2026-11-28T09:24:41.290133+00:00"
+      },
+      {
+        "id": "0004_idempotent_results",
+        "applied_at": "2026-11-28T09:24:41.291762+00:00"
+      },
+      {
+        "id": "0005_crash_recovery",
+        "applied_at": "2026-11-28T09:24:41.295445+00:00"
+      },
+      {
+        "id": "0006_retry_and_dead_letters",
+        "applied_at": "2026-11-28T09:24:41.297056+00:00"
+      },
+      {
+        "id": "0007_durable_timers",
+        "applied_at": "2026-11-28T09:24:41.303456+00:00"
+      },
+      {
+        "id": "0008_schedules",
+        "applied_at": "2026-11-28T09:24:41.306267+00:00"
+      },
+      {
+        "id": "0009_child_workflows",
+        "applied_at": "2026-11-28T09:24:41.315612+00:00"
+      },
+      {
+        "id": "0010_continue_as_new",
+        "applied_at": "2026-11-28T09:24:41.318702+00:00"
+      },
+      {
+        "id": "0011_sticky_execution",
+        "applied_at": "2026-11-28T09:24:41.328008+00:00"
+      },
+      {
+        "id": "0012_api_keys",
+        "applied_at": "2026-11-28T09:24:41.33458+00:00"
+      },
+      {
+        "id": "0013_namespace_quotas",
+        "applied_at": "2026-11-28T09:24:41.342694+00:00"
+      },
+      {
+        "id": "0014_task_quarantine",
+        "applied_at": "2026-11-28T09:24:41.345813+00:00"
+      },
+      {
+        "id": "0015_trace_context",
+        "applied_at": "2026-11-28T09:24:41.349977+00:00"
+      },
+      {
+        "id": "0016_hot_query_indexes",
+        "applied_at": "2026-11-28T09:24:41.350815+00:00"
+      },
+      {
+        "id": "0017_one_step_result",
+        "applied_at": "2026-11-28T09:24:41.35453+00:00"
+      },
+      {
+        "id": "0018_run_waiting_marker",
+        "applied_at": "2026-11-28T09:24:41.357315+00:00"
+      },
+      {
+        "id": "0019_run_queue_and_schedule_policy",
+        "applied_at": "2026-11-28T09:24:41.358604+00:00"
+      },
+      {
+        "id": "0020_run_timeouts",
+        "applied_at": "2026-11-28T09:24:41.365192+00:00"
+      }
+    ],
+    "step_attempts": [
+      {
+        "id": 1,
+        "run_id": "f262e4b7-91b4-4170-adfe-cbe745b2480e",
+        "step_id": "step-1",
+        "attempt": 1,
+        "error": {
+          "name": "Error",
+          "stack": "Error: the ledger is down for retrying\n    at Object.handler (/tmp/tmp.jl4EW1j1EB/v0.1.1/test/fixtures/upgrade-v0.1.1/workflows.ts:71:15)\n    at Object.handler (/tmp/tmp.jl4EW1j1EB/v0.1.1/packages/core/src/workflow/define-step.ts:53:34)\n    at /tmp/tmp.jl4EW1j1EB/v0.1.1/packages/core/src/retry/step-task-processor.ts:194:22\n    at runWithTimeout (/tmp/tmp.jl4EW1j1EB/v0.1.1/packages/core/src/retry/timeout.ts:42:12)\n    at executeTraced (/tmp/tmp.jl4EW1j1EB/v0.1.1/packages/core/src/retry/step-task-processor.ts:192:19)\n    at Object.process (/tmp/tmp.jl4EW1j1EB/v0.1.1/packages/core/src/retry/step-task-processor.ts:242:24)\n    at processTicksAndRejections (node:internal/process/task_queues:103:5)\n    at handleStepTask (/tmp/tmp.jl4EW1j1EB/v0.1.1/packages/worker/src/engine/task-handler.ts:329:21)\n    at Object.handler (/tmp/tmp.jl4EW1j1EB/v0.1.1/packages/worker/src/engine/task-handler.ts:358:7)\n    at execute (/tmp/tmp.jl4EW1j1EB/v0.1.1/packages/worker/src/worker.ts:387:7)",
+          "message": "the ledger is down for retrying"
+        },
+        "retry_at": "2026-11-28T09:25:11.499+00:00",
+        "created_at": "2026-11-28T09:24:41.501548+00:00"
+      }
+    ],
+    "step_results": [
+      {
+        "id": 1,
+        "run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "step_id": "step-1",
+        "result": "reserved completed",
+        "error": null,
+        "created_at": "2026-11-28T09:24:41.424536+00:00",
+        "attempt_key": "attempt-1"
+      },
+      {
+        "id": 2,
+        "run_id": "11d6f7c0-0107-49f0-9100-085fd0e0fb65",
+        "step_id": "step-1",
+        "result": "reserved sleeping",
+        "error": null,
+        "created_at": "2026-11-28T09:24:41.464246+00:00",
+        "attempt_key": "attempt-1"
+      },
+      {
+        "id": 3,
+        "run_id": "ee6566c1-9226-4a87-8a45-15e5a1fe556b",
+        "step_id": "step-1",
+        "result": "reserved waiting",
+        "error": null,
+        "created_at": "2026-11-28T09:24:41.466944+00:00",
+        "attempt_key": "attempt-1"
+      },
+      {
+        "id": 4,
+        "run_id": "fd0ac72d-436d-46bd-a8e0-c75b0fcef4a4",
+        "step_id": "step-1",
+        "result": "reserved parent",
+        "error": null,
+        "created_at": "2026-11-28T09:24:41.474791+00:00",
+        "attempt_key": "attempt-1"
+      },
+      {
+        "id": 5,
+        "run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "step_id": "step-2",
+        "result": "captured completed for ada",
+        "error": null,
+        "created_at": "2026-11-28T09:24:41.517723+00:00",
+        "attempt_key": "attempt-1"
+      },
+      {
+        "id": 6,
+        "run_id": "4db38ad2-1dcd-442f-909e-07932d705100",
+        "step_id": "step-1",
+        "result": "reserved parent-child",
+        "error": null,
+        "created_at": "2026-11-28T09:24:41.546057+00:00",
+        "attempt_key": "attempt-1"
+      }
+    ],
+    "tasks": [
+      {
+        "id": "4f12d4d6-c5f2-4232-bfa3-440cdaa03d71",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "queue_name": "default",
+        "task_type": "WORKFLOW_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.392527+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.384167+00:00",
+        "updated_at": "2026-11-28T09:24:41.42621+00:00",
+        "payload": {
+          "reason": "start"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.392527+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "b6cd6037-0605-4ed3-8042-44b8af77acb7",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "queue_name": "default",
+        "task_type": "STEP_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.413126+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.4017+00:00",
+        "updated_at": "2026-11-28T09:24:41.442295+00:00",
+        "payload": {
+          "input": {
+            "order": "completed"
+          },
+          "stepId": "step-1",
+          "stepType": "upgrade.reserve"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.413126+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "09f8a941-2dee-401e-a26e-c0b434cba93e",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "11d6f7c0-0107-49f0-9100-085fd0e0fb65",
+        "queue_name": "default",
+        "task_type": "WORKFLOW_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.413126+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.405803+00:00",
+        "updated_at": "2026-11-28T09:24:41.447022+00:00",
+        "payload": {
+          "reason": "start"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.413126+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "e5017b47-dde8-4b02-8b50-3835de93e29a",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "ee6566c1-9226-4a87-8a45-15e5a1fe556b",
+        "queue_name": "default",
+        "task_type": "WORKFLOW_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.413126+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.394147+00:00",
+        "updated_at": "2026-11-28T09:24:41.460505+00:00",
+        "payload": {
+          "reason": "start"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.413126+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "8daef7df-0a08-4171-8c29-4099a1f3db08",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "fd0ac72d-436d-46bd-a8e0-c75b0fcef4a4",
+        "queue_name": "default",
+        "task_type": "WORKFLOW_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.429167+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.413149+00:00",
+        "updated_at": "2026-11-28T09:24:41.463327+00:00",
+        "payload": {
+          "reason": "start"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.429167+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "85e33e5a-5efa-4a2b-85fe-2705ab1e94a2",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "ee6566c1-9226-4a87-8a45-15e5a1fe556b",
+        "queue_name": "default",
+        "task_type": "STEP_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.46308+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.422405+00:00",
+        "updated_at": "2026-11-28T09:24:41.474401+00:00",
+        "payload": {
+          "input": {
+            "order": "waiting"
+          },
+          "stepId": "step-1",
+          "stepType": "upgrade.reserve"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.46308+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "a4b0e892-fecb-47dc-a32e-f8bacbe6a61b",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "11d6f7c0-0107-49f0-9100-085fd0e0fb65",
+        "queue_name": "default",
+        "task_type": "STEP_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.457098+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.420563+00:00",
+        "updated_at": "2026-11-28T09:24:41.475764+00:00",
+        "payload": {
+          "input": {
+            "order": "sleeping"
+          },
+          "stepId": "step-1",
+          "stepType": "upgrade.reserve"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.457098+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "658f594e-ab94-4408-a17b-dace55af54a4",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "f262e4b7-91b4-4170-adfe-cbe745b2480e",
+        "queue_name": "default",
+        "task_type": "WORKFLOW_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.45007+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.420855+00:00",
+        "updated_at": "2026-11-28T09:24:41.478503+00:00",
+        "payload": {
+          "reason": "start"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.45007+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "bb8a6395-11fd-4309-a7b1-c89796500f2c",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "fd0ac72d-436d-46bd-a8e0-c75b0fcef4a4",
+        "queue_name": "default",
+        "task_type": "STEP_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.465081+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.435238+00:00",
+        "updated_at": "2026-11-28T09:24:41.484338+00:00",
+        "payload": {
+          "input": {
+            "order": "parent"
+          },
+          "stepId": "step-1",
+          "stepType": "upgrade.reserve"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.465081+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "23cfb1cd-c50d-400c-b8ab-360b01367414",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "f262e4b7-91b4-4170-adfe-cbe745b2480e",
+        "queue_name": "default",
+        "task_type": "STEP_TASK",
+        "state": "PENDING",
+        "visible_at": "2026-11-28T09:25:11.508677+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.459838+00:00",
+        "updated_at": "2026-11-28T09:24:41.508677+00:00",
+        "payload": {
+          "input": {
+            "order": "retrying"
+          },
+          "stepId": "step-1",
+          "stepType": "upgrade.flaky"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.486112+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "10e1a7ef-0c9d-4890-8465-06862259f411",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "queue_name": "default",
+        "task_type": "WORKFLOW_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.48124+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.450797+00:00",
+        "updated_at": "2026-11-28T09:24:41.509172+00:00",
+        "payload": {
+          "reason": "signal",
+          "signalName": "approve"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.48124+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "14369a51-22a1-401d-9b19-5848e7a8cb75",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "queue_name": "default",
+        "task_type": "WORKFLOW_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.479401+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.444883+00:00",
+        "updated_at": "2026-11-28T09:24:41.512023+00:00",
+        "payload": {
+          "reason": "step_completed"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.479401+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "b54c0122-e923-4add-a5a7-e57505bcb4f9",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "ee6566c1-9226-4a87-8a45-15e5a1fe556b",
+        "queue_name": "default",
+        "task_type": "WORKFLOW_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.491388+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.475296+00:00",
+        "updated_at": "2026-11-28T09:24:41.514905+00:00",
+        "payload": {
+          "reason": "step_completed"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.491388+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "593f7a48-b299-49b4-9898-10396eb71d3a",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "queue_name": "default",
+        "task_type": "STEP_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.513827+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.487419+00:00",
+        "updated_at": "2026-11-28T09:24:41.523675+00:00",
+        "payload": {
+          "input": {
+            "order": "completed",
+            "approver": "ada"
+          },
+          "stepId": "step-2",
+          "stepType": "upgrade.capture"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.513827+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "e9946178-14b6-4391-b272-5387c4bc95aa",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "11d6f7c0-0107-49f0-9100-085fd0e0fb65",
+        "queue_name": "default",
+        "task_type": "WORKFLOW_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.51011+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.47787+00:00",
+        "updated_at": "2026-11-28T09:24:41.525838+00:00",
+        "payload": {
+          "reason": "step_completed"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.51011+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "efbc07f4-f368-446b-bd99-1a165626ccc5",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "fd0ac72d-436d-46bd-a8e0-c75b0fcef4a4",
+        "queue_name": "default",
+        "task_type": "WORKFLOW_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.511702+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.486788+00:00",
+        "updated_at": "2026-11-28T09:24:41.531797+00:00",
+        "payload": {
+          "reason": "step_completed"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.511702+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "a07c0323-4751-4693-9577-e173ec571a9c",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "queue_name": "default",
+        "task_type": "WORKFLOW_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.526576+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.524302+00:00",
+        "updated_at": "2026-11-28T09:24:41.541882+00:00",
+        "payload": {
+          "reason": "step_completed"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.526576+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "258644e5-bcc0-4657-ac29-9b4eabf577b6",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "4db38ad2-1dcd-442f-909e-07932d705100",
+        "queue_name": "default",
+        "task_type": "WORKFLOW_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.53272+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.521441+00:00",
+        "updated_at": "2026-11-28T09:24:41.547631+00:00",
+        "payload": {
+          "reason": "child_started",
+          "childId": "child-1",
+          "parentRunId": "fd0ac72d-436d-46bd-a8e0-c75b0fcef4a4"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.53272+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "439f3f67-1d85-4f7e-910e-78476481707c",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "4db38ad2-1dcd-442f-909e-07932d705100",
+        "queue_name": "default",
+        "task_type": "STEP_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.542572+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.536626+00:00",
+        "updated_at": "2026-11-28T09:24:41.557094+00:00",
+        "payload": {
+          "input": {
+            "order": "parent-child"
+          },
+          "stepId": "step-1",
+          "stepType": "upgrade.reserve"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.542572+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "d2babc01-e9ff-4313-86d8-e384d3d0ce3f",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "4db38ad2-1dcd-442f-909e-07932d705100",
+        "queue_name": "default",
+        "task_type": "WORKFLOW_TASK",
+        "state": "COMPLETED",
+        "visible_at": "2026-11-28T09:25:11.559422+00:00",
+        "attempts": 1,
+        "created_at": "2026-11-28T09:24:41.558086+00:00",
+        "updated_at": "2026-11-28T09:24:41.568268+00:00",
+        "payload": {
+          "reason": "step_completed"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": "2026-11-28T09:24:41.559422+00:00",
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      },
+      {
+        "id": "b94ebe73-7614-4153-b3a1-950a2f733dbe",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "run_id": "099262b7-f9a2-49c0-abbc-fcf81342fc31",
+        "queue_name": "default",
+        "task_type": "WORKFLOW_TASK",
+        "state": "PENDING",
+        "visible_at": "2026-11-28T09:24:41.582059+00:00",
+        "attempts": 0,
+        "created_at": "2026-11-28T09:24:41.582059+00:00",
+        "updated_at": "2026-11-28T09:24:41.582059+00:00",
+        "payload": {
+          "reason": "start"
+        },
+        "lease_token": null,
+        "leased_by": null,
+        "leased_by_version": null,
+        "leased_at": null,
+        "reclaim_count": 0,
+        "quarantined_at": null,
+        "quarantine_reason": null
+      }
+    ],
+    "timers": [
+      {
+        "id": "60e118a0-62c9-4ef0-b397-c4fa3bbfb636",
+        "run_id": "11d6f7c0-0107-49f0-9100-085fd0e0fb65",
+        "timer_id": "timer-1",
+        "fire_at": "2026-11-28T09:25:11.512+00:00",
+        "state": "PENDING",
+        "created_at": "2026-11-28T09:24:41.514528+00:00",
+        "fired_at": null
+      }
+    ],
+    "workflow_runs": [
+      {
+        "id": "f262e4b7-91b4-4170-adfe-cbe745b2480e",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "workflow_type": "upgrade.retrying",
+        "status": "RUNNING",
+        "input": {
+          "order": "retrying"
+        },
+        "result": null,
+        "parent_run_id": null,
+        "started_at": "2026-11-28T09:24:41.420855+00:00",
+        "closed_at": null,
+        "created_at": "2026-11-28T09:24:41.420855+00:00",
+        "updated_at": "2026-11-28T09:24:41.420855+00:00",
+        "error": null,
+        "last_sequence_number": 0,
+        "schedule_id": null,
+        "parent_child_id": null,
+        "parent_close_policy": null,
+        "first_run_id": "f262e4b7-91b4-4170-adfe-cbe745b2480e",
+        "continued_from_run_id": null,
+        "chain_index": 0,
+        "idempotency_key": null,
+        "traceparent": null,
+        "waiting_on": null,
+        "recovery_count": 0,
+        "last_recovered_at": null,
+        "queue_name": "default",
+        "run_timeout_ms": null,
+        "execution_deadline": null
+      },
+      {
+        "id": "ee6566c1-9226-4a87-8a45-15e5a1fe556b",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "workflow_type": "upgrade.approval",
+        "status": "RUNNING",
+        "input": {
+          "order": "waiting"
+        },
+        "result": null,
+        "parent_run_id": null,
+        "started_at": "2026-11-28T09:24:41.394147+00:00",
+        "closed_at": null,
+        "created_at": "2026-11-28T09:24:41.394147+00:00",
+        "updated_at": "2026-11-28T09:24:41.394147+00:00",
+        "error": null,
+        "last_sequence_number": 0,
+        "schedule_id": null,
+        "parent_child_id": null,
+        "parent_close_policy": null,
+        "first_run_id": "ee6566c1-9226-4a87-8a45-15e5a1fe556b",
+        "continued_from_run_id": null,
+        "chain_index": 0,
+        "idempotency_key": null,
+        "traceparent": null,
+        "waiting_on": "external",
+        "recovery_count": 0,
+        "last_recovered_at": null,
+        "queue_name": "default",
+        "run_timeout_ms": null,
+        "execution_deadline": null
+      },
+      {
+        "id": "11d6f7c0-0107-49f0-9100-085fd0e0fb65",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "workflow_type": "upgrade.sleeper",
+        "status": "RUNNING",
+        "input": {
+          "order": "sleeping"
+        },
+        "result": null,
+        "parent_run_id": null,
+        "started_at": "2026-11-28T09:24:41.405803+00:00",
+        "closed_at": null,
+        "created_at": "2026-11-28T09:24:41.405803+00:00",
+        "updated_at": "2026-11-28T09:24:41.405803+00:00",
+        "error": null,
+        "last_sequence_number": 0,
+        "schedule_id": null,
+        "parent_child_id": null,
+        "parent_close_policy": null,
+        "first_run_id": "11d6f7c0-0107-49f0-9100-085fd0e0fb65",
+        "continued_from_run_id": null,
+        "chain_index": 0,
+        "idempotency_key": null,
+        "traceparent": null,
+        "waiting_on": "external",
+        "recovery_count": 0,
+        "last_recovered_at": null,
+        "queue_name": "default",
+        "run_timeout_ms": null,
+        "execution_deadline": null
+      },
+      {
+        "id": "fd0ac72d-436d-46bd-a8e0-c75b0fcef4a4",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "workflow_type": "upgrade.parent",
+        "status": "RUNNING",
+        "input": {
+          "order": "parent"
+        },
+        "result": null,
+        "parent_run_id": null,
+        "started_at": "2026-11-28T09:24:41.413149+00:00",
+        "closed_at": null,
+        "created_at": "2026-11-28T09:24:41.413149+00:00",
+        "updated_at": "2026-11-28T09:24:41.413149+00:00",
+        "error": null,
+        "last_sequence_number": 0,
+        "schedule_id": null,
+        "parent_child_id": null,
+        "parent_close_policy": null,
+        "first_run_id": "fd0ac72d-436d-46bd-a8e0-c75b0fcef4a4",
+        "continued_from_run_id": null,
+        "chain_index": 0,
+        "idempotency_key": null,
+        "traceparent": null,
+        "waiting_on": "external",
+        "recovery_count": 0,
+        "last_recovered_at": null,
+        "queue_name": "default",
+        "run_timeout_ms": null,
+        "execution_deadline": null
+      },
+      {
+        "id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "workflow_type": "upgrade.approval",
+        "status": "COMPLETED",
+        "input": {
+          "order": "completed"
+        },
+        "result": {
+          "captured": "captured completed for ada",
+          "reserved": "reserved completed"
+        },
+        "parent_run_id": null,
+        "started_at": "2026-11-28T09:24:41.384167+00:00",
+        "closed_at": "2026-11-28T09:24:41.529+00:00",
+        "created_at": "2026-11-28T09:24:41.384167+00:00",
+        "updated_at": "2026-11-28T09:24:41.529949+00:00",
+        "error": null,
+        "last_sequence_number": 7,
+        "schedule_id": null,
+        "parent_child_id": null,
+        "parent_close_policy": null,
+        "first_run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "continued_from_run_id": null,
+        "chain_index": 0,
+        "idempotency_key": null,
+        "traceparent": null,
+        "waiting_on": null,
+        "recovery_count": 0,
+        "last_recovered_at": null,
+        "queue_name": "default",
+        "run_timeout_ms": null,
+        "execution_deadline": null
+      },
+      {
+        "id": "4db38ad2-1dcd-442f-909e-07932d705100",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "workflow_type": "upgrade.approval",
+        "status": "RUNNING",
+        "input": {
+          "order": "parent-child"
+        },
+        "result": null,
+        "parent_run_id": "fd0ac72d-436d-46bd-a8e0-c75b0fcef4a4",
+        "started_at": "2026-11-28T09:24:41.521441+00:00",
+        "closed_at": null,
+        "created_at": "2026-11-28T09:24:41.521441+00:00",
+        "updated_at": "2026-11-28T09:24:41.521441+00:00",
+        "error": null,
+        "last_sequence_number": 0,
+        "schedule_id": null,
+        "parent_child_id": "child-1",
+        "parent_close_policy": "cancel",
+        "first_run_id": "4db38ad2-1dcd-442f-909e-07932d705100",
+        "continued_from_run_id": null,
+        "chain_index": 0,
+        "idempotency_key": null,
+        "traceparent": null,
+        "waiting_on": "external",
+        "recovery_count": 0,
+        "last_recovered_at": null,
+        "queue_name": "default",
+        "run_timeout_ms": null,
+        "execution_deadline": null
+      },
+      {
+        "id": "099262b7-f9a2-49c0-abbc-fcf81342fc31",
+        "namespace_id": "baa47a5d-c923-4b12-b477-bca7a44ceb3d",
+        "workflow_type": "upgrade.queued",
+        "status": "RUNNING",
+        "input": {
+          "order": "queued"
+        },
+        "result": null,
+        "parent_run_id": null,
+        "started_at": "2026-11-28T09:24:41.582059+00:00",
+        "closed_at": null,
+        "created_at": "2026-11-28T09:24:41.582059+00:00",
+        "updated_at": "2026-11-28T09:24:41.582059+00:00",
+        "error": null,
+        "last_sequence_number": 0,
+        "schedule_id": null,
+        "parent_child_id": null,
+        "parent_close_policy": null,
+        "first_run_id": "099262b7-f9a2-49c0-abbc-fcf81342fc31",
+        "continued_from_run_id": null,
+        "chain_index": 0,
+        "idempotency_key": null,
+        "traceparent": null,
+        "waiting_on": null,
+        "recovery_count": 0,
+        "last_recovered_at": null,
+        "queue_name": "default",
+        "run_timeout_ms": null,
+        "execution_deadline": null
+      }
+    ],
+    "workflow_task_results": [
+      {
+        "id": 1,
+        "run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "task_key": "4f12d4d6-c5f2-4232-bfa3-440cdaa03d71",
+        "first_sequence_number": 2,
+        "last_sequence_number": 2,
+        "created_at": "2026-11-28T09:24:41.4017+00:00"
+      },
+      {
+        "id": 2,
+        "run_id": "11d6f7c0-0107-49f0-9100-085fd0e0fb65",
+        "task_key": "09f8a941-2dee-401e-a26e-c0b434cba93e",
+        "first_sequence_number": 2,
+        "last_sequence_number": 2,
+        "created_at": "2026-11-28T09:24:41.420563+00:00"
+      },
+      {
+        "id": 3,
+        "run_id": "ee6566c1-9226-4a87-8a45-15e5a1fe556b",
+        "task_key": "e5017b47-dde8-4b02-8b50-3835de93e29a",
+        "first_sequence_number": 2,
+        "last_sequence_number": 2,
+        "created_at": "2026-11-28T09:24:41.422405+00:00"
+      },
+      {
+        "id": 4,
+        "run_id": "fd0ac72d-436d-46bd-a8e0-c75b0fcef4a4",
+        "task_key": "8daef7df-0a08-4171-8c29-4099a1f3db08",
+        "first_sequence_number": 2,
+        "last_sequence_number": 2,
+        "created_at": "2026-11-28T09:24:41.435238+00:00"
+      },
+      {
+        "id": 5,
+        "run_id": "f262e4b7-91b4-4170-adfe-cbe745b2480e",
+        "task_key": "658f594e-ab94-4408-a17b-dace55af54a4",
+        "first_sequence_number": 2,
+        "last_sequence_number": 2,
+        "created_at": "2026-11-28T09:24:41.459838+00:00"
+      },
+      {
+        "id": 6,
+        "run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "task_key": "14369a51-22a1-401d-9b19-5848e7a8cb75",
+        "first_sequence_number": 5,
+        "last_sequence_number": 5,
+        "created_at": "2026-11-28T09:24:41.487419+00:00"
+      },
+      {
+        "id": 7,
+        "run_id": "ee6566c1-9226-4a87-8a45-15e5a1fe556b",
+        "task_key": "b54c0122-e923-4add-a5a7-e57505bcb4f9",
+        "first_sequence_number": 4,
+        "last_sequence_number": 3,
+        "created_at": "2026-11-28T09:24:41.504459+00:00"
+      },
+      {
+        "id": 8,
+        "run_id": "11d6f7c0-0107-49f0-9100-085fd0e0fb65",
+        "task_key": "e9946178-14b6-4391-b272-5387c4bc95aa",
+        "first_sequence_number": 4,
+        "last_sequence_number": 4,
+        "created_at": "2026-11-28T09:24:41.514528+00:00"
+      },
+      {
+        "id": 9,
+        "run_id": "fd0ac72d-436d-46bd-a8e0-c75b0fcef4a4",
+        "task_key": "efbc07f4-f368-446b-bd99-1a165626ccc5",
+        "first_sequence_number": 4,
+        "last_sequence_number": 4,
+        "created_at": "2026-11-28T09:24:41.521441+00:00"
+      },
+      {
+        "id": 10,
+        "run_id": "eeffc39b-ac97-41a8-bf3b-0756fed3b7af",
+        "task_key": "a07c0323-4751-4693-9577-e173ec571a9c",
+        "first_sequence_number": 7,
+        "last_sequence_number": 7,
+        "created_at": "2026-11-28T09:24:41.529949+00:00"
+      },
+      {
+        "id": 11,
+        "run_id": "4db38ad2-1dcd-442f-909e-07932d705100",
+        "task_key": "258644e5-bcc0-4657-ac29-9b4eabf577b6",
+        "first_sequence_number": 2,
+        "last_sequence_number": 2,
+        "created_at": "2026-11-28T09:24:41.536626+00:00"
+      },
+      {
+        "id": 12,
+        "run_id": "4db38ad2-1dcd-442f-909e-07932d705100",
+        "task_key": "d2babc01-e9ff-4313-86d8-e384d3d0ce3f",
+        "first_sequence_number": 4,
+        "last_sequence_number": 3,
+        "created_at": "2026-11-28T09:24:41.56218+00:00"
+      }
+    ]
+  }
+}
