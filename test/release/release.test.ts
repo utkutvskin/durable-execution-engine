@@ -42,9 +42,24 @@ const DOCUMENTS = [
   "docs/API.md",
   "docs/CLI.md",
   "docs/EXAMPLES.md",
+  "docs/UPGRADING.md",
 ];
 
-describe("release 0.1.1", () => {
+function migrationIds(): string[] {
+  return readdirSync(path.join(root, "packages/core/migrations"))
+    .filter((name) => name.endsWith(".up.sql"))
+    .map((name) => name.slice(0, -".up.sql".length))
+    .sort();
+}
+
+function migrationsOfV011(): string[] {
+  const fixture = JSON.parse(read("test/fixtures/upgrade-v0.1.1/fixture.json")) as {
+    migrations: string[];
+  };
+  return fixture.migrations;
+}
+
+describe("release 0.2.0", () => {
   it("gives every workspace package the version of the latest changelog entry", () => {
     const version = latestChangelogVersion();
     const versions = workspaceManifests().map((manifest) => ({
@@ -53,10 +68,13 @@ describe("release 0.1.1", () => {
     }));
     expect(versions.length).toBeGreaterThanOrEqual(8);
     expect(versions.filter((entry) => entry.version !== version)).toEqual([]);
-    expect(version).toBe("0.1.1");
+    expect(version).toBe("0.2.0");
   });
 
   it("links the changelog entry to the release tag", () => {
+    expect(read("CHANGELOG.md")).toContain(
+      "[0.2.0]: https://github.com/utkutvskin/durable-execution-engine/releases/tag/v0.2.0",
+    );
     expect(read("CHANGELOG.md")).toContain(
       "[0.1.1]: https://github.com/utkutvskin/durable-execution-engine/releases/tag/v0.1.1",
     );
@@ -170,5 +188,50 @@ describe("release 0.1.1", () => {
     ]) {
       expect(concepts).toContain(heading);
     }
+  });
+
+  it("names in the upgrade guide exactly the migrations added since v0.1.1", () => {
+    const old = migrationsOfV011();
+    const added = migrationIds().filter((id) => !old.includes(id));
+    const guide = read("docs/UPGRADING.md");
+    expect(old).toHaveLength(20);
+    expect(guide).toContain(`adds ${String(added.length)} migrations`);
+    expect(guide).toContain(`\`${added[0] ?? ""}\` to \`${added.at(-1) ?? ""}\``);
+    expect(guide).toContain(`to the ${String(old.length)} of v0.1.1`);
+    expect(read("CHANGELOG.md")).toContain(`It adds ${String(added.length)} migrations`);
+  });
+
+  it("points every reader coming from 0.1 at the upgrade guide and its test", () => {
+    for (const document of [
+      "README.md",
+      "CHANGELOG.md",
+      "docs/DEPLOYMENT.md",
+      "docs/ARCHITECTURE.md",
+    ]) {
+      expect(read(document), document).toContain("docs/UPGRADING.md");
+    }
+    expect(read("docs/UPGRADING.md")).toContain("test/upgrade/upgrade-from-v0.1.1.test.ts");
+    expect(existsSync(path.join(root, "test/upgrade/upgrade-from-v0.1.1.test.ts"))).toBe(true);
+  });
+
+  it("lists the next candidates the backlog names in the roadmap", () => {
+    const roadmap = read("docs/ROADMAP.md");
+    for (const candidate of [
+      "Streamed step output",
+      "Worker deployment versioning",
+      "A step-only worker SDK over HTTP",
+      "Interceptors",
+      "Keyed entities",
+    ]) {
+      expect(roadmap).toContain(`**${candidate}.**`);
+    }
+    expect(roadmap).toContain("## Deferred from v0.2");
+    expect(roadmap).toContain("docs/DEFERRED.md");
+  });
+
+  it("describes the current release in the readme and the deployment guide", () => {
+    const version = latestChangelogVersion();
+    expect(read("README.md")).toContain(`What you get in v${version}:`);
+    expect(read("docs/DEPLOYMENT.md")).toContain(`It describes what v${version} does today`);
   });
 });
